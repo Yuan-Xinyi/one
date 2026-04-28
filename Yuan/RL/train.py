@@ -30,7 +30,10 @@ def main():
     np.random.seed(cfg.SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    env = FarsightedSeedEnv(seed=cfg.SEED)
+    env = FarsightedSeedEnv(
+        seed=cfg.SEED,
+        use_collision=(cfg.USE_COLLISION_CHECK and not cfg.BATCHED_ROLLOUT),
+    )
     q_mid  = torch.as_tensor(env.q_mid,  dtype=torch.float32, device=device)
     q_half = torch.as_tensor(env.q_half, dtype=torch.float32, device=device)
 

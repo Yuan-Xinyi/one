@@ -190,6 +190,20 @@ class FarsightedSeedEnv:
         lengths = np.empty(batch_size, dtype=np.int32)
         Ts      = np.empty(batch_size, dtype=np.int32)
         reasons: list[str] = []
+        if cfg.BATCHED_ROLLOUT and self.mjc is None:
+            from Yuan.RL.batched_rollout import batched_rollout
+            c_batch = np.stack([task["c"] for task in tasks], axis=0)
+            v_batch = np.asarray([task["v_path"] for task in tasks],
+                                 dtype=np.float32)
+            eps_batch = np.asarray([task["eps_p"] for task in tasks],
+                                   dtype=np.float32)
+            Ts[:] = np.asarray([task["T"] for task in tasks], dtype=np.int32)
+            out = batched_rollout(actions, c_batch, v_batch, eps_batch, Ts)
+            lengths[:] = out["lengths"]
+            rewards[:] = lengths.astype(np.float32) / Ts.astype(np.float32)
+            reasons = out["reasons"]
+            return states, actions, rewards, lengths, Ts, extra, reasons
+
         for i in range(batch_size):
             self._cur = tasks[i]
             _, r, _, info = self.step(actions[i])

@@ -31,6 +31,14 @@ QDOT_MAX    = np.array([2.62, 2.62, 2.62, 2.62, 3.14, 3.14, 3.14],
 # ---------- Self-collision ----------
 USE_COLLISION_CHECK = True
 
+# ---------- Batched rollout ----------
+BATCHED_ROLLOUT = True              # GPU/torch batch rollout for training
+BATCHED_ROLLOUT_DEVICE = "auto"     # "auto", "cuda", or "cpu"
+BATCHED_IK_MAX_ITERS = 50
+BATCHED_IK_DAMPING   = 1e-4
+BATCHED_IK_TOL_POS   = 1e-4
+BATCHED_IK_TOL_ROT   = 1e-3
+
 # ---------- Workspace sampling (FR3 base frame) ----------
 P0_BOX_LO   = np.array([0.30, -0.30, 0.20], dtype=np.float32)
 P0_BOX_HI   = np.array([0.60,  0.30, 0.55], dtype=np.float32)

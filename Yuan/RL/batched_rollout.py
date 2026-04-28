@@ -8,9 +8,22 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+import importlib.util
+from pathlib import Path
 
 import Yuan.RL.config as cfg
 from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
+
+
+def _load_fr3_sphere_collision_cls():
+    """Load the FR3 sphere checker without importing the top-level one package."""
+    root = Path(__file__).resolve().parents[2]
+    path = root / 'one/robots/manipulators/franka/fr3/sphere_collision.py'
+    spec = importlib.util.spec_from_file_location('_fr3_sphere_collision', path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module.FR3SphereCollision
 
 
 def _device_from_cfg() -> torch.device:
@@ -141,6 +154,12 @@ def batched_rollout(q_seed_np: np.ndarray,
     """
     device = _device_from_cfg()
     kin = BatchedFR3Kinematics(device=device)
+    if cfg.USE_COLLISION_CHECK and cfg.BATCHED_COLLISION_CHECK:
+        sphere_cls = _load_fr3_sphere_collision_cls()
+        sphere_cc = sphere_cls(device=device,
+                               margin=cfg.BATCHED_COLLISION_MARGIN)
+    else:
+        sphere_cc = None
     q_seed = torch.as_tensor(q_seed_np, device=device, dtype=torch.float32)
     c = torch.as_tensor(c_np, device=device, dtype=torch.float32)
     v_path = torch.as_tensor(v_path_np, device=device, dtype=torch.float32)
@@ -204,13 +223,18 @@ def batched_rollout(q_seed_np: np.ndarray,
         pos_err = (p_ref - p_new).norm(dim=-1)
         orient_err = torch.acos(
             (R_new[:, :, 2] * z_tgt).sum(dim=-1).clamp(-1.0, 1.0))
+        if sphere_cc is None:
+            self_collision = torch.zeros_like(step_alive)
+        else:
+            self_collision = sphere_cc.is_collided(kin.link_transforms(q_new))
         last_pos_err = torch.where(step_alive, pos_err, last_pos_err)
         last_orient_err = torch.where(step_alive, orient_err, last_orient_err)
 
         fail_pos = step_alive & (pos_err > eps_p)
         fail_ori = step_alive & (orient_err > theta_max)
         fail_lmt = step_alive & joint_limit_hit
-        ok = step_alive & ~(fail_pos | fail_ori | fail_lmt)
+        fail_col = step_alive & self_collision
+        ok = step_alive & ~(fail_pos | fail_ori | fail_lmt | fail_col)
 
         lengths = torch.where(ok, torch.full_like(lengths, step), lengths)
         q = torch.where(ok.unsqueeze(-1), q_new, q)
@@ -221,7 +245,8 @@ def batched_rollout(q_seed_np: np.ndarray,
         reasons[fail_pos_np] = 'pos_err_exceeded'
         reasons[fail_ori_np] = 'orient_err_exceeded'
         reasons[fail_lmt_np] = 'joint_limit'
-        alive = alive & in_horizon & ~(fail_pos | fail_ori | fail_lmt)
+        reasons[fail_col.detach().cpu().numpy()] = 'self_collision'
+        alive = alive & in_horizon & ~(fail_pos | fail_ori | fail_lmt | fail_col)
 
     complete = (ik_ok & (lengths >= T)).detach().cpu().numpy()
     reasons[complete] = 'max_steps'

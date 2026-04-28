@@ -22,7 +22,7 @@ import torch.nn.functional as F
 
 import Yuan.RL.config as cfg
 from Yuan.RL.env import FarsightedSeedEnv
-from Yuan.RL.policy import GaussianPolicy, ValueNet
+from Yuan.RL.policy import ValueNet, make_policy
 
 
 def main():
@@ -37,7 +37,7 @@ def main():
     q_mid  = torch.as_tensor(env.q_mid,  dtype=torch.float32, device=device)
     q_half = torch.as_tensor(env.q_half, dtype=torch.float32, device=device)
 
-    policy = GaussianPolicy(cfg.STATE_DIM, env.ndof, q_mid, q_half).to(device)
+    policy = make_policy(cfg.STATE_DIM, env.ndof, q_mid, q_half).to(device)
     value  = ValueNet(cfg.STATE_DIM).to(device)
     opt_pi = torch.optim.Adam(policy.parameters(), lr=cfg.LR_PI)
     opt_v  = torch.optim.Adam(value.parameters(),  lr=cfg.LR_V)
@@ -151,6 +151,8 @@ def main():
         if it % cfg.CKPT_EVERY == 0:
             torch.save({
                 "iter": it,
+                "policy_type": cfg.POLICY_TYPE,
+                "mixture_components": getattr(policy, "n_components", 1),
                 "policy": policy.state_dict(),
                 "value":  value.state_dict(),
                 "log_std": policy.log_std.detach().cpu().numpy(),

@@ -16,7 +16,7 @@ import torch
 
 import Yuan.RL.config as cfg
 from Yuan.RL.env import FarsightedSeedEnv
-from Yuan.RL.policy import GaussianPolicy
+from Yuan.RL.policy import make_policy
 from Yuan.RL.rollout import build_target_rotmat, rollout
 
 
@@ -26,18 +26,19 @@ def latest_ckpt() -> str | None:
 
 
 def load_policy(ckpt_path: str, env: FarsightedSeedEnv,
-                device: torch.device) -> GaussianPolicy:
+                device: torch.device):
     q_mid = torch.as_tensor(env.q_mid, dtype=torch.float32, device=device)
     q_half = torch.as_tensor(env.q_half, dtype=torch.float32, device=device)
-    policy = GaussianPolicy(cfg.STATE_DIM, env.ndof, q_mid, q_half).to(device)
     state = torch.load(ckpt_path, map_location=device, weights_only=False)
+    policy = make_policy(cfg.STATE_DIM, env.ndof, q_mid, q_half,
+                         policy_type=state.get('policy_type', 'gaussian')).to(device)
     policy.load_state_dict(state['policy'])
     policy.eval()
     return policy
 
 
 def sample_rollout(ckpt_path: str, seed: int, use_collision: bool,
-                   randomize: bool):
+                   randomize: bool, best_components: bool):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     env = FarsightedSeedEnv(seed=seed, randomize=randomize,
                             use_collision=use_collision)
@@ -48,14 +49,25 @@ def sample_rollout(ckpt_path: str, seed: int, use_collision: bool,
     c = task['c']
     with torch.no_grad():
         st = torch.as_tensor(state[None], dtype=torch.float32, device=device)
-        q_seed, _ = policy.act(st, deterministic=True)
-    q_seed = q_seed.squeeze(0).cpu().numpy().astype(np.float32)
-
-    info = rollout(env.arm, q_seed, c[:3], c[3:6], c[6:9],
-                   mjc=env.mjc,
-                   max_steps=task['T'],
-                   v_path=task['v_path'],
-                   eps_p=task['eps_p'])
+        if best_components and hasattr(policy, 'component_actions'):
+            q_cand = policy.component_actions(st).squeeze(0)
+        else:
+            q_seed, _ = policy.act(st, deterministic=True)
+            q_cand = q_seed
+    best_seed = None
+    best_info = None
+    for q_i in q_cand.reshape(-1, env.ndof):
+        q_seed = q_i.cpu().numpy().astype(np.float32)
+        info = rollout(env.arm, q_seed, c[:3], c[3:6], c[6:9],
+                       mjc=env.mjc,
+                       max_steps=task['T'],
+                       v_path=task['v_path'],
+                       eps_p=task['eps_p'])
+        if best_info is None or info['length'] > best_info['length']:
+            best_seed = q_seed
+            best_info = info
+    q_seed = best_seed
+    info = best_info
     return env, state, task, q_seed, info
 
 
@@ -131,6 +143,8 @@ def main():
                         help='Also randomize rollout params as in training.')
     parser.add_argument('--collision', action='store_true',
                         help='Enable MJCollider during rollout.')
+    parser.add_argument('--best-components', action='store_true',
+                        help='For mixture policies, visualize the best component mean.')
     args = parser.parse_args()
 
     ckpt = args.ckpt or latest_ckpt()
@@ -143,7 +157,7 @@ def main():
     print('seed', seed)
     env, state, task, q_seed, info = sample_rollout(
         ckpt, seed=seed, use_collision=args.collision,
-        randomize=args.randomize)
+        randomize=args.randomize, best_components=args.best_components)
     visualize(env, state, task, q_seed, info, fps=args.fps)
 
 

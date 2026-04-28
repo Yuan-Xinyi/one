@@ -15,8 +15,10 @@ PATH_STEP   = V_PATH * DT           # 0.005 m, kept for backward compat
 DR_ENABLE   = True
 DR_V_PATH   = (0.10, 0.40)          # m/s
 DR_EPS_POS  = (3e-3, 1e-2)          # m
-DR_T        = (20, MAX_STEPS)       # int, inclusive
+DR_T        = (40, MAX_STEPS)       # int, inclusive
 DR_N_TILT   = (0.0, np.deg2rad(60.0))  # widen vs eval (45 deg)
+DR_P0_BOX_LO = np.array([0.30, -0.30, 0.10], dtype=np.float32)
+DR_P0_BOX_HI = np.array([0.60,  0.30, 0.55], dtype=np.float32)
 
 # ---------- Controller (DLS Cartesian) ----------
 KP_LIN      = 5.0                   # position-error feedback gain [1/s]
@@ -34,6 +36,8 @@ USE_COLLISION_CHECK = True
 # ---------- Batched rollout ----------
 BATCHED_ROLLOUT = True              # GPU/torch batch rollout for training
 BATCHED_ROLLOUT_DEVICE = "auto"     # "auto", "cuda", or "cpu"
+BATCHED_COLLISION_CHECK = True      # sphere self-collision in batched rollout
+BATCHED_COLLISION_MARGIN = 0.0
 BATCHED_IK_MAX_ITERS = 50
 BATCHED_IK_DAMPING   = 1e-4
 BATCHED_IK_TOL_POS   = 1e-4
@@ -51,6 +55,8 @@ RAW_C_DIM    = 9                    # [p0, d, n] portion
 TASK_PARAM_DIM = 3                  # v_path, eps_p, T_norm
 FK_AUG_DIM   = 2                    # dist_home_p0, angle_z_home_n
 HIDDEN_DIM   = 256
+POLICY_TYPE  = "mixture"            # "gaussian" or "mixture"
+MIXTURE_COMPONENTS = 8
 LOG_STD_INIT = -1.0                 # ~ exp(-1)=0.37 rad
 LOG_STD_MIN  = -5.0
 LOG_STD_MAX  = 1.0
@@ -66,17 +72,17 @@ MINIBATCH     = 32
 LR_PI       = 3e-4
 LR_V        = 1e-3
 BATCH_SIZE  = 64
-N_ITERS     = 1000
+N_ITERS     = 3000
 GRAD_CLIP   = 1.0
 SEED        = 0
 
 # ---------- Entropy annealing ----------
-ENT_COEF        = 1e-3                  # legacy (used if no annealing)
-ENT_COEF_INIT   = 5e-2                  # exploration-heavy at start
-ENT_COEF_FINAL  = 1e-3
-ENT_ANNEAL_END  = 600                   # iter at which decay finishes
+ENT_COEF        = 3e-4                  # legacy (used if no annealing)
+ENT_COEF_INIT   = 2e-2                  # exploration-heavy at start
+ENT_COEF_FINAL  = 3e-4
+ENT_ANNEAL_END  = 1500                  # iter at which decay finishes
 
 # ---------- Logging ----------
 LOG_EVERY   = 10
 CKPT_EVERY  = 100
-CKPT_DIR    = "Yuan/RL/checkpoints"
+CKPT_DIR    = "Yuan/RL/checkpoints_v5_mixture"

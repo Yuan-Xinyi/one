@@ -116,10 +116,13 @@ class FarsightedSeedEnv:
         # bound; we want tilt itself drawn within [0, tilt_max]
         c = sample_raw_c(rng, n_tilt_max=tilt_max)
 
-        # override p0 box if requested (OOD)
+        # override p0 box if requested (OOD), otherwise widen it for training DR
         if self.p0_box is not None:
             lo, hi = self.p0_box
             c[:3] = rng.uniform(lo, hi).astype(np.float32)
+        elif self.randomize:
+            c[:3] = rng.uniform(cfg.DR_P0_BOX_LO,
+                                cfg.DR_P0_BOX_HI).astype(np.float32)
 
         # task params
         if self.randomize:

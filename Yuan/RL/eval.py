@@ -11,9 +11,9 @@ import numpy as np
 import torch
 
 import Yuan.RL.config as cfg
-from Yuan.RL.env import FarsightedSeedEnv, sample_context
+from Yuan.RL.env import FarsightedSeedEnv
 from Yuan.RL.rollout import rollout, build_target_rotmat
-from Yuan.RL.policy import GaussianPolicy
+from Yuan.RL.policy import make_policy
 
 
 def latest_ckpt() -> str | None:
@@ -22,18 +22,20 @@ def latest_ckpt() -> str | None:
 
 
 def load_policy(ckpt_path: str, env: FarsightedSeedEnv, device: torch.device
-                ) -> GaussianPolicy:
+                ):
     q_mid  = torch.as_tensor(env.q_mid,  dtype=torch.float32, device=device)
     q_half = torch.as_tensor(env.q_half, dtype=torch.float32, device=device)
-    policy = GaussianPolicy(cfg.STATE_DIM, env.ndof, q_mid, q_half).to(device)
-    policy.load_state_dict(
-        torch.load(ckpt_path, map_location=device, weights_only=False)["policy"])
+    state = torch.load(ckpt_path, map_location=device, weights_only=False)
+    policy = make_policy(cfg.STATE_DIM, env.ndof, q_mid, q_half,
+                         policy_type=state.get("policy_type", "gaussian")).to(device)
+    policy.load_state_dict(state["policy"])
     policy.eval()
     return policy
 
 
-def evaluate(policy: GaussianPolicy, env: FarsightedSeedEnv,
-             n_contexts: int = 256, deterministic: bool = True) -> dict:
+def evaluate(policy, env: FarsightedSeedEnv,
+             n_contexts: int = 256, deterministic: bool = True,
+             best_components: bool = False) -> dict:
     device = next(policy.parameters()).device
     lengths = np.empty(n_contexts, dtype=np.int32)
     home_lens = np.empty(n_contexts, dtype=np.int32)
@@ -44,10 +46,17 @@ def evaluate(policy: GaussianPolicy, env: FarsightedSeedEnv,
         task = env._cur                                  # full task dict
         st = torch.as_tensor(s[None], dtype=torch.float32, device=device)
         with torch.no_grad():
-            a, _ = policy.act(st, deterministic=deterministic)
-        a_np = a.squeeze(0).cpu().numpy().astype(np.float32)
-        _, _, _, info = env.step(a_np)
-        lengths[i] = info["length"]
+            if best_components and hasattr(policy, "component_actions"):
+                cand = policy.component_actions(st).squeeze(0)
+            else:
+                a, _ = policy.act(st, deterministic=deterministic)
+                cand = a
+        best = -1
+        for a_i in cand.reshape(-1, env.ndof):
+            env._cur = task
+            _, _, _, info = env.step(a_i.cpu().numpy().astype(np.float32))
+            best = max(best, info["length"])
+        lengths[i] = best
         Ts[i] = task["T"]
         # reference: home seed under the same task params (fair)
         c = task["c"]
@@ -90,7 +99,7 @@ def _pick_demo_task(policy, env, max_tries: int = 30, min_gap: int = 20):
     return best[1], best[2], best[3]
 
 
-def visualize(policy: GaussianPolicy, env: FarsightedSeedEnv,
+def visualize(policy, env: FarsightedSeedEnv,
               animate: bool = True):
     import builtins, time
     import one.viewer.world as ovw
@@ -148,6 +157,7 @@ def main():
     ap.add_argument("--ckpt", type=str, default=None)
     ap.add_argument("--viz", action="store_true")
     ap.add_argument("--n", type=int, default=256)
+    ap.add_argument("--best-components", action="store_true")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -161,7 +171,8 @@ def main():
     if args.viz:
         visualize(policy, env)
     else:
-        out = evaluate(policy, env, n_contexts=args.n)
+        out = evaluate(policy, env, n_contexts=args.n,
+                       best_components=args.best_components)
         print(f"policy: mean_len={out['policy_mean']:.2f}  "
               f"succ={out['policy_succ']:.2f}")
         print(f"home  : mean_len={out['home_mean']:.2f}  "

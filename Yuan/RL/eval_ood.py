@@ -15,7 +15,7 @@ import torch
 import Yuan.RL.config as cfg
 from Yuan.RL.env import FarsightedSeedEnv
 from Yuan.RL.rollout import rollout
-from Yuan.RL.policy import GaussianPolicy
+from Yuan.RL.policy import make_policy
 
 
 # ---------------- splits ----------------
@@ -53,12 +53,13 @@ def latest_ckpt() -> str | None:
 
 
 def load_policy(path: str, env: FarsightedSeedEnv,
-                device: torch.device) -> GaussianPolicy:
+                device: torch.device):
     qmid  = torch.as_tensor(env.q_mid,  dtype=torch.float32, device=device)
     qhalf = torch.as_tensor(env.q_half, dtype=torch.float32, device=device)
-    pi = GaussianPolicy(cfg.STATE_DIM, env.ndof, qmid, qhalf).to(device)
-    pi.load_state_dict(
-        torch.load(path, map_location=device, weights_only=False)["policy"])
+    state = torch.load(path, map_location=device, weights_only=False)
+    pi = make_policy(cfg.STATE_DIM, env.ndof, qmid, qhalf,
+                     policy_type=state.get("policy_type", "gaussian")).to(device)
+    pi.load_state_dict(state["policy"])
     pi.eval()
     return pi
 
@@ -66,7 +67,8 @@ def load_policy(path: str, env: FarsightedSeedEnv,
 # ---------------- per-split eval ----------------
 def eval_split(policy, env: FarsightedSeedEnv, n: int,
                oracle_k: int, device: torch.device,
-               rng_for_oracle: np.random.Generator):
+               rng_for_oracle: np.random.Generator,
+               best_components: bool = False):
     home = env.arm.home_qs.astype(np.float32)
     pol_lens  = np.empty(n, dtype=np.int32)
     home_lens = np.empty(n, dtype=np.int32)
@@ -81,12 +83,19 @@ def eval_split(policy, env: FarsightedSeedEnv, n: int,
         # policy
         st = torch.as_tensor(s[None], dtype=torch.float32, device=device)
         with torch.no_grad():
-            a, _ = policy.act(st, deterministic=True)
-        a_np = a.squeeze(0).cpu().numpy().astype(np.float32)
-        info_p = rollout(env.arm, a_np, c[:3], c[3:6], c[6:9],
-                         mjc=env.mjc, max_steps=T,
-                         v_path=task["v_path"], eps_p=task["eps_p"])
-        pol_lens[i] = info_p["length"]
+            if best_components and hasattr(policy, "component_actions"):
+                cand = policy.component_actions(st).squeeze(0)
+            else:
+                a, _ = policy.act(st, deterministic=True)
+                cand = a
+        best_pol = -1
+        for a_i in cand.reshape(-1, env.ndof):
+            a_np = a_i.cpu().numpy().astype(np.float32)
+            info_p = rollout(env.arm, a_np, c[:3], c[3:6], c[6:9],
+                             mjc=env.mjc, max_steps=T,
+                             v_path=task["v_path"], eps_p=task["eps_p"])
+            best_pol = max(best_pol, info_p["length"])
+        pol_lens[i] = best_pol
         # home
         info_h = rollout(env.arm, home, c[:3], c[3:6], c[6:9],
                          mjc=env.mjc, max_steps=T,
@@ -127,6 +136,8 @@ def main():
     ap.add_argument("--ckpt", type=str, default=None)
     ap.add_argument("--n", type=int, default=256)
     ap.add_argument("--oracle-k", type=int, default=16)
+    ap.add_argument("--best-components", action="store_true",
+                    help="For mixture policies, rollout all component means and keep the best.")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -150,7 +161,8 @@ def main():
             env = first_env
         else:
             env = FarsightedSeedEnv(**kwargs)
-        out = eval_split(policy, env, args.n, args.oracle_k, device, rng_orc)
+        out = eval_split(policy, env, args.n, args.oracle_k, device, rng_orc,
+                         best_components=args.best_components)
         results[name] = out
         po = out["policy"]; ho = out["home"]; oc = out["oracle"]
         print(f"\n[{name:12s}]  n={out['n']}")

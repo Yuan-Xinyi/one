@@ -92,6 +92,19 @@ class BatchedFR3Kinematics:
                for rot, pos in specs]
         return torch.stack(tfs, dim=0)
 
+    def link_transforms(self, q: torch.Tensor) -> torch.Tensor:
+        """Return world transforms for link0..link7, shaped ``(B,8,4,4)``."""
+        q = q.to(device=self.device, dtype=self.dtype)
+        b = q.shape[0]
+        T = torch.eye(4, device=self.device, dtype=self.dtype).expand(
+            b, 4, 4).clone()
+        links = [T.clone()]
+        for i in range(7):
+            T_j = T @ self.zero_tfs[i].expand(b, 4, 4)
+            T = T_j @ _motion_z_batch(q[:, i])
+            links.append(T.clone())
+        return torch.stack(links, dim=1)
+
     def fk_jac(self, q: torch.Tensor, local_point: torch.Tensor | None = None):
         """Return ``(p_tcp, R_last, J, T_last)`` for ``q`` shaped ``(B,7)``."""
         q = q.to(device=self.device, dtype=self.dtype)

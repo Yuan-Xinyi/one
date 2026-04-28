@@ -36,6 +36,13 @@ def _normalize(v: torch.Tensor) -> torch.Tensor:
     return v / v.norm(dim=-1, keepdim=True).clamp_min(1e-12)
 
 
+def _normalize_angle_pair(pair: torch.Tensor) -> torch.Tensor:
+    norm = pair.norm(dim=-1, keepdim=True)
+    default = torch.zeros_like(pair)
+    default[:, 0] = 1.0
+    return torch.where(norm > 1e-6, pair / norm.clamp_min(1e-12), default)
+
+
 def build_target_rotmat_batch(d: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
     z = _normalize(n)
     x = d - z * (d * z).sum(dim=-1, keepdim=True)
@@ -44,21 +51,164 @@ def build_target_rotmat_batch(d: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
     return torch.stack([x, y, z], dim=-1)
 
 
+def build_branch_rotmat_batch(d: torch.Tensor, n: torch.Tensor,
+                              branch_action: torch.Tensor) -> torch.Tensor:
+    """Build full TCP rotation from path frame plus tool-roll descriptor psi."""
+    R0 = build_target_rotmat_batch(d, n)
+    psi_vec = _normalize_angle_pair(branch_action[:, 2:4])
+    cpsi = psi_vec[:, 0:1]
+    spsi = psi_vec[:, 1:2]
+    x0 = R0[:, :, 0]
+    y0 = R0[:, :, 1]
+    z = R0[:, :, 2]
+    x = _normalize(cpsi * x0 + spsi * y0)
+    y = torch.cross(z, x, dim=-1)
+    return torch.stack([x, y, z], dim=-1)
+
+
+def _z_axis_error_from_rotmats(R_cur: torch.Tensor,
+                               R_tgt: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    z_cur = R_cur[:, :, 2]
+    z_tgt = R_tgt[:, :, 2]
+    cross = torch.cross(z_cur, z_tgt, dim=-1)
+    cos_th = (z_cur * z_tgt).sum(dim=-1).clamp(-1.0, 1.0)
+    theta = torch.acos(cos_th)
+    sin_th = cross.norm(dim=-1)
+    ref_x = torch.tensor([1.0, 0.0, 0.0], device=R_cur.device, dtype=R_cur.dtype)
+    ref_y = torch.tensor([0.0, 1.0, 0.0], device=R_cur.device, dtype=R_cur.dtype)
+    fallback_ref = torch.where((z_cur * ref_x.view(1, 3)).abs().sum(dim=-1, keepdim=True) < 0.9,
+                               ref_x.view(1, 3), ref_y.view(1, 3))
+    fallback_axis = _normalize(torch.cross(z_cur, fallback_ref.expand_as(z_cur), dim=-1))
+    axis = torch.where(sin_th.unsqueeze(-1) > 1e-6,
+                       cross / sin_th.clamp_min(1e-12).unsqueeze(-1),
+                       fallback_axis)
+    return axis * theta.unsqueeze(-1), theta
+
+
+def _target_swivel_dir(p0: torch.Tensor, branch_action: torch.Tensor) -> torch.Tensor:
+    """Target elbow direction around the shoulder-target axis."""
+    shoulder = torch.tensor([0.0, 0.0, 0.333], device=p0.device, dtype=p0.dtype)
+    axis = _normalize(p0 - shoulder.view(1, 3))
+    world_z = torch.tensor([0.0, 0.0, 1.0], device=p0.device, dtype=p0.dtype)
+    ref = world_z.view(1, 3).expand_as(axis)
+    ref = ref - axis * (ref * axis).sum(dim=-1, keepdim=True)
+    bad = ref.norm(dim=-1) < 1e-4
+    if bad.any():
+        world_x = torch.tensor([1.0, 0.0, 0.0], device=p0.device, dtype=p0.dtype)
+        ref_alt = world_x.view(1, 3).expand_as(axis)
+        ref_alt = ref_alt - axis * (ref_alt * axis).sum(dim=-1, keepdim=True)
+        ref = torch.where(bad.unsqueeze(-1), ref_alt, ref)
+    ref = _normalize(ref)
+    side = torch.cross(axis, ref, dim=-1)
+    phi_vec = _normalize_angle_pair(branch_action[:, :2])
+    cphi = phi_vec[:, 0:1]
+    sphi = phi_vec[:, 1:2]
+    return _normalize(cphi * ref + sphi * side)
+
+
+def _swivel_cost_from_q(kin: BatchedFR3Kinematics,
+                        q: torch.Tensor,
+                        p0: torch.Tensor,
+                        branch_action: torch.Tensor) -> torch.Tensor:
+    link_tfs = kin.link_transforms(q)
+    shoulder = torch.tensor([0.0, 0.0, 0.333], device=q.device, dtype=q.dtype).view(1, 3)
+    elbow = link_tfs[:, 4, :3, 3]
+    axis = _normalize(p0 - shoulder)
+    cur = elbow - shoulder
+    cur = cur - axis * (cur * axis).sum(dim=-1, keepdim=True)
+    cur = _normalize(cur)
+    tgt = _target_swivel_dir(p0, branch_action)
+    return 1.0 - (cur * tgt).sum(dim=-1).clamp(-1.0, 1.0)
+
+
+def _swivel_grad_fd(kin: BatchedFR3Kinematics,
+                    q: torch.Tensor,
+                    p0: torch.Tensor,
+                    branch_action: torch.Tensor) -> torch.Tensor:
+    eps = float(cfg.BRANCH_FD_EPS)
+    grads = []
+    for j in range(7):
+        dq = torch.zeros_like(q)
+        dq[:, j] = eps
+        cp = _swivel_cost_from_q(kin, (q + dq).clamp(kin.lmt_lo, kin.lmt_up),
+                                 p0, branch_action)
+        cm = _swivel_cost_from_q(kin, (q - dq).clamp(kin.lmt_lo, kin.lmt_up),
+                                 p0, branch_action)
+        grads.append((cp - cm) / (2.0 * eps))
+    return torch.stack(grads, dim=-1)
+
+
+def _branch_seed_bank(kin: BatchedFR3Kinematics) -> torch.Tensor:
+    """Small deterministic set of FR3 postures covering common IK branches."""
+    seeds = torch.tensor([
+        [0.0, -0.785398163, 0.0, -2.35619449, 0.0, 1.57079632679, 0.785398163397],
+        [0.0, -0.4, 0.0, -2.2, 0.0, 1.8, 0.0],
+        [0.0, 0.4, 0.0, -2.2, 0.0, 1.8, 0.0],
+        [1.0, 0.8, 1.0, -2.1, 1.2, 1.0, 0.5],
+        [-1.0, 0.8, -1.0, -2.1, -1.2, 1.0, -0.5],
+        [1.0, 1.2, -1.0, -2.2, 1.5, 1.0, 0.5],
+        [-1.0, 1.2, 1.0, -2.2, -1.5, 1.0, -0.5],
+        [0.0, 1.2, 1.2, -2.0, 1.2, 1.2, 0.0],
+        [0.0, 1.2, -1.2, -2.0, -1.2, 1.2, 0.0],
+    ], device=kin.device, dtype=torch.float32)
+    num = max(1, min(int(cfg.BRANCH_IK_NUM_STARTS), seeds.shape[0]))
+    return seeds[:num].clamp(kin.lmt_lo, kin.lmt_up)
+
+
 def _rotvec_between(R_cur: torch.Tensor, R_tgt: torch.Tensor) -> torch.Tensor:
     R_err = R_tgt @ R_cur.transpose(-1, -2)
     trace = R_err.diagonal(dim1=-2, dim2=-1).sum(-1)
-    cos_th = ((trace - 1.0) * 0.5).clamp(-1.0, 1.0)
-    theta = torch.acos(cos_th)
-    vee = torch.stack([
-        R_err[:, 2, 1] - R_err[:, 1, 2],
-        R_err[:, 0, 2] - R_err[:, 2, 0],
-        R_err[:, 1, 0] - R_err[:, 0, 1],
-    ], dim=-1)
-    sin_th = torch.sin(theta)
-    scale = torch.where(sin_th.abs() > 1e-6,
-                        theta / (2.0 * sin_th.clamp_min(1e-12)),
-                        torch.full_like(theta, 0.5))
-    return vee * scale.unsqueeze(-1)
+    quat = torch.zeros((R_err.shape[0], 4), device=R_err.device, dtype=R_err.dtype)
+    good = trace > 0.0
+    if good.any():
+        s = torch.sqrt(trace[good] + 1.0).clamp_min(1e-12) * 2.0
+        quat[good, 0] = 0.25 * s
+        quat[good, 1] = (R_err[good, 2, 1] - R_err[good, 1, 2]) / s
+        quat[good, 2] = (R_err[good, 0, 2] - R_err[good, 2, 0]) / s
+        quat[good, 3] = (R_err[good, 1, 0] - R_err[good, 0, 1]) / s
+
+    bad = ~good
+    if bad.any():
+        Rb = R_err[bad]
+        idx = torch.argmax(torch.stack([Rb[:, 0, 0], Rb[:, 1, 1], Rb[:, 2, 2]], dim=-1),
+                           dim=-1)
+        qb = torch.zeros((Rb.shape[0], 4), device=R_err.device, dtype=R_err.dtype)
+        m0 = idx == 0
+        if m0.any():
+            s = torch.sqrt(1.0 + Rb[m0, 0, 0] - Rb[m0, 1, 1] - Rb[m0, 2, 2]).clamp_min(1e-12) * 2.0
+            qb[m0, 0] = (Rb[m0, 2, 1] - Rb[m0, 1, 2]) / s
+            qb[m0, 1] = 0.25 * s
+            qb[m0, 2] = (Rb[m0, 0, 1] + Rb[m0, 1, 0]) / s
+            qb[m0, 3] = (Rb[m0, 0, 2] + Rb[m0, 2, 0]) / s
+        m1 = idx == 1
+        if m1.any():
+            s = torch.sqrt(1.0 + Rb[m1, 1, 1] - Rb[m1, 0, 0] - Rb[m1, 2, 2]).clamp_min(1e-12) * 2.0
+            qb[m1, 0] = (Rb[m1, 0, 2] - Rb[m1, 2, 0]) / s
+            qb[m1, 1] = (Rb[m1, 0, 1] + Rb[m1, 1, 0]) / s
+            qb[m1, 2] = 0.25 * s
+            qb[m1, 3] = (Rb[m1, 1, 2] + Rb[m1, 2, 1]) / s
+        m2 = idx == 2
+        if m2.any():
+            s = torch.sqrt(1.0 + Rb[m2, 2, 2] - Rb[m2, 0, 0] - Rb[m2, 1, 1]).clamp_min(1e-12) * 2.0
+            qb[m2, 0] = (Rb[m2, 1, 0] - Rb[m2, 0, 1]) / s
+            qb[m2, 1] = (Rb[m2, 0, 2] + Rb[m2, 2, 0]) / s
+            qb[m2, 2] = (Rb[m2, 1, 2] + Rb[m2, 2, 1]) / s
+            qb[m2, 3] = 0.25 * s
+        quat[bad] = qb
+
+    quat = quat / quat.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+    quat = torch.where(quat[:, :1] < 0.0, -quat, quat)
+    v = quat[:, 1:]
+    v_norm = v.norm(dim=-1)
+    theta = 2.0 * torch.atan2(v_norm, quat[:, 0].clamp_min(1e-12))
+    axis = torch.where(v_norm.unsqueeze(-1) > 1e-8,
+                       v / v_norm.clamp_min(1e-12).unsqueeze(-1),
+                       torch.zeros_like(v))
+    return axis * theta.unsqueeze(-1)
+
+
+def _z_axis_rotvec(R_cur: torch.Tensor, R_tgt: torch.Tensor) -> torch.Tensor:
+    return _z_axis_error_from_rotmats(R_cur, R_tgt)[0]
 
 
 def _dls_pinv(J: torch.Tensor, damping: float) -> torch.Tensor:
@@ -71,10 +221,9 @@ def _dls_pinv(J: torch.Tensor, damping: float) -> torch.Tensor:
 def _batched_ik_project(kin: BatchedFR3Kinematics,
                         q_seed: torch.Tensor,
                         p0: torch.Tensor,
-                        R_tgt: torch.Tensor):
+                        R_tgt: torch.Tensor,
+                        branch_action: torch.Tensor | None = None):
     q = q_seed.clamp(kin.lmt_lo, kin.lmt_up)
-    prev_err = torch.full((q.shape[0],), float('inf'),
-                          device=q.device, dtype=q.dtype)
     active = torch.ones((q.shape[0],), device=q.device, dtype=torch.bool)
     converged = torch.zeros_like(active)
     fail_reason = np.array(['init_ik_fail'] * q.shape[0], dtype=object)
@@ -82,13 +231,16 @@ def _batched_ik_project(kin: BatchedFR3Kinematics,
     for _ in range(cfg.BATCHED_IK_MAX_ITERS):
         p_tcp, R_tcp, J, _ = kin.tcp_fk_jac(q)
         delta_p = p0 - p_tcp
-        delta_theta = _rotvec_between(R_tcp, R_tgt)
+        if branch_action is None and cfg.INIT_IK_ORIENT_MODE == "z_axis":
+            delta_theta = _z_axis_rotvec(R_tcp, R_tgt)
+        else:
+            delta_theta = _rotvec_between(R_tcp, R_tgt)
         pos_err = delta_p.norm(dim=-1)
         rot_err = delta_theta.norm(dim=-1)
         in_limits = ((q >= kin.lmt_lo - 1e-5)
                      & (q <= kin.lmt_up + 1e-5)).all(dim=-1)
-        now_conv = ((pos_err <= cfg.BATCHED_IK_TOL_POS)
-                    & (rot_err <= cfg.BATCHED_IK_TOL_ROT)
+        now_conv = ((pos_err <= float(cfg.EPS_POS_INIT))
+                    & (rot_err <= float(cfg.THETA_MAX))
                     & in_limits)
         newly = active & now_conv
         if newly.any():
@@ -96,15 +248,6 @@ def _batched_ik_project(kin: BatchedFR3Kinematics,
             active &= ~newly
         if not active.any():
             break
-
-        err = torch.cat([delta_p, delta_theta], dim=-1)
-        err_norm = err.norm(dim=-1)
-        increased = active & (err_norm > prev_err)
-        if increased.any():
-            active &= ~increased
-        if not active.any():
-            break
-        prev_err = torch.where(active, err_norm, prev_err)
 
         # Match the serial solver's trust-region style.
         pos_scale = torch.where(pos_err > 0.1, 0.1 / pos_err.clamp_min(1e-12),
@@ -119,23 +262,68 @@ def _batched_ik_project(kin: BatchedFR3Kinematics,
         delta_q = (Jpinv @ delta_x.unsqueeze(-1)).squeeze(-1)
         N = torch.eye(7, device=q.device, dtype=q.dtype).expand(q.shape[0], 7, 7)
         N = N - Jpinv @ J
-        delta_q_secondary = 0.2 * (kin.q_mid - q)
+        if branch_action is None:
+            delta_q_secondary = 0.2 * (kin.q_mid - q)
+        else:
+            grad_cost = _swivel_grad_fd(kin, q, p0, branch_action)
+            branch_gain = torch.where(
+                (pos_err < 0.05) & (rot_err < 0.30),
+                torch.full_like(pos_err, float(cfg.BRANCH_SWIVEL_GAIN)),
+                torch.zeros_like(pos_err),
+            )
+            delta_q_secondary = -branch_gain.unsqueeze(-1) * grad_cost
         delta_q = delta_q + (N @ delta_q_secondary.unsqueeze(-1)).squeeze(-1)
-        q = torch.where(active.unsqueeze(-1), q + delta_q, q)
+        q_next = (q + delta_q).clamp(kin.lmt_lo, kin.lmt_up)
+        q = torch.where(active.unsqueeze(-1), q_next, q)
 
     if active.any():
         p_tcp, R_tcp, _, _ = kin.tcp_fk_jac(q)
         pos_err = (p0 - p_tcp).norm(dim=-1)
-        rot_err = _rotvec_between(R_tcp, R_tgt).norm(dim=-1)
+        if branch_action is None and cfg.INIT_IK_ORIENT_MODE == "z_axis":
+            rot_err = _z_axis_rotvec(R_tcp, R_tgt).norm(dim=-1)
+        else:
+            rot_err = _rotvec_between(R_tcp, R_tgt).norm(dim=-1)
         in_limits = ((q >= kin.lmt_lo - 1e-5)
                      & (q <= kin.lmt_up + 1e-5)).all(dim=-1)
-        now_conv = ((pos_err <= cfg.BATCHED_IK_TOL_POS)
-                    & (rot_err <= cfg.BATCHED_IK_TOL_ROT)
+        now_conv = ((pos_err <= float(cfg.EPS_POS_INIT))
+                    & (rot_err <= float(cfg.THETA_MAX))
                     & in_limits)
         converged |= active & now_conv
 
     fail_reason[converged.detach().cpu().numpy()] = 'ik_ok'
     return q.clamp(kin.lmt_lo, kin.lmt_up), converged, fail_reason
+
+
+def branch_project_multistart(kin: BatchedFR3Kinematics,
+                              p0: torch.Tensor,
+                              R_tgt: torch.Tensor,
+                              branch_action: torch.Tensor):
+    """Project branch descriptors with deterministic multi-start IK."""
+    batch_size = branch_action.shape[0]
+    seed_bank = _branch_seed_bank(kin)
+    num_starts = seed_bank.shape[0]
+    q_seed = seed_bank.view(1, num_starts, 7).expand(batch_size, num_starts, 7)
+    q_seed = q_seed.reshape(batch_size * num_starts, 7).clone()
+    p_rep = p0[:, None, :].expand(batch_size, num_starts, 3).reshape(-1, 3)
+    R_rep = R_tgt[:, None, :, :].expand(batch_size, num_starts, 3, 3).reshape(-1, 3, 3)
+    a_rep = branch_action[:, None, :].expand(batch_size, num_starts, 4).reshape(-1, 4)
+
+    q_all, ok_all, _ = _batched_ik_project(kin, q_seed, p_rep, R_rep,
+                                           branch_action=a_rep)
+    p_tcp, R_tcp, _, _ = kin.tcp_fk_jac(q_all)
+    pos_err = (p_rep - p_tcp).norm(dim=-1)
+    rot_err = _rotvec_between(R_tcp, R_rep).norm(dim=-1)
+    swivel_cost = _swivel_cost_from_q(kin, q_all, p_rep, a_rep)
+    score = pos_err + rot_err + 0.05 * swivel_cost
+    score = torch.where(ok_all, score, torch.full_like(score, float('inf')))
+    score = score.view(batch_size, num_starts)
+    best_idx = score.argmin(dim=-1)
+    ik_ok = torch.isfinite(score.gather(1, best_idx.view(-1, 1)).squeeze(1))
+    q_all = q_all.view(batch_size, num_starts, 7)
+    q_best = q_all[torch.arange(batch_size, device=kin.device), best_idx]
+    reasons = np.array(['init_ik_fail'] * batch_size, dtype=object)
+    reasons[ik_ok.detach().cpu().numpy()] = 'ik_ok'
+    return q_best, ik_ok, reasons
 
 
 def batched_rollout(q_seed_np: np.ndarray,
@@ -160,7 +348,7 @@ def batched_rollout(q_seed_np: np.ndarray,
                                margin=cfg.BATCHED_COLLISION_MARGIN)
     else:
         sphere_cc = None
-    q_seed = torch.as_tensor(q_seed_np, device=device, dtype=torch.float32)
+    action = torch.as_tensor(q_seed_np, device=device, dtype=torch.float32)
     c = torch.as_tensor(c_np, device=device, dtype=torch.float32)
     v_path = torch.as_tensor(v_path_np, device=device, dtype=torch.float32)
     eps_p = torch.as_tensor(eps_p_np, device=device, dtype=torch.float32)
@@ -169,9 +357,23 @@ def batched_rollout(q_seed_np: np.ndarray,
     p0 = c[:, :3]
     d = c[:, 3:6]
     n = c[:, 6:9]
-    R_tgt = build_target_rotmat_batch(d, n)
+    if cfg.ACTION_MODE == "branch_descriptor":
+        branch_action = action
+        R_tgt = build_branch_rotmat_batch(d, n, branch_action)
+        q_seed = _branch_seed_bank(kin)[0].view(1, 7).expand(action.shape[0], 7).clone()
+    else:
+        branch_action = None
+        R_tgt = build_target_rotmat_batch(d, n)
+        q_seed = action.clamp(kin.lmt_lo, kin.lmt_up)
+    seed_p, seed_R, _, _ = kin.tcp_fk_jac(q_seed)
+    seed_pos_err = (p0 - seed_p).norm(dim=-1)
+    seed_orient_err = _z_axis_rotvec(seed_R, R_tgt).norm(dim=-1)
 
-    q, ik_ok, reasons = _batched_ik_project(kin, q_seed, p0, R_tgt)
+    if cfg.ACTION_MODE == "branch_descriptor":
+        q, ik_ok, reasons = branch_project_multistart(kin, p0, R_tgt, branch_action)
+    else:
+        q, ik_ok, reasons = _batched_ik_project(kin, q_seed, p0, R_tgt,
+                                                branch_action=branch_action)
     lengths = torch.zeros((q.shape[0],), device=device, dtype=torch.long)
     alive = ik_ok.clone()
     q_ref = q.clone()
@@ -193,16 +395,8 @@ def batched_rollout(q_seed_np: np.ndarray,
         p_ref = p0 + (step * dt) * v_path.unsqueeze(-1) * d
         p_dot_ff = v_path.unsqueeze(-1) * d
         p_tcp, R_tcp, J, _ = kin.tcp_fk_jac(q)
-        z_cur = R_tcp[:, :, 2]
         z_tgt = R_tgt[:, :, 2]
-        cross = torch.cross(z_cur, z_tgt, dim=-1)
-        cos_th = (z_cur * z_tgt).sum(dim=-1).clamp(-1.0, 1.0)
-        theta = torch.acos(cos_th)
-        sin_th = cross.norm(dim=-1)
-        axis = torch.where(sin_th.unsqueeze(-1) > 1e-6,
-                           cross / sin_th.clamp_min(1e-12).unsqueeze(-1),
-                           torch.zeros_like(cross))
-        omega_err = axis * theta.unsqueeze(-1)
+        omega_err, theta = _z_axis_error_from_rotmats(R_tcp, R_tgt)
         x_dot = torch.cat([
             p_dot_ff + float(cfg.KP_LIN) * (p_ref - p_tcp),
             float(cfg.KOMEGA) * omega_err,
@@ -255,4 +449,6 @@ def batched_rollout(q_seed_np: np.ndarray,
         'reasons': reasons.tolist(),
         'pos_err': last_pos_err.detach().cpu().numpy(),
         'orient_err': last_orient_err.detach().cpu().numpy(),
+        'seed_pos_err': seed_pos_err.detach().cpu().numpy(),
+        'seed_orient_err': seed_orient_err.detach().cpu().numpy(),
     }

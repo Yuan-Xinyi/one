@@ -1,5 +1,10 @@
 import numpy as np
+import os
 
+import pyglet
+pyglet.options['shadow_window'] = False
+if (not os.environ.get('DISPLAY')) and (not os.environ.get('WAYLAND_DISPLAY')):
+    pyglet.options['headless'] = True
 import pyglet.window.key as key
 
 import one.utils.math as oum

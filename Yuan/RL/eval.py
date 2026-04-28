@@ -23,10 +23,10 @@ def latest_ckpt() -> str | None:
 
 def load_policy(ckpt_path: str, env: FarsightedSeedEnv, device: torch.device
                 ):
-    q_mid  = torch.as_tensor(env.q_mid,  dtype=torch.float32, device=device)
-    q_half = torch.as_tensor(env.q_half, dtype=torch.float32, device=device)
+    q_mid  = torch.as_tensor(env.action_mid,  dtype=torch.float32, device=device)
+    q_half = torch.as_tensor(env.action_half, dtype=torch.float32, device=device)
     state = torch.load(ckpt_path, map_location=device, weights_only=False)
-    policy = make_policy(cfg.STATE_DIM, env.ndof, q_mid, q_half,
+    policy = make_policy(cfg.STATE_DIM, env.action_dim, q_mid, q_half,
                          policy_type=state.get("policy_type", "gaussian")).to(device)
     policy.load_state_dict(state["policy"])
     policy.eval()
@@ -52,7 +52,7 @@ def evaluate(policy, env: FarsightedSeedEnv,
                 a, _ = policy.act(st, deterministic=deterministic)
                 cand = a
         best = -1
-        for a_i in cand.reshape(-1, env.ndof):
+        for a_i in cand.reshape(-1, env.action_dim):
             env._cur = task
             _, _, _, info = env.step(a_i.cpu().numpy().astype(np.float32))
             best = max(best, info["length"])
@@ -62,7 +62,8 @@ def evaluate(policy, env: FarsightedSeedEnv,
         c = task["c"]
         info_h = rollout(env.arm, home, c[:3], c[3:6], c[6:9],
                          mjc=env.mjc, max_steps=task["T"],
-                         v_path=task["v_path"], eps_p=task["eps_p"])
+                         v_path=task["v_path"], eps_p=task["eps_p"],
+                         action_mode="joint_seed")
         home_lens[i] = info_h["length"]
     return {"policy_mean_len": float(lengths.mean()),
             "policy_succ":     float((lengths >= Ts).mean()),
@@ -90,7 +91,8 @@ def _pick_demo_task(policy, env, max_tries: int = 30, min_gap: int = 20):
             a, _ = policy.act(st, deterministic=True)
         a_np = a.squeeze(0).cpu().numpy().astype(np.float32)
         info_pi = rollout(env.arm, a_np, p0, d, n, mjc=env.mjc)
-        info_h  = rollout(env.arm, home, p0, d, n, mjc=env.mjc)
+        info_h  = rollout(env.arm, home, p0, d, n, mjc=env.mjc,
+                          action_mode="joint_seed")
         gap = info_pi["length"] - info_h["length"]
         if best is None or gap > best[0]:
             best = (gap, s, info_pi, info_h)
@@ -173,9 +175,9 @@ def main():
     else:
         out = evaluate(policy, env, n_contexts=args.n,
                        best_components=args.best_components)
-        print(f"policy: mean_len={out['policy_mean']:.2f}  "
+        print(f"policy: mean_len={out['policy_mean_len']:.2f}  "
               f"succ={out['policy_succ']:.2f}")
-        print(f"home  : mean_len={out['home_mean']:.2f}  "
+        print(f"home  : mean_len={out['home_mean_len']:.2f}  "
               f"succ={out['home_succ']:.2f}")
 
 

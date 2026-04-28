@@ -54,10 +54,10 @@ def latest_ckpt() -> str | None:
 
 def load_policy(path: str, env: FarsightedSeedEnv,
                 device: torch.device):
-    qmid  = torch.as_tensor(env.q_mid,  dtype=torch.float32, device=device)
-    qhalf = torch.as_tensor(env.q_half, dtype=torch.float32, device=device)
+    qmid  = torch.as_tensor(env.action_mid,  dtype=torch.float32, device=device)
+    qhalf = torch.as_tensor(env.action_half, dtype=torch.float32, device=device)
     state = torch.load(path, map_location=device, weights_only=False)
-    pi = make_policy(cfg.STATE_DIM, env.ndof, qmid, qhalf,
+    pi = make_policy(cfg.STATE_DIM, env.action_dim, qmid, qhalf,
                      policy_type=state.get("policy_type", "gaussian")).to(device)
     pi.load_state_dict(state["policy"])
     pi.eval()
@@ -89,7 +89,7 @@ def eval_split(policy, env: FarsightedSeedEnv, n: int,
                 a, _ = policy.act(st, deterministic=True)
                 cand = a
         best_pol = -1
-        for a_i in cand.reshape(-1, env.ndof):
+        for a_i in cand.reshape(-1, env.action_dim):
             a_np = a_i.cpu().numpy().astype(np.float32)
             info_p = rollout(env.arm, a_np, c[:3], c[3:6], c[6:9],
                              mjc=env.mjc, max_steps=T,
@@ -99,7 +99,8 @@ def eval_split(policy, env: FarsightedSeedEnv, n: int,
         # home
         info_h = rollout(env.arm, home, c[:3], c[3:6], c[6:9],
                          mjc=env.mjc, max_steps=T,
-                         v_path=task["v_path"], eps_p=task["eps_p"])
+                         v_path=task["v_path"], eps_p=task["eps_p"],
+                         action_mode="joint_seed")
         home_lens[i] = info_h["length"]
         # oracle: best of K random + home
         best = info_h["length"]
@@ -109,7 +110,8 @@ def eval_split(policy, env: FarsightedSeedEnv, n: int,
                                            env.lmt_up).astype(np.float32)
                 L = rollout(env.arm, q, c[:3], c[3:6], c[6:9],
                             mjc=env.mjc, max_steps=T,
-                            v_path=task["v_path"], eps_p=task["eps_p"])["length"]
+                            v_path=task["v_path"], eps_p=task["eps_p"],
+                            action_mode="joint_seed")["length"]
                 if L > best:
                     best = L
         orc_lens[i] = best

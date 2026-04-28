@@ -1,10 +1,10 @@
-"""Tanh-squashed Gaussian policy (state -> q_seed) and a value baseline.
+"""Tanh-squashed Gaussian policy and a value baseline.
 
 Action mapping
 --------------
-Network outputs (mu, log_std) for a pre-squash variable u in R^ndof.
+Network outputs (mu, log_std) for a pre-squash variable u in R^action_dim.
     u    ~ N(mu, sigma)
-    a    = q_mid + tanh(u) * q_half               (-> q in [lmt_lo, lmt_up])
+    a    = q_mid + tanh(u) * q_half
 
 log_prob compensates for the tanh + linear scaling:
     log p(a) = log N(u; mu, sigma)

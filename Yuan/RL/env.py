@@ -6,7 +6,8 @@ State (R^14):
           ||p0 - FK_pos(home)||,                 # FK-augmented features
           arccos(z_home . n) ]
 
-Action: a = q_seed in R^ndof
+Action: a = [cos(phi), sin(phi), cos(psi), sin(psi)] in branch mode,
+        or q_seed in R^ndof in legacy joint-seed mode.
 Reward: r = rollout_length / T  in [0, 1]      (per-task T, not a global T)
 Done:   always True (one-step contextual bandit)
 """
@@ -15,6 +16,8 @@ import numpy as np
 
 import Yuan.RL.config as cfg
 from Yuan.RL.rollout import rollout
+from Yuan.RL.controller import DLSController
+from Yuan.RL.rollout import build_target_rotmat
 
 
 # ----------------- helpers -----------------
@@ -24,7 +27,8 @@ def _sample_unit_vec(rng: np.random.Generator) -> np.ndarray:
 
 
 def sample_raw_c(rng: np.random.Generator,
-                 n_tilt_max: float | None = None) -> np.ndarray:
+                 n_tilt_max: float | None = None,
+                 p0_box: tuple[np.ndarray, np.ndarray] | None = None) -> np.ndarray:
     """Sample c = [p0, d, n] in R^9. n_tilt_max defaults to cfg.N_TILT_MAX
     (eval) but can be overridden for OOD splits."""
     if n_tilt_max is None:
@@ -41,7 +45,11 @@ def sample_raw_c(rng: np.random.Generator,
         if nrm > 1e-3:
             d = (d / nrm).astype(np.float32)
             break
-    p0 = rng.uniform(cfg.P0_BOX_LO, cfg.P0_BOX_HI).astype(np.float32)
+    if p0_box is None:
+        p0 = rng.uniform(cfg.P0_BOX_LO, cfg.P0_BOX_HI).astype(np.float32)
+    else:
+        lo, hi = p0_box
+        p0 = rng.uniform(lo, hi).astype(np.float32)
     return np.concatenate([p0, d, n]).astype(np.float32)
 
 
@@ -52,6 +60,13 @@ def _build_mjcollider(arm):
     mjc.actors = [arm]
     mjc.compile(margin=0.0)
     return mjc
+
+
+def _seed_manifold_penalty(seed_pos_err: np.ndarray,
+                           seed_orient_err: np.ndarray) -> np.ndarray:
+    pos_term = np.minimum(seed_pos_err / float(cfg.SEED_POS_ERR_SCALE), 1.0)
+    orient_term = np.minimum(seed_orient_err / float(cfg.SEED_ORIENT_ERR_SCALE), 1.0)
+    return float(cfg.SEED_MANIFOLD_COEF) * 0.5 * (pos_term + orient_term)
 
 
 # ----------------- env -----------------
@@ -88,10 +103,20 @@ class FarsightedSeedEnv:
         self.lmt_up = np.asarray(arm._chain.lmt_up, dtype=np.float32)
         self.q_mid  = 0.5 * (self.lmt_lo + self.lmt_up)
         self.q_half = 0.5 * (self.lmt_up - self.lmt_lo)
+        if cfg.ACTION_MODE == "branch_descriptor":
+            self.action_dim = int(cfg.BRANCH_ACTION_DIM)
+            self.action_mid = np.zeros(self.action_dim, dtype=np.float32)
+            self.action_half = np.ones(self.action_dim, dtype=np.float32)
+        else:
+            self.action_dim = self.ndof
+            self.action_mid = self.q_mid.copy()
+            self.action_half = self.q_half.copy()
         self.randomize = bool(randomize)
         self.n_tilt_range = n_tilt_range          # if None: use defaults
         self.p0_box = p0_box                      # if None: use defaults
         self._cur: dict | None = None
+        self._reach_kin = None
+        self._reach_actions = None
         self.mjc = _build_mjcollider(arm) if use_collision else None
         # cache home FK (TCP pose at home_qs)
         arm.fk(arm.home_qs)
@@ -102,10 +127,76 @@ class FarsightedSeedEnv:
         self.p_home = p_home.astype(np.float32)
         self.z_home = R_home[:, 2].astype(np.float32)
 
-    # ----- task / state sampling -----
-    def _sample_task(self) -> dict:
+    def _training_p0_box(self):
+        if self.p0_box is not None:
+            return self.p0_box
+        if self.randomize:
+            return cfg.DR_P0_BOX_LO, cfg.DR_P0_BOX_HI
+        return cfg.P0_BOX_LO, cfg.P0_BOX_HI
+
+    def _sample_p0_in_shell(self, rng: np.random.Generator) -> np.ndarray:
+        lo, hi = self._training_p0_box()
+        r_min, r_max = cfg.DR_P0_RADIUS if self.randomize else (0.0, float('inf'))
+        for _ in range(200):
+            p0 = rng.uniform(lo, hi).astype(np.float32)
+            radius = float(np.linalg.norm(p0))
+            if r_min <= radius <= r_max:
+                return p0
+        return rng.uniform(lo, hi).astype(np.float32)
+
+    def _branch_reach_actions(self):
+        if self._reach_actions is not None:
+            return self._reach_actions
+        phi_vals = np.linspace(0.0, 2.0 * np.pi,
+                               int(cfg.DR_REACHABILITY_PHI_SAMPLES),
+                               endpoint=False)
+        psi_vals = np.linspace(0.0, 2.0 * np.pi,
+                               int(cfg.DR_REACHABILITY_PSI_SAMPLES),
+                               endpoint=False)
+        actions = []
+        for phi in phi_vals:
+            for psi in psi_vals:
+                actions.append([np.cos(phi), np.sin(phi),
+                                np.cos(psi), np.sin(psi)])
+        self._reach_actions = np.asarray(actions, dtype=np.float32)
+        return self._reach_actions
+
+    def _reachability_device(self):
+        import torch
+        if cfg.BATCHED_ROLLOUT_DEVICE == 'auto':
+            return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        return torch.device(cfg.BATCHED_ROLLOUT_DEVICE)
+
+    def _reachable_mask(self, c_batch: np.ndarray) -> np.ndarray:
+        if cfg.ACTION_MODE != "branch_descriptor":
+            return np.ones(c_batch.shape[0], dtype=bool)
+        import torch
+        from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
+        from Yuan.RL.batched_rollout import (
+            build_branch_rotmat_batch,
+            branch_project_multistart,
+        )
+        if self._reach_kin is None:
+            self._reach_kin = BatchedFR3Kinematics(device=self._reachability_device())
+        actions = self._branch_reach_actions()
+        device = self._reach_kin.device
+        c_t = torch.as_tensor(c_batch, device=device, dtype=torch.float32)
+        action_t = torch.as_tensor(actions, device=device, dtype=torch.float32)
+        num_tasks = c_t.shape[0]
+        num_actions = action_t.shape[0]
+        p0 = c_t[:, None, :3].expand(num_tasks, num_actions, 3).reshape(-1, 3)
+        d = c_t[:, None, 3:6].expand(num_tasks, num_actions, 3).reshape(-1, 3)
+        n = c_t[:, None, 6:9].expand(num_tasks, num_actions, 3).reshape(-1, 3)
+        action_rep = action_t[None, :, :].expand(num_tasks, num_actions, 4).reshape(-1, 4)
+        R_tgt = build_branch_rotmat_batch(d, n, action_rep)
+        _, ok, _ = branch_project_multistart(self._reach_kin, p0, R_tgt, action_rep)
+        return ok.view(num_tasks, num_actions).any(dim=1).detach().cpu().numpy()
+
+    def _is_task_reachable(self, c: np.ndarray) -> bool:
+        return bool(self._reachable_mask(c[None, :])[0])
+
+    def _sample_task_candidate(self) -> dict:
         rng = self.rng
-        # raw c
         if self.n_tilt_range is not None:
             tilt_max = float(rng.uniform(*self.n_tilt_range))
         elif self.randomize:
@@ -114,17 +205,10 @@ class FarsightedSeedEnv:
             tilt_max = cfg.N_TILT_MAX
         # actually we sample one task at a time so just use tilt_max = sample
         # bound; we want tilt itself drawn within [0, tilt_max]
-        c = sample_raw_c(rng, n_tilt_max=tilt_max)
+        c = sample_raw_c(rng, n_tilt_max=tilt_max,
+                         p0_box=self._training_p0_box())
+        c[:3] = self._sample_p0_in_shell(rng)
 
-        # override p0 box if requested (OOD), otherwise widen it for training DR
-        if self.p0_box is not None:
-            lo, hi = self.p0_box
-            c[:3] = rng.uniform(lo, hi).astype(np.float32)
-        elif self.randomize:
-            c[:3] = rng.uniform(cfg.DR_P0_BOX_LO,
-                                cfg.DR_P0_BOX_HI).astype(np.float32)
-
-        # task params
         if self.randomize:
             v_path = float(rng.uniform(*cfg.DR_V_PATH))
             eps_p  = float(rng.uniform(*cfg.DR_EPS_POS))
@@ -135,6 +219,30 @@ class FarsightedSeedEnv:
             T      = cfg.MAX_STEPS
         return {"c": c, "v_path": v_path, "eps_p": eps_p, "T": T,
                 "n_tilt_max": tilt_max}
+
+    def _sample_tasks(self, count: int) -> list[dict]:
+        if (not self.randomize
+                or not cfg.DR_SAMPLE_REACHABLE_ONLY
+                or cfg.ACTION_MODE != "branch_descriptor"):
+            return [self._sample_task_candidate() for _ in range(count)]
+
+        tasks: list[dict] = []
+        tries = 0
+        while len(tasks) < count and tries < int(cfg.DR_REACHABILITY_TRIES):
+            need = count - len(tasks)
+            cand_count = max(need * 3, 16)
+            candidates = [self._sample_task_candidate() for _ in range(cand_count)]
+            c_batch = np.stack([task["c"] for task in candidates], axis=0)
+            keep = self._reachable_mask(c_batch)
+            tasks.extend([task for task, ok in zip(candidates, keep) if ok])
+            tries += cand_count
+        if len(tasks) < count:
+            raise RuntimeError("Failed to sample enough reachable FR3 tasks.")
+        return tasks[:count]
+
+    # ----- task / state sampling -----
+    def _sample_task(self) -> dict:
+        return self._sample_tasks(1)[0]
 
     def _state_vec(self, task: dict) -> np.ndarray:
         c = task["c"]
@@ -164,14 +272,29 @@ class FarsightedSeedEnv:
         task = self._cur
         c = task["c"]
         p0, d, n = c[:3], c[3:6], c[6:9]
-        q_seed = np.clip(np.asarray(q_seed, np.float32),
-                         self.lmt_lo, self.lmt_up)
+        q_seed = np.asarray(q_seed, np.float32)
+        if cfg.ACTION_MODE == "joint_seed":
+            q_seed = np.clip(q_seed, self.lmt_lo, self.lmt_up)
         info = rollout(self.arm, q_seed, p0, d, n,
                        mjc=self.mjc,
                        max_steps=task["T"],
                        v_path=task["v_path"],
                        eps_p=task["eps_p"])
         reward = info["length"] / float(task["T"])
+        if cfg.SEED_MANIFOLD_REG and cfg.ACTION_MODE == "joint_seed":
+            ctrl = DLSController(self.arm)
+            R_tgt = build_target_rotmat(d, n)
+            p_seed, R_seed, _ = ctrl.fk_with_jac(q_seed)
+            seed_pos_err = float(np.linalg.norm(p0 - p_seed))
+            seed_orient_err = float(np.arccos(np.clip(R_seed[:, 2] @ R_tgt[:, 2],
+                                                      -1.0, 1.0)))
+            penalty = float(_seed_manifold_penalty(
+                np.asarray([seed_pos_err], dtype=np.float32),
+                np.asarray([seed_orient_err], dtype=np.float32))[0])
+            reward -= penalty
+            info["seed_pos_err"] = seed_pos_err
+            info["seed_orient_err"] = seed_orient_err
+            info["seed_manifold_penalty"] = penalty
         info["reward"] = reward
         info["task"] = task
         s_out = self._state_vec(task)
@@ -183,11 +306,9 @@ class FarsightedSeedEnv:
         states = np.empty((batch_size, cfg.STATE_DIM), dtype=np.float32)
         # remember the full task dicts to replay during step()
         tasks: list[dict] = []
-        for i in range(batch_size):
-            self._cur = self._sample_task()
-            tasks.append(self._cur)
-            states[i] = self._state_vec(self._cur)
-            self._cur = None  # mark consumed; will be set again per-step below
+        tasks = self._sample_tasks(batch_size)
+        for i, task in enumerate(tasks):
+            states[i] = self._state_vec(task)
         actions, extra = policy_sample_fn(states)
         rewards = np.empty(batch_size, dtype=np.float32)
         lengths = np.empty(batch_size, dtype=np.int32)
@@ -204,6 +325,10 @@ class FarsightedSeedEnv:
             out = batched_rollout(actions, c_batch, v_batch, eps_batch, Ts)
             lengths[:] = out["lengths"]
             rewards[:] = lengths.astype(np.float32) / Ts.astype(np.float32)
+            if cfg.SEED_MANIFOLD_REG and cfg.ACTION_MODE == "joint_seed":
+                penalty = _seed_manifold_penalty(
+                    out["seed_pos_err"], out["seed_orient_err"])
+                rewards[:] = rewards - penalty.astype(np.float32)
             reasons = out["reasons"]
             return states, actions, rewards, lengths, Ts, extra, reasons
 

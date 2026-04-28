@@ -75,7 +75,15 @@ class DLSController:
         if sin_th > 1e-6:
             omega_err_rotvec = (cross / sin_th) * theta   # axis*angle
         else:
-            omega_err_rotvec = np.zeros(3, dtype=np.float32)
+            ref = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+            if abs(float(z_cur @ ref)) > 0.9:
+                ref = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+            axis = np.cross(z_cur, ref)
+            axis_norm = float(np.linalg.norm(axis))
+            if axis_norm > 1e-6:
+                omega_err_rotvec = (axis / axis_norm * theta).astype(np.float32)
+            else:
+                omega_err_rotvec = np.zeros(3, dtype=np.float32)
 
         v_cmd = p_dot_ff + self.kp_lin * e_p
         omega_cmd = self.k_omega * omega_err_rotvec

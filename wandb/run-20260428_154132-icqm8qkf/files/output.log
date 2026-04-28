@@ -1,0 +1,2 @@
+[CVT] database loaded from /home/lqin/one/one/robots/manipulators/franka/fr3/data
+[    1/6000] R=0.575 len= 33.3/59.7 succ=0.41 pi=-0.236 V=0.216 H=+3.74 ec=0.020 KL=0.011  cf=0.30 (2.1s) [max_steps:39|joint_limit:23|pos_err_exceeded:22|self_collision:11]

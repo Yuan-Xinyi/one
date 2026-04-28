@@ -25,19 +25,41 @@ from Yuan.RL.env import FarsightedSeedEnv
 from Yuan.RL.policy import ValueNet, make_policy
 
 
+def _maybe_init_wandb():
+    if not cfg.WANDB_ENABLE:
+        return None
+    try:
+        import wandb
+    except ImportError as exc:
+        raise RuntimeError(
+            "WANDB_ENABLE=True but wandb is not installed. "
+            "Install it with `pip install wandb`, or set WANDB_ENABLE=False."
+        ) from exc
+    config = {
+        name: value
+        for name, value in vars(cfg).items()
+        if name.isupper() and isinstance(value, (int, float, str, bool, tuple, list, type(None)))
+    }
+    return wandb.init(project=cfg.WANDB_PROJECT,
+                      entity=cfg.WANDB_ENTITY,
+                      name=cfg.WANDB_RUN_NAME,
+                      config=config)
+
+
 def main():
     torch.manual_seed(cfg.SEED)
     np.random.seed(cfg.SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    wandb_run = _maybe_init_wandb()
 
     env = FarsightedSeedEnv(
         seed=cfg.SEED,
         use_collision=(cfg.USE_COLLISION_CHECK and not cfg.BATCHED_ROLLOUT),
     )
-    q_mid  = torch.as_tensor(env.q_mid,  dtype=torch.float32, device=device)
-    q_half = torch.as_tensor(env.q_half, dtype=torch.float32, device=device)
+    q_mid  = torch.as_tensor(env.action_mid,  dtype=torch.float32, device=device)
+    q_half = torch.as_tensor(env.action_half, dtype=torch.float32, device=device)
 
-    policy = make_policy(cfg.STATE_DIM, env.ndof, q_mid, q_half).to(device)
+    policy = make_policy(cfg.STATE_DIM, env.action_dim, q_mid, q_half).to(device)
     value  = ValueNet(cfg.STATE_DIM).to(device)
     opt_pi = torch.optim.Adam(policy.parameters(), lr=cfg.LR_PI)
     opt_v  = torch.optim.Adam(value.parameters(),  lr=cfg.LR_V)
@@ -147,16 +169,38 @@ def main():
                 f.write(f"{it},{mean_R},{mean_len},{succ},"
                         f"{pi_loss.item()},{v_loss.item()},{ent_now},"
                         f"{last_kl},{cf},{wall},{reason_str}\n")
+            if wandb_run is not None:
+                wandb_run.log({
+                    "train/mean_reward": mean_R,
+                    "train/mean_length": mean_len,
+                    "train/mean_T": mean_T,
+                    "train/success_rate": succ,
+                    "loss/policy": float(pi_loss.item()),
+                    "loss/value": float(v_loss.item()),
+                    "policy/entropy": ent_now,
+                    "policy/entropy_coef": float(ent_coef),
+                    "policy/kl": last_kl,
+                    "policy/clip_frac": cf,
+                    "time/wall_sec": wall,
+                    "reasons": reason_str,
+                }, step=it)
 
         if it % cfg.CKPT_EVERY == 0:
+            ckpt_path = os.path.join(cfg.CKPT_DIR, f"ckpt_{it:06d}.pt")
             torch.save({
                 "iter": it,
                 "policy_type": cfg.POLICY_TYPE,
+                "action_mode": cfg.ACTION_MODE,
                 "mixture_components": getattr(policy, "n_components", 1),
                 "policy": policy.state_dict(),
                 "value":  value.state_dict(),
                 "log_std": policy.log_std.detach().cpu().numpy(),
-            }, os.path.join(cfg.CKPT_DIR, f"ckpt_{it:06d}.pt"))
+            }, ckpt_path)
+            if wandb_run is not None:
+                wandb_run.save(ckpt_path, policy="now")
+
+    if wandb_run is not None:
+        wandb_run.finish()
 
 
 if __name__ == "__main__":

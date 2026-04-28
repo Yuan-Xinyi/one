@@ -1,0 +1,2 @@
+iter,mean_R,mean_len,success_rate,pi_loss,v_loss,entropy,kl,clip_frac,wall,reason_breakdown
+1,0.5751916170120239,33.34375,0.40625,-0.2359040379524231,0.2162351757287979,3.7409653663635254,0.011448572389781475,0.30078125,2.1025447845458984,max_steps:39|joint_limit:23|pos_err_exceeded:22|self_collision:11

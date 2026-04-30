@@ -49,6 +49,76 @@ class DLSController:
         # default null-space attractor: middle of joint limits
         self.q_ref = (0.5 * (self.lmt_lo + self.lmt_up)).astype(np.float32)
 
+    def _directional_manipulability(self, J_pos: np.ndarray,
+                                    direction: np.ndarray) -> float:
+        direction = direction.astype(np.float32)
+        direction = direction / (np.linalg.norm(direction) + 1e-12)
+        metric = (J_pos @ J_pos.T
+                  + (float(cfg.NULL_MANIP_DAMPING) ** 2)
+                  * np.eye(3, dtype=np.float32))
+        d = direction.reshape(3, 1)
+        inv_quad = float((d.T @ np.linalg.inv(metric) @ d).item())
+        return float(max(inv_quad, 1e-12) ** -0.5)
+
+    def _nullspace_objective_grad(self, q_active: np.ndarray,
+                                  J: np.ndarray,
+                                  R_tgt: np.ndarray,
+                                  direction: np.ndarray) -> np.ndarray:
+        q_dot_null = np.zeros_like(q_active, dtype=np.float32)
+        direction_norm = float(np.linalg.norm(direction))
+        if direction_norm < 1e-8:
+            direction = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        else:
+            direction = direction.astype(np.float32) / direction_norm
+
+        if cfg.NULL_USE_MANIPULABILITY and float(cfg.NULL_MANIP_GAIN) != 0.0:
+            eps = float(cfg.NULL_MANIP_FD_EPS)
+            grad_mu = np.zeros_like(q_active, dtype=np.float32)
+            for j in range(self.ndof):
+                dq = np.zeros_like(q_active, dtype=np.float32)
+                dq[j] = eps
+                qp = np.clip(q_active + dq, self.lmt_lo, self.lmt_up)
+                qm = np.clip(q_active - dq, self.lmt_lo, self.lmt_up)
+                _, _, Jp = self.fk_with_jac(qp)
+                _, _, Jm = self.fk_with_jac(qm)
+                mup = self._directional_manipulability(Jp[:3, :], direction)
+                mum = self._directional_manipulability(Jm[:3, :], direction)
+                grad_mu[j] = (mup - mum) / (2.0 * eps)
+            q_dot_null += float(cfg.NULL_MANIP_GAIN) * grad_mu
+
+        center = 0.5 * (self.lmt_lo + self.lmt_up)
+        span = np.maximum(self.lmt_up - self.lmt_lo, 1e-6)
+        q_dot_null += -float(cfg.NULL_JOINT_LIMIT_GAIN) * (q_active - center) / span
+
+        _, R_tcp, _ = self.fk_with_jac(q_active)
+        z_tgt = R_tgt[:, 2]
+        cos_theta = float(np.clip(R_tcp[:, 2] @ z_tgt, -1.0 + 1e-6, 1.0 - 1e-6))
+        theta = float(np.arccos(cos_theta))
+        angle_gain = 0.0
+        if float(cfg.NULL_ANGLE_GAIN) != 0.0:
+            margin = max(float(cfg.NULL_ANGLE_MARGIN), 1e-6)
+            angle_gain += float(cfg.NULL_ANGLE_GAIN) * np.clip(
+                (theta - float(cfg.THETA_MAX)) / margin, 0.0, 1.0)
+        if float(cfg.NULL_ANGLE_ATTRACT_GAIN) != 0.0:
+            angle_gain += float(cfg.NULL_ANGLE_ATTRACT_GAIN) * theta
+        if angle_gain != 0.0:
+            eps = float(cfg.NULL_MANIP_FD_EPS)
+            grad_cos = np.zeros_like(q_active, dtype=np.float32)
+            for j in range(self.ndof):
+                dq = np.zeros_like(q_active, dtype=np.float32)
+                dq[j] = eps
+                qp = np.clip(q_active + dq, self.lmt_lo, self.lmt_up)
+                qm = np.clip(q_active - dq, self.lmt_lo, self.lmt_up)
+                _, Rp, _ = self.fk_with_jac(qp)
+                _, Rm, _ = self.fk_with_jac(qm)
+                cosp = float(np.clip(Rp[:, 2] @ z_tgt, -1.0, 1.0))
+                cosm = float(np.clip(Rm[:, 2] @ z_tgt, -1.0, 1.0))
+                grad_cos[j] = (cosp - cosm) / (2.0 * eps)
+            q_dot_null += angle_gain * grad_cos
+
+        q_dot_null += float(self.k_null) * (self.q_ref - q_active)
+        return q_dot_null.astype(np.float32)
+
     # ---------------- forward kinematics with Jacobian at TCP ----------------
     def fk_with_jac(self, q_active: np.ndarray):
         root_tf = oum.tf_from_rotmat_pos(self.arm.rotmat, self.arm.pos)
@@ -95,13 +165,11 @@ class DLSController:
         Jpinv = J.T @ np.linalg.inv(A)                              # (n,6)
         q_dot_task = Jpinv @ x_dot                                  # (n,)
 
-        # --- null-space term: pull toward q_ref ---
-        if self.k_null > 0.0:
-            q_dot_secondary = self.k_null * (self.q_ref - q_active)
-            N = np.eye(self.ndof, dtype=np.float32) - Jpinv @ J
-            q_dot = q_dot_task + N @ q_dot_secondary
-        else:
-            q_dot = q_dot_task
+        # --- null-space term: manipulability + joint-margin + angle boundary ---
+        q_dot_secondary = self._nullspace_objective_grad(
+            q_active, J, R_tgt, p_dot_ff)
+        N = np.eye(self.ndof, dtype=np.float32) - Jpinv @ J
+        q_dot = q_dot_task + N @ q_dot_secondary
 
         # --- velocity limits (per-joint clamp, preserves direction less but
         #     keeps things simple; alternative: scale uniformly to fit) ---

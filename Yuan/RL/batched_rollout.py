@@ -141,17 +141,30 @@ def _swivel_grad_fd(kin: BatchedFR3Kinematics,
 
 
 def _branch_seed_bank(kin: BatchedFR3Kinematics) -> torch.Tensor:
-    """Small deterministic set of FR3 postures covering common IK branches."""
+    """Deterministic set of FR3 postures covering common IK branches.
+    Expanded to 16 for full-sphere n distributions (some normals only have
+    IK solutions reachable from "wrist-flipped" or "back-pose" seeds)."""
     seeds = torch.tensor([
+        # canonical (FR3 home, elbow up/down ±)
         [0.0, -0.785398163, 0.0, -2.35619449, 0.0, 1.57079632679, 0.785398163397],
         [0.0, -0.4, 0.0, -2.2, 0.0, 1.8, 0.0],
-        [0.0, 0.4, 0.0, -2.2, 0.0, 1.8, 0.0],
-        [1.0, 0.8, 1.0, -2.1, 1.2, 1.0, 0.5],
+        [0.0,  0.4, 0.0, -2.2, 0.0, 1.8, 0.0],
+        # shoulder rotated ±, with various elbow
+        [ 1.0, 0.8,  1.0, -2.1,  1.2, 1.0,  0.5],
         [-1.0, 0.8, -1.0, -2.1, -1.2, 1.0, -0.5],
-        [1.0, 1.2, -1.0, -2.2, 1.5, 1.0, 0.5],
-        [-1.0, 1.2, 1.0, -2.2, -1.5, 1.0, -0.5],
-        [0.0, 1.2, 1.2, -2.0, 1.2, 1.2, 0.0],
-        [0.0, 1.2, -1.2, -2.0, -1.2, 1.2, 0.0],
+        [ 1.0, 1.2, -1.0, -2.2,  1.5, 1.0,  0.5],
+        [-1.0, 1.2,  1.0, -2.2, -1.5, 1.0, -0.5],
+        [ 0.0, 1.2,  1.2, -2.0,  1.2, 1.2,  0.0],
+        [ 0.0, 1.2, -1.2, -2.0, -1.2, 1.2,  0.0],
+        # wrist-flipped (J6 negative -> tool pointing UP, useful for n in lower hemisphere)
+        [ 0.0, -0.4,  0.0, -2.2,  0.0, -1.5,  0.0],
+        [ 0.0,  0.4,  0.0, -2.2,  0.0, -1.5,  0.0],
+        [ 1.5, -0.4,  0.0, -2.2,  0.0, -1.5,  0.0],
+        [-1.5, -0.4,  0.0, -2.2,  0.0, -1.5,  0.0],
+        # extreme back / side reaches
+        [ 2.5,  0.5, -2.0, -1.0,  0.5, 1.5,  0.0],
+        [-2.5,  0.5,  2.0, -1.0, -0.5, 1.5,  0.0],
+        [ 0.0, -1.0,  0.0, -1.5,  0.0,  2.5,  0.0],
     ], device=kin.device, dtype=torch.float32)
     num = max(1, min(int(cfg.BRANCH_IK_NUM_STARTS), seeds.shape[0]))
     return seeds[:num].clamp(kin.lmt_lo, kin.lmt_up)
@@ -218,6 +231,61 @@ def _dls_pinv(J: torch.Tensor, damping: float) -> torch.Tensor:
     eye6 = torch.eye(6, device=J.device, dtype=J.dtype).expand(b, 6, 6)
     A = J @ J.transpose(-1, -2) + (float(damping) ** 2) * eye6
     return J.transpose(-1, -2) @ torch.linalg.inv(A)
+
+
+def _directional_manipulability(J_pos: torch.Tensor,
+                                direction: torch.Tensor,
+                                damping: float) -> torch.Tensor:
+    b = J_pos.shape[0]
+    eye3 = torch.eye(3, device=J_pos.device, dtype=J_pos.dtype).expand(b, 3, 3)
+    metric = J_pos @ J_pos.transpose(-1, -2) + (float(damping) ** 2) * eye3
+    d_col = _normalize(direction).unsqueeze(-1)
+    inv_quad = (d_col.transpose(-1, -2) @ torch.linalg.inv(metric) @ d_col).squeeze(-1).squeeze(-1)
+    return inv_quad.clamp_min(1e-12).pow(-0.5)
+
+
+def _batched_nullspace_objective_grad(kin: BatchedFR3Kinematics,
+                                      q: torch.Tensor,
+                                      direction: torch.Tensor,
+                                      R_tgt: torch.Tensor,
+                                      q_ref: torch.Tensor) -> torch.Tensor:
+    q_eval = q.detach().clone().requires_grad_(True)
+    _, R_tcp, J, _ = kin.tcp_fk_jac(q_eval)
+    z_cur = R_tcp[:, :, 2]
+    z_tgt = R_tgt[:, :, 2]
+    cos_theta = (z_cur * z_tgt).sum(dim=-1).clamp(-1.0 + 1e-6, 1.0 - 1e-6)
+    J_pos = J[:, :3, :]
+
+    q_dot_null = torch.zeros_like(q)
+    if cfg.NULL_USE_MANIPULABILITY and float(cfg.NULL_MANIP_GAIN) != 0.0:
+        mu = _directional_manipulability(J_pos, direction, cfg.NULL_MANIP_DAMPING)
+        grad_mu = torch.autograd.grad(mu.sum(), q_eval, retain_graph=True,
+                                      create_graph=False, allow_unused=True)[0]
+        if grad_mu is not None:
+            q_dot_null = q_dot_null + float(cfg.NULL_MANIP_GAIN) * grad_mu.detach()
+
+    lower = kin.lmt_lo.view(1, 7)
+    upper = kin.lmt_up.view(1, 7)
+    center = 0.5 * (lower + upper)
+    span = (upper - lower).clamp_min(1e-6)
+    q_dot_joint = -float(cfg.NULL_JOINT_LIMIT_GAIN) * (q - center) / span
+    q_dot_null = q_dot_null + q_dot_joint
+
+    grad_cos = torch.autograd.grad(cos_theta.sum(), q_eval, retain_graph=False,
+                                   create_graph=False, allow_unused=True)[0]
+    if grad_cos is not None:
+        theta = torch.acos(cos_theta)
+        theta_max = torch.as_tensor(float(cfg.THETA_MAX), device=q.device, dtype=q.dtype)
+        theta_margin = theta_max + float(cfg.NULL_ANGLE_MARGIN)
+        margin_den = max(float(cfg.NULL_ANGLE_MARGIN), 1e-6)
+        boundary_gate = ((theta - theta_max) / margin_den).clamp(0.0, 1.0).unsqueeze(-1)
+        interior_gate = theta.unsqueeze(-1)
+        angle_gain = (float(cfg.NULL_ANGLE_GAIN) * boundary_gate
+                      + float(cfg.NULL_ANGLE_ATTRACT_GAIN) * interior_gate)
+        q_dot_null = q_dot_null + angle_gain * grad_cos.detach()
+
+    q_dot_null = q_dot_null + float(cfg.K_NULL) * (q_ref - q)
+    return q_dot_null
 
 
 def _batched_ik_project(kin: BatchedFR3Kinematics,
@@ -332,7 +400,8 @@ def batched_rollout(q_seed_np: np.ndarray,
                     c_np: np.ndarray,
                     v_path_np: np.ndarray,
                     eps_p_np: np.ndarray,
-                    T_np: np.ndarray) -> dict:
+                    T_np: np.ndarray,
+                    action_mode: str | None = None) -> dict:
     """Evaluate a batch of seed actions.
 
     Args:
@@ -359,7 +428,10 @@ def batched_rollout(q_seed_np: np.ndarray,
     p0 = c[:, :3]
     d = c[:, 3:6]
     n = c[:, 6:9]
-    if cfg.ACTION_MODE == "branch_descriptor":
+    if action_mode is None:
+        action_mode = cfg.ACTION_MODE
+
+    if action_mode == "branch_descriptor":
         branch_action = action
         R_tgt = build_branch_rotmat_batch(d, n, branch_action)
         q_seed = _branch_seed_bank(kin)[0].view(1, 7).expand(action.shape[0], 7).clone()
@@ -371,7 +443,7 @@ def batched_rollout(q_seed_np: np.ndarray,
     seed_pos_err = (p0 - seed_p).norm(dim=-1)
     seed_orient_err = _z_axis_rotvec(seed_R, R_tgt).norm(dim=-1)
 
-    if cfg.ACTION_MODE == "branch_descriptor":
+    if action_mode == "branch_descriptor":
         q, ik_ok, reasons = branch_project_multistart(kin, p0, R_tgt, branch_action)
     else:
         q, ik_ok, reasons = _batched_ik_project(kin, q_seed, p0, R_tgt,
@@ -407,7 +479,8 @@ def batched_rollout(q_seed_np: np.ndarray,
         Jpinv = _dls_pinv(J, float(cfg.DLS_LAMBDA))
         q_dot = (Jpinv @ x_dot.unsqueeze(-1)).squeeze(-1)
         N = eye7 - Jpinv @ J
-        q_dot_secondary = float(cfg.K_NULL) * (q_ref - q)
+        q_dot_secondary = _batched_nullspace_objective_grad(
+            kin, q, d, R_tgt, q_ref)
         q_dot = q_dot + (N @ q_dot_secondary.unsqueeze(-1)).squeeze(-1)
         q_dot = q_dot.clamp(-kin.qdot_max, kin.qdot_max)
         q_new_raw = q + q_dot * dt

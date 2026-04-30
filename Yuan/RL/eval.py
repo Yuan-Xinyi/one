@@ -12,8 +12,9 @@ import torch
 
 import Yuan.RL.config as cfg
 from Yuan.RL.env import FarsightedSeedEnv
-from Yuan.RL.rollout import rollout, build_target_rotmat
+from Yuan.RL.rollout import rollout
 from Yuan.RL.policy import make_policy
+from Yuan.RL.batched_rollout import batched_rollout
 
 
 def latest_ckpt() -> str | None:
@@ -37,34 +38,48 @@ def evaluate(policy, env: FarsightedSeedEnv,
              n_contexts: int = 256, deterministic: bool = True,
              best_components: bool = False) -> dict:
     device = next(policy.parameters()).device
-    lengths = np.empty(n_contexts, dtype=np.int32)
-    home_lens = np.empty(n_contexts, dtype=np.int32)
+    states = np.empty((n_contexts, cfg.STATE_DIM), dtype=np.float32)
+    contexts = np.empty((n_contexts, 9), dtype=np.float32)
+    v_paths = np.empty(n_contexts, dtype=np.float32)
+    eps_ps = np.empty(n_contexts, dtype=np.float32)
     Ts = np.empty(n_contexts, dtype=np.int32)
-    home = env.arm.home_qs.astype(np.float32)
     for i in range(n_contexts):
         s = env.reset()
         task = env._cur                                  # full task dict
-        st = torch.as_tensor(s[None], dtype=torch.float32, device=device)
-        with torch.no_grad():
-            if best_components and hasattr(policy, "component_actions"):
-                cand = policy.component_actions(st).squeeze(0)
-            else:
-                a, _ = policy.act(st, deterministic=deterministic)
-                cand = a
-        best = -1
-        for a_i in cand.reshape(-1, env.action_dim):
-            env._cur = task
-            _, _, _, info = env.step(a_i.cpu().numpy().astype(np.float32))
-            best = max(best, info["length"])
-        lengths[i] = best
+        states[i] = s
+        contexts[i] = task["c"]
         Ts[i] = task["T"]
-        # reference: home seed under the same task params (fair)
-        c = task["c"]
-        info_h = rollout(env.arm, home, c[:3], c[3:6], c[6:9],
-                         mjc=env.mjc, max_steps=task["T"],
-                         v_path=task["v_path"], eps_p=task["eps_p"],
-                         action_mode="joint_seed")
-        home_lens[i] = info_h["length"]
+        v_paths[i] = task["v_path"]
+        eps_ps[i] = task["eps_p"]
+
+    st = torch.as_tensor(states, dtype=torch.float32, device=device)
+    with torch.no_grad():
+        if best_components and hasattr(policy, "component_actions"):
+            cand = policy.component_actions(st)
+            if cand.ndim == 2:
+                cand = cand[:, None, :]
+        else:
+            a, _ = policy.act(st, deterministic=deterministic)
+            cand = a[:, None, :]
+    cand_np = cand.detach().cpu().numpy().astype(np.float32)
+    n_cand = cand_np.shape[1]
+    pol_out = batched_rollout(
+        cand_np.reshape(n_contexts * n_cand, env.action_dim),
+        np.repeat(contexts, n_cand, axis=0),
+        np.repeat(v_paths, n_cand),
+        np.repeat(eps_ps, n_cand),
+        np.repeat(Ts, n_cand),
+        action_mode=cfg.ACTION_MODE,
+    )
+    lengths = np.asarray(pol_out["lengths"], dtype=np.int32).reshape(n_contexts, n_cand).max(axis=1)
+
+    home = env.arm.home_qs.astype(np.float32)
+    home_actions = np.repeat(home[None, :], n_contexts, axis=0).astype(np.float32)
+    home_out = batched_rollout(
+        home_actions, contexts, v_paths, eps_ps, Ts,
+        action_mode="joint_seed",
+    )
+    home_lens = np.asarray(home_out["lengths"], dtype=np.int32)
     return {"policy_mean_len": float(lengths.mean()),
             "policy_succ":     float((lengths >= Ts).mean()),
             "home_mean_len":   float(home_lens.mean()),

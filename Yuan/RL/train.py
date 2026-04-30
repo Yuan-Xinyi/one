@@ -80,6 +80,72 @@ def _ucb_action_select(policy, qens: QEnsemble, states_t: torch.Tensor,
     return a_stack[best_k, rows]                     # (B, A)
 
 
+def _shape_rewards(lengths_np: np.ndarray,
+                   T_np: np.ndarray,
+                   reasons: list[str],
+                   oracle_lengths_np: np.ndarray | None = None) -> np.ndarray:
+    if oracle_lengths_np is None:
+        denom = np.maximum(T_np.astype(np.float32), 1.0)
+    else:
+        denom = np.maximum(oracle_lengths_np.astype(np.float32),
+                           float(cfg.REWARD_ORACLE_MIN_STEPS))
+    reward = lengths_np.astype(np.float32) / denom
+    penalty = np.zeros_like(reward, dtype=np.float32)
+    reason_arr = np.asarray(reasons, dtype=object)
+    penalty[reason_arr == "init_ik_fail"] += float(cfg.REWARD_FAIL_INIT_IK)
+    penalty[reason_arr == "joint_limit"] += float(cfg.REWARD_FAIL_JOINT_LIMIT)
+    penalty[reason_arr == "self_collision"] += float(cfg.REWARD_FAIL_SELF_COLLISION)
+    penalty[reason_arr == "orient_err_exceeded"] += float(cfg.REWARD_FAIL_ORIENT)
+    penalty[reason_arr == "pos_err_exceeded"] += float(cfg.REWARD_FAIL_POS)
+    reward = reward - penalty
+    return np.clip(reward, float(cfg.REWARD_CLIP_LO),
+                   float(cfg.REWARD_CLIP_HI)).astype(np.float32)
+
+
+def _sample_policy_action_batch(policy,
+                                states_t: torch.Tensor,
+                                n_samples: int) -> torch.Tensor:
+    actions = []
+    for _ in range(int(n_samples)):
+        with torch.no_grad():
+            a_t, _ = policy.act(states_t, deterministic=False)
+        actions.append(a_t)
+    return torch.stack(actions, dim=0)
+
+
+def _collect_rollout_samples(policy,
+                             states_np: np.ndarray,
+                             tasks: list[dict],
+                             device: torch.device):
+    states_t = torch.as_tensor(states_np, dtype=torch.float32, device=device)
+    n_samples = max(1, int(cfg.SAC_ACTION_SAMPLES_PER_TASK))
+    a_stack = _sample_policy_action_batch(policy, states_t, n_samples)
+    batch_size = states_np.shape[0]
+    a_np = a_stack.reshape(n_samples * batch_size, -1).cpu().numpy().astype(np.float32)
+
+    c_np = np.stack([t["c"] for t in tasks], axis=0).astype(np.float32)
+    v_np = np.array([t["v_path"] for t in tasks], dtype=np.float32)
+    e_np = np.array([t["eps_p"] for t in tasks], dtype=np.float32)
+    T_np = np.array([t["T"] for t in tasks], dtype=np.int32)
+
+    states_rep = np.tile(states_np, (n_samples, 1)).astype(np.float32)
+    c_rep = np.tile(c_np, (n_samples, 1)).astype(np.float32)
+    v_rep = np.tile(v_np, n_samples).astype(np.float32)
+    e_rep = np.tile(e_np, n_samples).astype(np.float32)
+    T_rep = np.tile(T_np, n_samples).astype(np.int32)
+
+    out = batched_rollout(a_np, c_rep, v_rep, e_rep, T_rep)
+    L_np = np.asarray(out["lengths"], dtype=np.float32)
+    reasons = list(out.get("reasons", []))
+    oracle_L_rep = None
+    if bool(cfg.REWARD_USE_SAMPLED_ORACLE):
+        L_grid = L_np.reshape(n_samples, batch_size)
+        oracle_L = L_grid.max(axis=0).astype(np.float32)
+        oracle_L_rep = np.tile(oracle_L, n_samples).astype(np.float32)
+    r_np = _shape_rewards(L_np, T_rep, reasons, oracle_lengths_np=oracle_L_rep)
+    return states_rep, a_np, L_np, T_rep, r_np, reasons, oracle_L_rep
+
+
 def main():
     torch.manual_seed(cfg.SEED)
     np.random.seed(cfg.SEED)
@@ -99,12 +165,19 @@ def main():
 
     policy = make_policy(state_dim, action_dim, qmid, qhalf).to(device)
     qnet = QNet(state_dim, action_dim).to(device)
-    qens = QEnsemble(state_dim, action_dim, m=cfg.Q_ENSEMBLE_M).to(device)
     buffer = ReplayBuffer(state_dim, action_dim, cfg.SAC_REPLAY_SIZE)
 
     opt_pi = torch.optim.Adam(policy.parameters(), lr=cfg.SAC_LR_PI)
     opt_q  = torch.optim.Adam(qnet.parameters(), lr=cfg.SAC_LR_Q)
-    opt_qe = torch.optim.Adam(qens.parameters(), lr=cfg.SAC_LR_Q)
+
+    # QEnsemble was used for v9 active sampling; deactivated since
+    # v9 ablation showed regression. We allocate it lazily only if
+    # active sampling is enabled, to save ~10% per-iter compute.
+    qens = None
+    opt_qe = None
+    if cfg.ACTIVE_SAMPLING:
+        qens = QEnsemble(state_dim, action_dim, m=cfg.Q_ENSEMBLE_M).to(device)
+        opt_qe = torch.optim.Adam(qens.parameters(), lr=cfg.SAC_LR_Q)
 
     log_alpha = torch.tensor(np.log(cfg.SAC_ALPHA_INIT), device=device,
                              dtype=torch.float32, requires_grad=cfg.SAC_AUTO_ALPHA)
@@ -115,7 +188,7 @@ def main():
     os.makedirs(cfg.CKPT_DIR, exist_ok=True)
     log_path = os.path.join(cfg.CKPT_DIR, "train_log.csv")
     with open(log_path, "w") as f:
-        f.write("iter,buffer_size,mean_R,mean_len,mean_T,success_rate,"
+        f.write("iter,buffer_size,mean_R,mean_raw_R,mean_oracle_raw_R,mean_len,mean_T,success_rate,"
                 "q_loss,pi_loss,alpha,entropy,wall,reasons\n")
 
     t_start = time.time()
@@ -125,48 +198,23 @@ def main():
     print(f"[warmup] collecting {warm_target} rollouts before learning starts")
     while len(buffer) < warm_target:
         states_np, tasks = _sample_training_batch(env, cfg.BATCH_SIZE)
-        s_t = torch.as_tensor(states_np, dtype=torch.float32, device=device)
-        with torch.no_grad():
-            a_t, _ = policy.act(s_t, deterministic=False)
-        a_np = a_t.cpu().numpy().astype(np.float32)
-        c_np = np.stack([t["c"] for t in tasks], axis=0).astype(np.float32)
-        v_np = np.array([t["v_path"] for t in tasks], dtype=np.float32)
-        e_np = np.array([t["eps_p"]  for t in tasks], dtype=np.float32)
-        T_np = np.array([t["T"]      for t in tasks], dtype=np.int32)
-        out = batched_rollout(a_np, c_np, v_np, e_np, T_np)
-        L_np = np.asarray(out["lengths"], dtype=np.float32)
-        buffer.add_batch(states_np, a_np, L_np, T_np.astype(np.float32))
+        s_rep, a_np, L_np, T_np, r_np, _, _ = _collect_rollout_samples(
+            policy, states_np, tasks, device)
+        buffer.add_batch(s_rep, a_np, L_np, T_np.astype(np.float32), r_np)
 
     for it in range(1, cfg.N_ITERS + 1):
         # ----- sample tasks (no active task selection — too slow due to
         # reachability filter; we do UCB at ACTION level instead) -----
         states_np, tasks = _sample_training_batch(env, cfg.BATCH_SIZE)
-        s_t = torch.as_tensor(states_np, dtype=torch.float32, device=device)
+        s_rep, a_np, L_np, T_np, r_np, reasons_iter, oracle_L_rep = _collect_rollout_samples(
+            policy, states_np, tasks, device)
+        buffer.add_batch(s_rep, a_np, L_np, T_np.astype(np.float32), r_np)
 
-        # UCB action selection once Q ensemble has signal
-        if (cfg.ACTIVE_SAMPLING
-                and it > cfg.SAC_WARMUP_ROLLOUTS // cfg.BATCH_SIZE):
-            a_t = _ucb_action_select(policy, qens, s_t,
-                                     K=cfg.ACTIVE_K, kappa=1.0)
-        else:
-            with torch.no_grad():
-                a_t, _ = policy.act(s_t, deterministic=False)
-        a_np = a_t.cpu().numpy().astype(np.float32)
-        c_np = np.stack([t["c"] for t in tasks], axis=0).astype(np.float32)
-        v_np = np.array([t["v_path"] for t in tasks], dtype=np.float32)
-        e_np = np.array([t["eps_p"]  for t in tasks], dtype=np.float32)
-        T_np = np.array([t["T"]      for t in tasks], dtype=np.int32)
-        out = batched_rollout(a_np, c_np, v_np, e_np, T_np)
-        L_np = np.asarray(out["lengths"], dtype=np.float32)
-        reasons_iter = list(out.get("reasons", []))
-        buffer.add_batch(states_np, a_np, L_np, T_np.astype(np.float32))
-
-        # ----- Q updates (main critic + ensemble) -----
+        # ----- Q updates -----
         q_loss_val = 0.0
         qens_loss_val = 0.0
         for _ in range(cfg.SAC_K_Q):
             s_b, a_b, r_b = buffer.sample(cfg.SAC_BATCH, device)
-            # main critic (used for policy gradient)
             q_pred = qnet(s_b, a_b)
             q_loss = ((q_pred - r_b) ** 2).mean()
             opt_q.zero_grad()
@@ -175,16 +223,17 @@ def main():
             opt_q.step()
             q_loss_val = float(q_loss.item())
 
-            # ensemble: each member sees an independent bootstrap subsample
-            qe_preds = qens(s_b, a_b)            # (M, B)
-            mask = (torch.rand(qens.m, s_b.shape[0], device=device) < 0.8).float()
-            qe_loss = ((qe_preds - r_b.unsqueeze(0)) ** 2 * mask).sum() \
-                      / mask.sum().clamp_min(1.0)
-            opt_qe.zero_grad()
-            qe_loss.backward()
-            torch.nn.utils.clip_grad_norm_(qens.parameters(), cfg.GRAD_CLIP)
-            opt_qe.step()
-            qens_loss_val = float(qe_loss.item())
+            # optional ensemble (only active if cfg.ACTIVE_SAMPLING)
+            if qens is not None:
+                qe_preds = qens(s_b, a_b)
+                mask = (torch.rand(qens.m, s_b.shape[0], device=device) < 0.8).float()
+                qe_loss = ((qe_preds - r_b.unsqueeze(0)) ** 2 * mask).sum() \
+                          / mask.sum().clamp_min(1.0)
+                opt_qe.zero_grad()
+                qe_loss.backward()
+                torch.nn.utils.clip_grad_norm_(qens.parameters(), cfg.GRAD_CLIP)
+                opt_qe.step()
+                qens_loss_val = float(qe_loss.item())
 
         # ----- policy updates -----
         pi_loss_val = 0.0
@@ -211,7 +260,14 @@ def main():
 
         # ----- log -----
         if it % cfg.LOG_EVERY == 0 or it == 1:
-            mean_R = float((L_np / np.maximum(T_np, 1)).mean())
+            raw_R = L_np / np.maximum(T_np, 1)
+            if oracle_L_rep is None:
+                oracle_raw_R = np.ones_like(raw_R, dtype=np.float32)
+            else:
+                oracle_raw_R = oracle_L_rep / np.maximum(T_np, 1)
+            mean_R = float(r_np.mean())
+            mean_raw_R = float(raw_R.mean())
+            mean_oracle_raw_R = float(oracle_raw_R.mean())
             mean_len = float(L_np.mean())
             mean_T = float(T_np.mean())
             succ = float((L_np >= T_np).mean())
@@ -220,18 +276,24 @@ def main():
             reason_str = "|".join(f"{k}:{v}" for k, v in ctr.most_common(4))
             alpha_now = float(log_alpha.exp().item())
             print(f"[{it:5d}/{cfg.N_ITERS}] "
-                  f"buf={len(buffer):>5d} R={mean_R:.3f} "
+                  f"buf={len(buffer):>5d} R={mean_R:.3f} raw={mean_raw_R:.3f} "
+                  f"orc={mean_oracle_raw_R:.3f} "
                   f"len={mean_len:5.1f}/{mean_T:5.1f} succ={succ:.2f} "
                   f"q={q_loss_val:.4f} qens={qens_loss_val:.4f} "
                   f"pi={pi_loss_val:+.3f} a={alpha_now:.4f} H={ent_val:+.2f} "
                   f"({wall:.1f}s) [{reason_str}]")
             with open(log_path, "a") as f:
-                f.write(f"{it},{len(buffer)},{mean_R},{mean_len},{mean_T},"
+                f.write(f"{it},{len(buffer)},{mean_R},{mean_raw_R},{mean_oracle_raw_R},"
+                        f"{mean_len},{mean_T},"
                         f"{succ},{q_loss_val},{pi_loss_val},{alpha_now},"
                         f"{ent_val},{wall},{reason_str}\n")
             if wandb_run is not None:
                 wandb_run.log({
                     "train/mean_reward": mean_R,
+                    "train/mean_raw_reward": mean_raw_R,
+                    "train/mean_oracle_raw_reward": mean_oracle_raw_R,
+                    "train/policy_vs_sampled_oracle": (
+                        mean_raw_R / max(mean_oracle_raw_R, 1e-6)),
                     "train/mean_length": mean_len,
                     "train/mean_T": mean_T,
                     "train/success_rate": succ,
@@ -252,7 +314,7 @@ def main():
                 "mixture_components": getattr(policy, "n_components", 1),
                 "policy": policy.state_dict(),
                 "qnet": qnet.state_dict(),
-                "qens": qens.state_dict(),
+                "qens": qens.state_dict() if qens is not None else None,
                 "log_alpha": float(log_alpha.detach().cpu().item()),
                 "state_dim": cfg.STATE_DIM,
                 "log_std": (policy.log_std.detach().cpu().numpy()

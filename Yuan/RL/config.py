@@ -21,7 +21,8 @@ ACTION_MODE = "branch_descriptor"   # "joint_seed" or "branch_descriptor"
 BRANCH_ACTION_DIM = 4               # [cos(phi), sin(phi), cos(psi), sin(psi)]
 BRANCH_SWIVEL_GAIN = 0.15           # null-space gain for elbow branch objective
 BRANCH_FD_EPS = 1e-3                # finite-difference step for branch gradient
-BRANCH_IK_NUM_STARTS = 9            # deterministic IK starts for branch projection
+BRANCH_IK_NUM_STARTS = 16           # deterministic IK starts (more = better
+                                    # oracle ceiling on hard, full-sphere tasks)
 
 # ---------- Domain randomisation (training only; eval uses defaults) ----------
 DR_ENABLE   = True
@@ -52,6 +53,14 @@ KP_LIN      = 5.0                   # position-error feedback gain [1/s]
 KOMEGA      = 5.0                   # orientation-error feedback gain [1/s]
 DLS_LAMBDA  = 0.05                  # DLS damping
 K_NULL      = 0.5                   # null-space gain (pull toward q_ref)
+NULL_USE_MANIPULABILITY = True      # null-space ascent of directional manipulability
+NULL_MANIP_GAIN = 0.6
+NULL_MANIP_DAMPING = 1e-3
+NULL_JOINT_LIMIT_GAIN = 0.2         # push toward joint-limit center in null-space
+NULL_ANGLE_GAIN = 0.4               # z-axis alignment pull near cone boundary
+NULL_ANGLE_ATTRACT_GAIN = 0.0       # always-on z-axis attractor (0 keeps legacy feel)
+NULL_ANGLE_MARGIN = np.deg2rad(8.0)
+NULL_MANIP_FD_EPS = 1e-3            # serial-controller finite-difference step
 # FR3 datasheet joint-velocity limits (rad/s):
 #   joints 1-4: 150 deg/s, joints 5-7: 180 deg/s
 QDOT_MAX    = np.array([2.62, 2.62, 2.62, 2.62, 3.14, 3.14, 3.14],
@@ -87,8 +96,9 @@ TASK_PARAM_DIM = 3                  # v_path, eps_p, T_norm
 FK_AUG_DIM   = 2                    # dist_home_p0, angle_z_home_n
 GEOM_AUG_DIM = 3                    # (only added to state when STATE_DIM=17)
 HIDDEN_DIM   = 256
-POLICY_TYPE  = "mixture"            # "gaussian" or "mixture"
-MIXTURE_COMPONENTS = 4              # v8 sweet spot
+POLICY_TYPE  = "flow"               # "gaussian" | "mixture" | "flow"
+MIXTURE_COMPONENTS = 4              # only used if POLICY_TYPE == "mixture"
+FLOW_LAYERS  = 4                    # number of conditional RealNVP coupling layers
 LOG_STD_INIT = -1.0                 # ~ exp(-1)=0.37 rad
 LOG_STD_MIN  = -5.0
 LOG_STD_MAX  = 1.0
@@ -108,23 +118,35 @@ PPO_TARGET_KL = 0.10
 MINIBATCH     = 32
 
 # ---------- SAC (v8) ----------
-SAC_REPLAY_SIZE = 100_000           # FIFO buffer capacity
-SAC_BATCH       = 256               # Q / pi update minibatch from buffer
-SAC_K_Q         = 4                 # Q updates per env iter
-SAC_K_PI        = 1                 # policy updates per env iter
+SAC_REPLAY_SIZE = 200_000           # FIFO buffer capacity (bigger to keep up with B=384)
+SAC_BATCH       = 512               # Q / pi update minibatch from buffer
+SAC_K_Q         = 8                 # Q updates per env iter (more, to consume the bigger inflow)
+SAC_K_PI        = 2                 # policy updates per env iter
 SAC_LR_Q        = 3e-4
 SAC_LR_PI       = 3e-4
 SAC_LR_ALPHA    = 3e-4
 SAC_ALPHA_INIT  = 0.05              # initial entropy coefficient
-SAC_TARGET_H    = -4.0              # = -action_dim
+SAC_TARGET_H    = -8.0              # tighter than -action_dim;
+                                    # encourages policy to commit to a mode
+                                    # (was -4.0, observed too-loose at v10c)
 SAC_AUTO_ALPHA  = True              # learn alpha to hit target entropy
 SAC_WARMUP_ROLLOUTS = 1024          # collect this many before training starts
+SAC_ACTION_SAMPLES_PER_TASK = 8     # rollout K policy samples per task into replay
+REWARD_USE_SAMPLED_ORACLE = True    # normalize each action by best of K actions on same task
+REWARD_ORACLE_MIN_STEPS = 1.0       # avoid division by zero when every sampled branch fails
+REWARD_FAIL_INIT_IK = 0.10
+REWARD_FAIL_JOINT_LIMIT = 0.03
+REWARD_FAIL_SELF_COLLISION = 0.05
+REWARD_FAIL_ORIENT = 0.03
+REWARD_FAIL_POS = 0.00              # keep position failures ranked by L/T
+REWARD_CLIP_LO = -0.20
+REWARD_CLIP_HI = 1.00
 
 # ---------- Optim ----------
 LR_PI       = 3e-4
 LR_V        = 1e-3
-BATCH_SIZE  = 96
-N_ITERS     = 1500
+BATCH_SIZE  = 128                   # K=8 -> 1024 rollouts/iter; better wall-clock feedback
+N_ITERS     = 5000
 GRAD_CLIP   = 1.0
 SEED        = 0
 
@@ -137,8 +159,8 @@ ENT_ANNEAL_END  = 1000                  # iter at which decay finishes
 # ---------- Logging ----------
 LOG_EVERY   = 10
 CKPT_EVERY  = 200
-CKPT_DIR    = "Yuan/RL/checkpoints_v10_full_sphere"
+CKPT_DIR    = "Yuan/RL/checkpoints_v11b_sampled_oracle_k8"
 WANDB_ENABLE  = False
 WANDB_PROJECT = "fr3-rl-branch"
 WANDB_ENTITY  = None
-WANDB_RUN_NAME = "v10_sac_full_sphere_n"
+WANDB_RUN_NAME = "v11b_sac_flow_sampled_oracle_k8"

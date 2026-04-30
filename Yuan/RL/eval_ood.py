@@ -14,7 +14,6 @@ import torch
 
 import Yuan.RL.config as cfg
 from Yuan.RL.env import FarsightedSeedEnv
-from Yuan.RL.rollout import rollout
 from Yuan.RL.policy import make_policy
 from Yuan.RL.batched_rollout import batched_rollout
 
@@ -137,12 +136,10 @@ def eval_split(policy, env: FarsightedSeedEnv, n: int,
                oracle_K_phi: int = 32,
                oracle_K_psi: int = 16,
                oracle_chunk: int = 1024):
-    home = env.arm.home_qs.astype(np.float32)
-    pol_lens  = np.empty(n, dtype=np.int32)
-    home_lens = np.empty(n, dtype=np.int32)
     Ts        = np.empty(n, dtype=np.int32)
 
     # ---- collect tasks first so we can batch the oracle in one pass ----
+    states    = np.empty((n, cfg.STATE_DIM), dtype=np.float32)
     contexts  = np.empty((n, 9), dtype=np.float32)
     v_paths   = np.empty(n, dtype=np.float32)
     eps_ps    = np.empty(n, dtype=np.float32)
@@ -152,35 +149,43 @@ def eval_split(policy, env: FarsightedSeedEnv, n: int,
         task = env._cur
         c = task["c"]
         T = task["T"]
+        states[i] = s
         Ts[i] = T
         contexts[i] = c
         v_paths[i] = task["v_path"]
         eps_ps[i] = task["eps_p"]
-
-        # policy
-        st = torch.as_tensor(s[None], dtype=torch.float32, device=device)
-        with torch.no_grad():
-            if best_components and hasattr(policy, "component_actions"):
-                cand = policy.component_actions(st).squeeze(0)
-            else:
-                a, _ = policy.act(st, deterministic=True)
-                cand = a
-        best_pol = -1
-        for a_i in cand.reshape(-1, env.action_dim):
-            a_np = a_i.cpu().numpy().astype(np.float32)
-            info_p = rollout(env.arm, a_np, c[:3], c[3:6], c[6:9],
-                             mjc=env.mjc, max_steps=T,
-                             v_path=task["v_path"], eps_p=task["eps_p"])
-            best_pol = max(best_pol, info_p["length"])
-        pol_lens[i] = best_pol
-
-        # home (joint-seed action mode, single rollout per task)
-        info_h = rollout(env.arm, home, c[:3], c[3:6], c[6:9],
-                         mjc=env.mjc, max_steps=T,
-                         v_path=task["v_path"], eps_p=task["eps_p"],
-                         action_mode="joint_seed")
-        home_lens[i] = info_h["length"]
         env._cur = None
+
+    # ---- policy: evaluate all policy candidates in one GPU batch ----
+    st = torch.as_tensor(states, dtype=torch.float32, device=device)
+    with torch.no_grad():
+        if best_components and hasattr(policy, "component_actions"):
+            cand = policy.component_actions(st)
+            if cand.ndim == 2:
+                cand = cand[:, None, :]
+        else:
+            a, _ = policy.act(st, deterministic=True)
+            cand = a[:, None, :]
+    cand_np = cand.detach().cpu().numpy().astype(np.float32)
+    n_cand = cand_np.shape[1]
+    pol_out = batched_rollout(
+        cand_np.reshape(n * n_cand, env.action_dim),
+        np.repeat(contexts, n_cand, axis=0),
+        np.repeat(v_paths, n_cand),
+        np.repeat(eps_ps, n_cand),
+        np.repeat(Ts, n_cand),
+        action_mode=cfg.ACTION_MODE,
+    )
+    pol_lens = np.asarray(pol_out["lengths"], dtype=np.int32).reshape(n, n_cand).max(axis=1)
+
+    # ---- home: joint-seed baseline in one GPU batch ----
+    home = env.arm.home_qs.astype(np.float32)
+    home_actions = np.repeat(home[None, :], n, axis=0).astype(np.float32)
+    home_out = batched_rollout(
+        home_actions, contexts, v_paths, eps_ps, Ts,
+        action_mode="joint_seed",
+    )
+    home_lens = np.asarray(home_out["lengths"], dtype=np.int32)
 
     # ---- oracle: GPU-batched grid search over (phi, psi) in 4D action space ----
     # K_phi=32, K_psi=16 -> 512 actions per task; in same action space as policy

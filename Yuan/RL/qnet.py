@@ -75,14 +75,18 @@ class ReplayBuffer:
         self.L  = torch.zeros((capacity,),            dtype=torch.float32)
 
     def add_batch(self, s_np: np.ndarray, a_np: np.ndarray,
-                  L_np: np.ndarray, T_np: np.ndarray):
+                  L_np: np.ndarray, T_np: np.ndarray,
+                  r_np: np.ndarray | None = None):
         """Insert a batch of (state, action, raw rollout length, T) tuples."""
         n = s_np.shape[0]
         s_t = torch.as_tensor(s_np, dtype=torch.float32)
         a_t = torch.as_tensor(a_np, dtype=torch.float32)
         T_t = torch.as_tensor(T_np, dtype=torch.float32)
         L_t = torch.as_tensor(L_np, dtype=torch.float32)
-        r_t = L_t / T_t.clamp_min(1.0)
+        if r_np is None:
+            r_t = L_t / T_t.clamp_min(1.0)
+        else:
+            r_t = torch.as_tensor(r_np, dtype=torch.float32)
         # FIFO insertion: handle wrap-around
         end = self.cursor + n
         if end <= self.capacity:

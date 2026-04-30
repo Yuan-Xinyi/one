@@ -1,0 +1,32 @@
+[CVT] database loaded from /home/lqin/one/one/robots/manipulators/franka/fr3/data
+[warmup] collecting 1024 rollouts before learning starts
+[    1/5000] buf= 1536 R=0.305 len= 37.9/138.0 succ=0.10 q=0.1185 qens=0.0000 pi=-0.359 a=0.0500 H=+2.71 (5.9s) [pos_err_exceeded:190|joint_limit:127|max_steps:39|self_collision:26]
+[   10/5000] buf= 4992 R=0.307 len= 38.0/137.1 succ=0.11 q=0.1023 qens=0.0000 pi=-0.443 a=0.0497 H=+2.69 (18.6s) [pos_err_exceeded:208|joint_limit:109|max_steps:41|self_collision:26]
+[   20/5000] buf= 8832 R=0.321 len= 41.6/143.1 succ=0.12 q=0.0892 qens=0.0000 pi=-0.464 a=0.0494 H=+2.70 (32.8s) [pos_err_exceeded:174|joint_limit:136|max_steps:47|self_collision:25]
+[   30/5000] buf=12672 R=0.328 len= 40.0/140.2 succ=0.13 q=0.1007 qens=0.0000 pi=-0.537 a=0.0491 H=+2.67 (47.0s) [pos_err_exceeded:189|joint_limit:118|max_steps:51|self_collision:21]
+[   40/5000] buf=16512 R=0.293 len= 37.9/143.4 succ=0.09 q=0.0948 qens=0.0000 pi=-0.445 a=0.0488 H=+2.68 (61.3s) [pos_err_exceeded:191|joint_limit:137|max_steps:33|self_collision:20]
+[   50/5000] buf=20352 R=0.338 len= 42.2/139.1 succ=0.11 q=0.0883 qens=0.0000 pi=-0.492 a=0.0485 H=+2.66 (75.3s) [pos_err_exceeded:203|joint_limit:119|max_steps:44|self_collision:13]
+[   60/5000] buf=24192 R=0.383 len= 44.7/134.4 succ=0.20 q=0.0917 qens=0.0000 pi=-0.419 a=0.0482 H=+2.67 (89.3s) [pos_err_exceeded:186|joint_limit:105|max_steps:75|self_collision:15]
+[   70/5000] buf=28032 R=0.310 len= 40.1/144.8 succ=0.12 q=0.0944 qens=0.0000 pi=-0.419 a=0.0479 H=+2.65 (103.3s) [pos_err_exceeded:172|joint_limit:133|max_steps:47|self_collision:30]
+[   80/5000] buf=31872 R=0.310 len= 39.3/139.9 succ=0.13 q=0.0915 qens=0.0000 pi=-0.460 a=0.0477 H=+2.66 (117.5s) [pos_err_exceeded:202|joint_limit:109|max_steps:49|self_collision:20]
+[   90/5000] buf=35712 R=0.335 len= 39.3/137.4 succ=0.15 q=0.0911 qens=0.0000 pi=-0.411 a=0.0474 H=+2.63 (131.8s) [pos_err_exceeded:200|joint_limit:102|max_steps:57|self_collision:22]
+[  100/5000] buf=39552 R=0.297 len= 39.1/145.9 succ=0.09 q=0.0878 qens=0.0000 pi=-0.452 a=0.0471 H=+2.65 (146.5s) [pos_err_exceeded:202|joint_limit:129|max_steps:33|self_collision:17]
+[  110/5000] buf=43392 R=0.328 len= 40.5/136.5 succ=0.14 q=0.0919 qens=0.0000 pi=-0.449 a=0.0468 H=+2.64 (160.3s) [pos_err_exceeded:182|joint_limit:122|max_steps:54|self_collision:23]
+[  120/5000] buf=47232 R=0.325 len= 38.5/136.5 succ=0.12 q=0.0980 qens=0.0000 pi=-0.495 a=0.0465 H=+2.64 (174.4s) [pos_err_exceeded:194|joint_limit:119|max_steps:47|self_collision:22]
+[  130/5000] buf=51072 R=0.329 len= 40.3/138.2 succ=0.13 q=0.0875 qens=0.0000 pi=-0.509 a=0.0462 H=+2.62 (188.6s) [pos_err_exceeded:199|joint_limit:114|max_steps:51|self_collision:15]
+[  140/5000] buf=54912 R=0.287 len= 33.8/139.7 succ=0.11 q=0.0906 qens=0.0000 pi=-0.425 a=0.0460 H=+2.67 (202.6s) [pos_err_exceeded:212|joint_limit:108|max_steps:41|self_collision:19]
+[  150/5000] buf=58752 R=0.316 len= 37.1/132.6 succ=0.11 q=0.0925 qens=0.0000 pi=-0.403 a=0.0457 H=+2.67 (216.5s) [pos_err_exceeded:209|joint_limit:107|max_steps:43|self_collision:23]
+[  160/5000] buf=62592 R=0.309 len= 39.0/141.2 succ=0.11 q=0.0808 qens=0.0000 pi=-0.411 a=0.0454 H=+2.67 (230.4s) [pos_err_exceeded:197|joint_limit:112|max_steps:42|self_collision:30]
+[  170/5000] buf=66432 R=0.324 len= 40.1/141.8 succ=0.13 q=0.0880 qens=0.0000 pi=-0.481 a=0.0452 H=+2.62 (244.4s) [pos_err_exceeded:188|joint_limit:113|max_steps:51|self_collision:30]
+[  180/5000] buf=70272 R=0.300 len= 36.8/143.2 succ=0.11 q=0.0998 qens=0.0000 pi=-0.455 a=0.0449 H=+2.65 (258.4s) [pos_err_exceeded:186|joint_limit:133|max_steps:43|self_collision:20]
+[  190/5000] buf=74112 R=0.317 len= 39.3/139.3 succ=0.11 q=0.0965 qens=0.0000 pi=-0.401 a=0.0446 H=+2.69 (272.6s) [pos_err_exceeded:205|joint_limit:109|max_steps:44|self_collision:25]
+[  200/5000] buf=77952 R=0.323 len= 39.0/140.1 succ=0.14 q=0.0897 qens=0.0000 pi=-0.427 a=0.0443 H=+2.67 (286.5s) [pos_err_exceeded:178|joint_limit:120|max_steps:55|self_collision:27]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/lqin/one/Yuan/RL/train.py", line 276, in <module>
+    main()
+  File "/home/lqin/one/Yuan/RL/train.py", line 262, in main
+    "qens": qens.state_dict(),
+            ^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'state_dict'

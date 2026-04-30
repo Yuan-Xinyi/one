@@ -12,6 +12,7 @@ log_prob compensates for the tanh + linear scaling:
                - sum log(q_half)
 """
 from __future__ import annotations
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -236,6 +237,146 @@ class MixtureGaussianPolicy(nn.Module):
         return (w * comp_entropy).sum(-1) + cat_entropy
 
 
+class CouplingLayer(nn.Module):
+    """One affine coupling layer of a conditional RealNVP flow.
+
+    Splits the action vector into two halves; transforms one half conditioned
+    on (state, frozen half). Forward & inverse have analytic Jacobian
+    determinants (sum of log-scales over transformed dims).
+    """
+
+    def __init__(self, action_dim: int, state_dim: int, hidden: int,
+                 transform_first: bool):
+        super().__init__()
+        assert action_dim % 2 == 0, "FlowPolicy expects even action_dim"
+        self.action_dim = action_dim
+        self.d_half = action_dim // 2
+        self.transform_first = transform_first
+        self.net = nn.Sequential(
+            nn.Linear(state_dim + self.d_half, hidden), nn.Tanh(),
+            nn.Linear(hidden, hidden), nn.Tanh(),
+            nn.Linear(hidden, 2 * self.d_half),
+        )
+        # Initialize last layer near zero so initial transform ~= identity
+        nn.init.zeros_(self.net[-1].weight)
+        nn.init.zeros_(self.net[-1].bias)
+
+    def _split(self, z):
+        if self.transform_first:
+            return z[:, :self.d_half], z[:, self.d_half:]   # (xa to transform, xb frozen)
+        return z[:, self.d_half:], z[:, :self.d_half]
+
+    def _join(self, xa, xb):
+        if self.transform_first:
+            return torch.cat([xa, xb], dim=-1)
+        return torch.cat([xb, xa], dim=-1)
+
+    def forward(self, z, s):
+        """z -> u; returns (u, log|det(du/dz)|)."""
+        xa, xb = self._split(z)
+        h = self.net(torch.cat([s, xb], dim=-1))
+        shift, log_scale = h[:, :self.d_half], h[:, self.d_half:]
+        log_scale = torch.tanh(log_scale)                     # bound for stability
+        xa_new = xa * torch.exp(log_scale) + shift
+        u = self._join(xa_new, xb)
+        log_det = log_scale.sum(dim=-1)
+        return u, log_det
+
+    def inverse(self, u, s):
+        """u -> z; returns (z, log|det(dz/du)|) = -log_det_forward."""
+        xa, xb = self._split(u)
+        h = self.net(torch.cat([s, xb], dim=-1))
+        shift, log_scale = h[:, :self.d_half], h[:, self.d_half:]
+        log_scale = torch.tanh(log_scale)
+        xa_new = (xa - shift) * torch.exp(-log_scale)
+        z = self._join(xa_new, xb)
+        log_det_inv = -log_scale.sum(dim=-1)
+        return z, log_det_inv
+
+
+class FlowPolicy(nn.Module):
+    """Conditional RealNVP normalising flow with tanh action squashing.
+
+    Base distribution: standard Normal in R^action_dim.
+    Forward (sampling): z ~ N(0, I) -> coupling layers (state-conditioned) -> u
+    Action: a = q_mid + tanh(u) * q_half
+    Density:
+        log p(a|s) = log p_z(z) - log|det(du/dz)| - log_jac_tanh - log_jac_lin
+
+    Multi-modality is naturally supported (no fixed K, no mode-collapse).
+    """
+
+    def __init__(self, state_dim: int, action_dim: int,
+                 q_mid: torch.Tensor, q_half: torch.Tensor,
+                 n_layers: int | None = None,
+                 hidden: int = cfg.HIDDEN_DIM):
+        super().__init__()
+        if n_layers is None:
+            n_layers = int(getattr(cfg, "FLOW_LAYERS", 4))
+        self.action_dim = action_dim
+        self.layers = nn.ModuleList([
+            CouplingLayer(action_dim, state_dim, hidden,
+                          transform_first=(i % 2 == 0))
+            for i in range(n_layers)
+        ])
+        self.register_buffer("q_mid", q_mid)
+        self.register_buffer("q_half", q_half)
+
+    def _flow_forward(self, z, s):
+        log_det = torch.zeros(z.shape[0], device=z.device, dtype=z.dtype)
+        for layer in self.layers:
+            z, ld = layer.forward(z, s)
+            log_det = log_det + ld
+        return z, log_det
+
+    def _flow_inverse(self, u, s):
+        log_det_inv = torch.zeros(u.shape[0], device=u.device, dtype=u.dtype)
+        for layer in reversed(self.layers):
+            u, ld = layer.inverse(u, s)
+            log_det_inv = log_det_inv + ld
+        return u, log_det_inv
+
+    def _log_normal(self, z):
+        """Standard normal log density, summed over dims."""
+        return (-0.5 * (z ** 2).sum(dim=-1)
+                - 0.5 * self.action_dim
+                * float(np.log(2.0 * np.pi)))
+
+    def rsample(self, s):
+        """SAC reparameterised sample: returns (action, u, log_prob)."""
+        z = torch.randn(s.shape[0], self.action_dim,
+                        device=s.device, dtype=s.dtype)
+        u, log_det_fwd = self._flow_forward(z, s)
+        a = self.q_mid + torch.tanh(u) * self.q_half
+        log_pz = self._log_normal(z)
+        log_pu = log_pz - log_det_fwd
+        log_pa = log_pu - _log_tanh_linear_jac(u, self.q_half)
+        return a, u, log_pa
+
+    @torch.no_grad()
+    def act(self, s, deterministic: bool = False):
+        if deterministic:
+            z = torch.zeros(s.shape[0], self.action_dim,
+                            device=s.device, dtype=s.dtype)
+        else:
+            z = torch.randn(s.shape[0], self.action_dim,
+                            device=s.device, dtype=s.dtype)
+        u, _ = self._flow_forward(z, s)
+        a = self.q_mid + torch.tanh(u) * self.q_half
+        return a, u
+
+    def log_prob(self, s, u):
+        z, log_det_inv = self._flow_inverse(u, s)
+        log_pz = self._log_normal(z)
+        log_pu = log_pz + log_det_inv
+        return log_pu - _log_tanh_linear_jac(u, self.q_half)
+
+    def entropy(self, s):
+        # No closed-form; one-sample MC estimate (used only for logging).
+        _, _, log_pa = self.rsample(s)
+        return -log_pa
+
+
 def make_policy(state_dim: int, action_dim: int,
                 q_mid: torch.Tensor, q_half: torch.Tensor,
                 policy_type: str | None = None) -> nn.Module:
@@ -245,6 +386,8 @@ def make_policy(state_dim: int, action_dim: int,
         return GaussianPolicy(state_dim, action_dim, q_mid, q_half)
     if policy_type == "mixture":
         return MixtureGaussianPolicy(state_dim, action_dim, q_mid, q_half)
+    if policy_type == "flow":
+        return FlowPolicy(state_dim, action_dim, q_mid, q_half)
     raise ValueError(f"Unknown policy type: {policy_type}")
 
 

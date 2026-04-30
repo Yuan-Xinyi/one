@@ -1,49 +1,83 @@
-"""PPO training for the farsighted-seed problem.
+"""SAC training for the farsighted-seed problem (v8).
 
-Algorithm
----------
-Single-step contextual bandit -> no GAE needed; advantage = R - V(s).
+Single-step contextual bandit specialisation:
+    Q(c, q) ≈ L(c, q) / T  (deterministic, no Bellman bootstrap)
+    π(q|c)  = MixtureGaussian(K=4) with reparameterised sampling
 
-Per iteration:
-  1. Collect a batch by sampling states, actions ~ pi_theta_old, rollouts.
-  2. Cache log pi_theta_old(a|s) at the data-collection moment (no grad).
-  3. For E PPO epochs over minibatches:
-        ratio  = exp(log pi_new - log pi_old)
-        L_clip = -E[ min(ratio*A, clip(ratio, 1-eps, 1+eps)*A) ]
-        L_V    =  E[ (V_phi(s) - R)^2 ]
-        L_ent  = -ENT_COEF * H(pi)
-        Stop early if approx_KL(old || new) > target.
+Per iteration
+-------------
+  1. Sample a batch of contexts c_i.
+  2. Behaviour: q_i ~ π_θ(·|c_i).
+  3. Run batched_rollout to get L_i (raw rollout length).
+  4. Push (s_i, q_i, L_i, T_i) into FIFO replay buffer.
+  5. K_Q steps of Q regression on minibatches drawn from buffer.
+  6. K_π steps of policy update via reparam SAC objective.
+  7. (Optional) auto-tune α to hit target entropy H_target = -action_dim.
+
+No PPO clip, no KL early-stop, no on-policy advantage estimation: data is
+deterministic, so each (s, q, L) tuple in the buffer is a permanent ground
+truth label that we can revisit forever.
 """
 from __future__ import annotations
 import os, time, collections
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 import Yuan.RL.config as cfg
-from Yuan.RL.env import FarsightedSeedEnv
-from Yuan.RL.policy import ValueNet, make_policy
+from Yuan.RL.env import FarsightedSeedEnv, sample_raw_c
+from Yuan.RL.policy import make_policy
+from Yuan.RL.qnet import QNet, QEnsemble, ReplayBuffer
+from Yuan.RL.batched_rollout import batched_rollout
 
 
 def _maybe_init_wandb():
     if not cfg.WANDB_ENABLE:
         return None
-    try:
-        import wandb
-    except ImportError as exc:
-        raise RuntimeError(
-            "WANDB_ENABLE=True but wandb is not installed. "
-            "Install it with `pip install wandb`, or set WANDB_ENABLE=False."
-        ) from exc
-    config = {
-        name: value
-        for name, value in vars(cfg).items()
-        if name.isupper() and isinstance(value, (int, float, str, bool, tuple, list, type(None)))
-    }
-    return wandb.init(project=cfg.WANDB_PROJECT,
-                      entity=cfg.WANDB_ENTITY,
-                      name=cfg.WANDB_RUN_NAME,
-                      config=config)
+    import wandb
+    config = {n: v for n, v in vars(cfg).items()
+              if n.isupper()
+              and isinstance(v, (int, float, str, bool, tuple, list, type(None)))}
+    return wandb.init(project=cfg.WANDB_PROJECT, entity=cfg.WANDB_ENTITY,
+                      name=cfg.WANDB_RUN_NAME, config=config)
+
+
+# ----- batched-rollout-friendly task sampler -----
+def _sample_training_batch(env: FarsightedSeedEnv, batch_size: int):
+    """Sample `batch_size` training tasks via the env's randomized
+    distribution. Returns (states_np, tasks)."""
+    tasks = env._sample_tasks(batch_size)
+    states = np.stack([env._state_vec(t) for t in tasks], axis=0)
+    return states.astype(np.float32), tasks
+
+
+def _ucb_action_select(policy, qens: QEnsemble, states_t: torch.Tensor,
+                       K: int, kappa: float = 1.0):
+    """UCB action selection: for each state, sample K candidate actions
+    from the (stochastic) policy; pick the one maximizing
+        UCB(c, a) = Q_ensemble.mean(c, a) + κ · Q_ensemble.std(c, a).
+
+    This biases the *behaviour distribution* toward (c, a) pairs the
+    Q ensemble is uncertain about — i.e., adds densely-sample those
+    regions in the replay buffer. Cheap: no extra env queries.
+    """
+    B = states_t.shape[0]
+    cands = []
+    for _ in range(K):
+        with torch.no_grad():
+            a, _ = policy.act(states_t, deterministic=False)
+        cands.append(a)
+    a_stack = torch.stack(cands, dim=0)              # (K, B, A)
+
+    q_means, q_stds = [], []
+    for k in range(K):
+        q_means.append(qens.mean(states_t, a_stack[k]))
+        q_stds.append(qens.std(states_t, a_stack[k]))
+    q_means = torch.stack(q_means, dim=0)            # (K, B)
+    q_stds  = torch.stack(q_stds,  dim=0)
+    ucb = q_means + kappa * q_stds                   # (K, B)
+    best_k = ucb.argmax(dim=0)                       # (B,)
+    rows = torch.arange(B, device=states_t.device)
+    return a_stack[best_k, rows]                     # (B, A)
 
 
 def main():
@@ -52,137 +86,161 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     wandb_run = _maybe_init_wandb()
 
-    env = FarsightedSeedEnv(
-        seed=cfg.SEED,
-        use_collision=(cfg.USE_COLLISION_CHECK and not cfg.BATCHED_ROLLOUT),
-    )
-    q_mid  = torch.as_tensor(env.action_mid,  dtype=torch.float32, device=device)
-    q_half = torch.as_tensor(env.action_half, dtype=torch.float32, device=device)
+    # SAC trains on rollouts collected from a randomized env. We hold the
+    # MJCollider in serial-rollout-only paths (visualisation, evaluation),
+    # not here — batched_rollout has its own sphere-based collision check.
+    env = FarsightedSeedEnv(seed=cfg.SEED, randomize=True,
+                            use_collision=False)
+    state_dim = cfg.STATE_DIM
+    action_dim = env.action_dim
 
-    policy = make_policy(cfg.STATE_DIM, env.action_dim, q_mid, q_half).to(device)
-    value  = ValueNet(cfg.STATE_DIM).to(device)
-    opt_pi = torch.optim.Adam(policy.parameters(), lr=cfg.LR_PI)
-    opt_v  = torch.optim.Adam(value.parameters(),  lr=cfg.LR_V)
+    qmid = torch.as_tensor(env.action_mid, dtype=torch.float32, device=device)
+    qhalf = torch.as_tensor(env.action_half, dtype=torch.float32, device=device)
+
+    policy = make_policy(state_dim, action_dim, qmid, qhalf).to(device)
+    qnet = QNet(state_dim, action_dim).to(device)
+    qens = QEnsemble(state_dim, action_dim, m=cfg.Q_ENSEMBLE_M).to(device)
+    buffer = ReplayBuffer(state_dim, action_dim, cfg.SAC_REPLAY_SIZE)
+
+    opt_pi = torch.optim.Adam(policy.parameters(), lr=cfg.SAC_LR_PI)
+    opt_q  = torch.optim.Adam(qnet.parameters(), lr=cfg.SAC_LR_Q)
+    opt_qe = torch.optim.Adam(qens.parameters(), lr=cfg.SAC_LR_Q)
+
+    log_alpha = torch.tensor(np.log(cfg.SAC_ALPHA_INIT), device=device,
+                             dtype=torch.float32, requires_grad=cfg.SAC_AUTO_ALPHA)
+    opt_alpha = (torch.optim.Adam([log_alpha], lr=cfg.SAC_LR_ALPHA)
+                 if cfg.SAC_AUTO_ALPHA else None)
+    target_h = float(cfg.SAC_TARGET_H)
 
     os.makedirs(cfg.CKPT_DIR, exist_ok=True)
     log_path = os.path.join(cfg.CKPT_DIR, "train_log.csv")
     with open(log_path, "w") as f:
-        f.write("iter,mean_R,mean_len,success_rate,pi_loss,v_loss,"
-                "entropy,kl,clip_frac,wall,reason_breakdown\n")
-
-    def sample_fn(states_np: np.ndarray):
-        s = torch.as_tensor(states_np, dtype=torch.float32, device=device)
-        a, u = policy.act(s, deterministic=False)
-        return a.cpu().numpy().astype(np.float32), u.detach().cpu().numpy()
+        f.write("iter,buffer_size,mean_R,mean_len,mean_T,success_rate,"
+                "q_loss,pi_loss,alpha,entropy,wall,reasons\n")
 
     t_start = time.time()
 
-    for it in range(1, cfg.N_ITERS + 1):
-        # -------- entropy coefficient annealing --------
-        progress = min(1.0, (it - 1) / float(cfg.ENT_ANNEAL_END))
-        ent_coef = (cfg.ENT_COEF_INIT * (1.0 - progress)
-                    + cfg.ENT_COEF_FINAL * progress)
-
-        # -------- collect batch (sequential rollouts) --------
-        states_np, actions_np, rewards_np, lengths_np, Ts_np, u_np, reasons = \
-            env.collect_batch(sample_fn, cfg.BATCH_SIZE)
-
-        s = torch.as_tensor(states_np,  dtype=torch.float32, device=device)
-        u = torch.as_tensor(u_np,       dtype=torch.float32, device=device)
-        R = torch.as_tensor(rewards_np, dtype=torch.float32, device=device)
-
+    # ---- warmup: fill buffer with stochastic-policy samples ----
+    warm_target = max(int(cfg.SAC_WARMUP_ROLLOUTS), cfg.BATCH_SIZE)
+    print(f"[warmup] collecting {warm_target} rollouts before learning starts")
+    while len(buffer) < warm_target:
+        states_np, tasks = _sample_training_batch(env, cfg.BATCH_SIZE)
+        s_t = torch.as_tensor(states_np, dtype=torch.float32, device=device)
         with torch.no_grad():
-            log_prob_old = policy.log_prob(s, u)
-            V_old = value(s)
-        adv = R - V_old
-        if adv.numel() > 1 and adv.std() > 1e-8:
-            adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+            a_t, _ = policy.act(s_t, deterministic=False)
+        a_np = a_t.cpu().numpy().astype(np.float32)
+        c_np = np.stack([t["c"] for t in tasks], axis=0).astype(np.float32)
+        v_np = np.array([t["v_path"] for t in tasks], dtype=np.float32)
+        e_np = np.array([t["eps_p"]  for t in tasks], dtype=np.float32)
+        T_np = np.array([t["T"]      for t in tasks], dtype=np.int32)
+        out = batched_rollout(a_np, c_np, v_np, e_np, T_np)
+        L_np = np.asarray(out["lengths"], dtype=np.float32)
+        buffer.add_batch(states_np, a_np, L_np, T_np.astype(np.float32))
 
-        # -------- PPO epochs --------
-        idx = np.arange(cfg.BATCH_SIZE)
-        clip_fracs = []
-        last_kl = 0.0
-        early_stopped = False
-        for epoch in range(cfg.PPO_EPOCHS):
-            np.random.shuffle(idx)
-            for start in range(0, cfg.BATCH_SIZE, cfg.MINIBATCH):
-                mb = idx[start:start + cfg.MINIBATCH]
-                mb_t = torch.as_tensor(mb, dtype=torch.long, device=device)
-                s_b = s[mb_t]; u_b = u[mb_t]; R_b = R[mb_t]
-                adv_b = adv[mb_t]; logp_old_b = log_prob_old[mb_t]
+    for it in range(1, cfg.N_ITERS + 1):
+        # ----- sample tasks (no active task selection — too slow due to
+        # reachability filter; we do UCB at ACTION level instead) -----
+        states_np, tasks = _sample_training_batch(env, cfg.BATCH_SIZE)
+        s_t = torch.as_tensor(states_np, dtype=torch.float32, device=device)
 
-                logp_new = policy.log_prob(s_b, u_b)
-                ratio = torch.exp(logp_new - logp_old_b)
-                surr1 = ratio * adv_b
-                surr2 = torch.clamp(ratio, 1.0 - cfg.PPO_CLIP,
-                                    1.0 + cfg.PPO_CLIP) * adv_b
-                pi_loss = -torch.min(surr1, surr2).mean()
-                ent = policy.entropy(s_b).mean()
-                pi_loss = pi_loss - ent_coef * ent
-
-                opt_pi.zero_grad()
-                pi_loss.backward()
-                torch.nn.utils.clip_grad_norm_(policy.parameters(),
-                                               cfg.GRAD_CLIP)
-                opt_pi.step()
-
-                V_b = value(s_b)
-                v_loss = F.mse_loss(V_b, R_b)
-                opt_v.zero_grad()
-                v_loss.backward()
-                torch.nn.utils.clip_grad_norm_(value.parameters(),
-                                               cfg.GRAD_CLIP)
-                opt_v.step()
-
-                with torch.no_grad():
-                    clip_fracs.append(
-                        ((ratio - 1.0).abs() > cfg.PPO_CLIP).float().mean().item())
-
-            # --- approx KL on full batch, early-stop if too large ---
+        # UCB action selection once Q ensemble has signal
+        if (cfg.ACTIVE_SAMPLING
+                and it > cfg.SAC_WARMUP_ROLLOUTS // cfg.BATCH_SIZE):
+            a_t = _ucb_action_select(policy, qens, s_t,
+                                     K=cfg.ACTIVE_K, kappa=1.0)
+        else:
             with torch.no_grad():
-                logp_now = policy.log_prob(s, u)
-                last_kl = float((log_prob_old - logp_now).mean().item())
-            if last_kl > cfg.PPO_TARGET_KL:
-                early_stopped = True
-                break
+                a_t, _ = policy.act(s_t, deterministic=False)
+        a_np = a_t.cpu().numpy().astype(np.float32)
+        c_np = np.stack([t["c"] for t in tasks], axis=0).astype(np.float32)
+        v_np = np.array([t["v_path"] for t in tasks], dtype=np.float32)
+        e_np = np.array([t["eps_p"]  for t in tasks], dtype=np.float32)
+        T_np = np.array([t["T"]      for t in tasks], dtype=np.int32)
+        out = batched_rollout(a_np, c_np, v_np, e_np, T_np)
+        L_np = np.asarray(out["lengths"], dtype=np.float32)
+        reasons_iter = list(out.get("reasons", []))
+        buffer.add_batch(states_np, a_np, L_np, T_np.astype(np.float32))
 
-        # -------- log --------
+        # ----- Q updates (main critic + ensemble) -----
+        q_loss_val = 0.0
+        qens_loss_val = 0.0
+        for _ in range(cfg.SAC_K_Q):
+            s_b, a_b, r_b = buffer.sample(cfg.SAC_BATCH, device)
+            # main critic (used for policy gradient)
+            q_pred = qnet(s_b, a_b)
+            q_loss = ((q_pred - r_b) ** 2).mean()
+            opt_q.zero_grad()
+            q_loss.backward()
+            torch.nn.utils.clip_grad_norm_(qnet.parameters(), cfg.GRAD_CLIP)
+            opt_q.step()
+            q_loss_val = float(q_loss.item())
+
+            # ensemble: each member sees an independent bootstrap subsample
+            qe_preds = qens(s_b, a_b)            # (M, B)
+            mask = (torch.rand(qens.m, s_b.shape[0], device=device) < 0.8).float()
+            qe_loss = ((qe_preds - r_b.unsqueeze(0)) ** 2 * mask).sum() \
+                      / mask.sum().clamp_min(1.0)
+            opt_qe.zero_grad()
+            qe_loss.backward()
+            torch.nn.utils.clip_grad_norm_(qens.parameters(), cfg.GRAD_CLIP)
+            opt_qe.step()
+            qens_loss_val = float(qe_loss.item())
+
+        # ----- policy updates -----
+        pi_loss_val = 0.0
+        ent_val = 0.0
+        for _ in range(cfg.SAC_K_PI):
+            s_b, _, _ = buffer.sample(cfg.SAC_BATCH, device)
+            a_repar, _, log_p = policy.rsample(s_b)
+            q_val = qnet(s_b, a_repar)
+            alpha = log_alpha.exp().detach()
+            pi_loss = (alpha * log_p - q_val).mean()
+            opt_pi.zero_grad()
+            pi_loss.backward()
+            torch.nn.utils.clip_grad_norm_(policy.parameters(), cfg.GRAD_CLIP)
+            opt_pi.step()
+            pi_loss_val = float(pi_loss.item())
+            ent_val = -float(log_p.mean().item())
+
+            if cfg.SAC_AUTO_ALPHA:
+                # train alpha to push entropy toward target_h
+                alpha_loss = -(log_alpha * (log_p.detach() + target_h)).mean()
+                opt_alpha.zero_grad()
+                alpha_loss.backward()
+                opt_alpha.step()
+
+        # ----- log -----
         if it % cfg.LOG_EVERY == 0 or it == 1:
-            mean_R   = float(R.mean().item())
-            mean_len = float(lengths_np.mean())
-            mean_T   = float(Ts_np.mean())
-            # succ: rolled all the way to that episode's per-task T
-            succ     = float((lengths_np >= Ts_np).mean())
-            ent_now  = float(policy.entropy(s).mean().item())
-            cf       = float(np.mean(clip_fracs)) if clip_fracs else 0.0
-            wall     = time.time() - t_start
-            ctr = collections.Counter(reasons)
+            mean_R = float((L_np / np.maximum(T_np, 1)).mean())
+            mean_len = float(L_np.mean())
+            mean_T = float(T_np.mean())
+            succ = float((L_np >= T_np).mean())
+            wall = time.time() - t_start
+            ctr = collections.Counter(reasons_iter)
             reason_str = "|".join(f"{k}:{v}" for k, v in ctr.most_common(4))
-            es_tag = "*" if early_stopped else " "
+            alpha_now = float(log_alpha.exp().item())
             print(f"[{it:5d}/{cfg.N_ITERS}] "
-                  f"R={mean_R:.3f} len={mean_len:5.1f}/{mean_T:4.1f} "
-                  f"succ={succ:.2f} pi={pi_loss.item():+.3f} V={v_loss.item():.3f} "
-                  f"H={ent_now:+.2f} ec={ent_coef:.3f} "
-                  f"KL={last_kl:.3f}{es_tag} cf={cf:.2f} "
+                  f"buf={len(buffer):>5d} R={mean_R:.3f} "
+                  f"len={mean_len:5.1f}/{mean_T:5.1f} succ={succ:.2f} "
+                  f"q={q_loss_val:.4f} qens={qens_loss_val:.4f} "
+                  f"pi={pi_loss_val:+.3f} a={alpha_now:.4f} H={ent_val:+.2f} "
                   f"({wall:.1f}s) [{reason_str}]")
             with open(log_path, "a") as f:
-                f.write(f"{it},{mean_R},{mean_len},{succ},"
-                        f"{pi_loss.item()},{v_loss.item()},{ent_now},"
-                        f"{last_kl},{cf},{wall},{reason_str}\n")
+                f.write(f"{it},{len(buffer)},{mean_R},{mean_len},{mean_T},"
+                        f"{succ},{q_loss_val},{pi_loss_val},{alpha_now},"
+                        f"{ent_val},{wall},{reason_str}\n")
             if wandb_run is not None:
                 wandb_run.log({
                     "train/mean_reward": mean_R,
                     "train/mean_length": mean_len,
                     "train/mean_T": mean_T,
                     "train/success_rate": succ,
-                    "loss/policy": float(pi_loss.item()),
-                    "loss/value": float(v_loss.item()),
-                    "policy/entropy": ent_now,
-                    "policy/entropy_coef": float(ent_coef),
-                    "policy/kl": last_kl,
-                    "policy/clip_frac": cf,
+                    "loss/q": q_loss_val,
+                    "loss/pi": pi_loss_val,
+                    "policy/alpha": alpha_now,
+                    "policy/entropy": ent_val,
+                    "buffer/size": len(buffer),
                     "time/wall_sec": wall,
-                    "reasons": reason_str,
                 }, step=it)
 
         if it % cfg.CKPT_EVERY == 0:
@@ -193,8 +251,12 @@ def main():
                 "action_mode": cfg.ACTION_MODE,
                 "mixture_components": getattr(policy, "n_components", 1),
                 "policy": policy.state_dict(),
-                "value":  value.state_dict(),
-                "log_std": policy.log_std.detach().cpu().numpy(),
+                "qnet": qnet.state_dict(),
+                "qens": qens.state_dict(),
+                "log_alpha": float(log_alpha.detach().cpu().item()),
+                "state_dim": cfg.STATE_DIM,
+                "log_std": (policy.log_std.detach().cpu().numpy()
+                            if hasattr(policy, "log_std") else None),
             }, ckpt_path)
             if wandb_run is not None:
                 wandb_run.save(ckpt_path, policy="now")

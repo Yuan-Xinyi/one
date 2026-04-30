@@ -86,6 +86,14 @@ class GaussianPolicy(nn.Module):
         a = self.q_mid + torch.tanh(u) * self.q_half
         return a, u
 
+    def rsample(self, s: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """SAC reparameterised sample. Returns (action, u, log_prob_u)."""
+        dist = self._dist(s)
+        u = dist.rsample()
+        a = self.q_mid + torch.tanh(u) * self.q_half
+        log_p = dist.log_prob(u).sum(-1) - _log_tanh_linear_jac(u, self.q_half)
+        return a, u, log_p
+
     def log_prob(self, s: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         """Log-density of the squashed action whose pre-tanh latent is u."""
         dist = self._dist(s)
@@ -174,14 +182,38 @@ class MixtureGaussianPolicy(nn.Module):
         a = self.q_mid + torch.tanh(u) * self.q_half
         return a, u
 
+    def rsample(self, s: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """SAC reparameterised sample.
+
+        - Component index sampled with stop-gradient (Categorical is not
+          reparameterisable; we treat it as discrete latent).
+        - Within the chosen component, u = mu + sigma * eps (reparam, grad
+          flows to mu_k and log_std_k of the SELECTED component).
+        - log_prob uses the full mixture density => gradient flows back to
+          the categorical logits and all components, which is what trains the
+          mixture weights to match Q(c, q).
+        Returns (action, u, log_prob_u).
+        """
+        logits, mu, log_std = self._params(s)
+        with torch.no_grad():
+            comp = torch.distributions.Categorical(logits=logits).sample()
+        row = torch.arange(s.shape[0], device=s.device)
+        mu_sel = mu[row, comp]
+        log_std_sel = log_std[row, comp]
+        eps = torch.randn_like(mu_sel)
+        u = mu_sel + log_std_sel.exp() * eps                      # reparam
+        a = self.q_mid + torch.tanh(u) * self.q_half
+        log_p = self._mixture_log_prob(logits, mu, log_std, u)
+        return a, u, log_p
+
     @torch.no_grad()
     def component_actions(self, s: torch.Tensor) -> torch.Tensor:
         """Return all component mean actions, shaped (B, K, action_dim)."""
         _, mu, _ = self._params(s)
         return self.q_mid + torch.tanh(mu) * self.q_half
 
-    def log_prob(self, s: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        logits, mu, log_std = self._params(s)
+    def _mixture_log_prob(self, logits: torch.Tensor, mu: torch.Tensor,
+                          log_std: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         u_k = u.unsqueeze(1)
         log_p = (-0.5 * (((u_k - mu) / log_std.exp()) ** 2
                          + 2.0 * log_std
@@ -190,6 +222,10 @@ class MixtureGaussianPolicy(nn.Module):
         log_w = torch.log_softmax(logits, dim=-1)
         log_p_u = torch.logsumexp(log_w + log_p, dim=-1)
         return log_p_u - _log_tanh_linear_jac(u, self.q_half)
+
+    def log_prob(self, s: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        logits, mu, log_std = self._params(s)
+        return self._mixture_log_prob(logits, mu, log_std, u)
 
     def entropy(self, s: torch.Tensor) -> torch.Tensor:
         logits, _, log_std = self._params(s)

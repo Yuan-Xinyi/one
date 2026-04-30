@@ -1,0 +1,4 @@
+[CVT] database loaded from /home/lqin/one/one/robots/manipulators/franka/fr3/data
+[warmup] collecting 1024 rollouts before learning starts
+[    1/1500] buf= 1152 R=0.322 len= 36.1/139.4 succ=0.11 q=0.1965 qens=0.1723 pi=-0.601 a=0.0500 H=+1.23 (15.7s) [pos_err_exceeded:46|joint_limit:30|max_steps:11|self_collision:8]
+[   10/1500] buf= 2016 R=0.343 len= 40.4/133.2 succ=0.18 q=0.1079 qens=0.1117 pi=-0.394 a=0.0498 H=+2.06 (27.6s) [pos_err_exceeded:41|joint_limit:34|max_steps:17|init_ik_fail:2]

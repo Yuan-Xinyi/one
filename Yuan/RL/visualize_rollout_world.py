@@ -39,10 +39,12 @@ def load_policy(ckpt_path: str, env: FarsightedSeedEnv,
 
 
 def sample_rollout(ckpt_path: str, seed: int, use_collision: bool,
-                   randomize: bool, best_components: bool):
+                   randomize: bool, best_components: bool,
+                   eval_T: int | None = None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     env = FarsightedSeedEnv(seed=seed, randomize=randomize,
-                            use_collision=use_collision)
+                            use_collision=use_collision,
+                            eval_T=eval_T)
     policy = load_policy(ckpt_path, env, device)
 
     state = env.reset()
@@ -193,6 +195,21 @@ def visualize(env, state: np.ndarray, task: dict,
     ossop.frame(length_scale=0.2, radius_scale=0.8).attach_to(base.scene)
     ossop.frame(pos=p0, rotmat=R_tgt, length_scale=0.18,
                 radius_scale=0.7).attach_to(base.scene)
+    # task plane at p0 with normal n (translucent grey disc/box)
+    ossop.plane(pos=tuple(p0), normal=tuple(n),
+                size=(0.4, 0.4),
+                rgb=(0.55, 0.55, 0.6), alpha=0.25).attach_to(base.scene)
+    # plane-normal arrow from p0 along +n (magenta, ~0.18 m long)
+    ossop.arrow(spos=tuple(p0),
+                epos=tuple(p0 + 0.18 * n),
+                shaft_radius=0.005, head_radius=0.012, head_length=0.025,
+                rgb=(0.95, 0.20, 0.85), alpha=0.95).attach_to(base.scene)
+    # path direction arrow from p0 along +d (cyan, length scaled by T*v*dt)
+    path_len = float(task['T']) * cfg.DT * task['v_path']
+    ossop.arrow(spos=tuple(p0),
+                epos=tuple(p0 + path_len * d),
+                shaft_radius=0.003, head_radius=0.008, head_length=0.018,
+                rgb=(0.10, 0.80, 0.85), alpha=0.85).attach_to(base.scene)
     if seed_tcp is not None:
         ossop.sphere(pos=tuple(seed_tcp), radius=0.012,
                      rgb=(1.0, 0.65, 0.05), alpha=0.9).attach_to(base.scene)
@@ -242,6 +259,10 @@ def main():
                         help='Enable MJCollider during rollout.')
     parser.add_argument('--best-components', action='store_true',
                         help='For mixture policies, visualize the best component mean.')
+    parser.add_argument('--eval-T', type=int, default=None,
+                        help='Override task path length (in steps). '
+                             'Only used in non-randomize mode. '
+                             'e.g. --eval-T 80 for 0.4 m, 240 for 1.2 m')
     args = parser.parse_args()
 
     ckpt = args.ckpt or latest_ckpt()
@@ -254,7 +275,8 @@ def main():
     print('seed', seed)
     env, state, task, q_seed, info = sample_rollout(
         ckpt, seed=seed, use_collision=args.collision,
-        randomize=args.randomize, best_components=args.best_components)
+        randomize=args.randomize, best_components=args.best_components,
+        eval_T=args.eval_T)
     visualize(env, state, task, q_seed, info, fps=args.fps)
 
 

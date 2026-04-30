@@ -36,8 +36,12 @@ from Yuan.RL.batched_rollout import (
 
 # ---------------- target rotmat from (d, n) ----------------
 def build_target_rotmat(d: np.ndarray, n: np.ndarray) -> np.ndarray:
-    """TCP_z = n, TCP_x = d (re-orthogonalised), TCP_y = z x x. Assumes d _|_ n."""
-    z = n / (np.linalg.norm(n) + 1e-12)
+    """Build TCP target rotation. **TCP_z = -n** (tool points INTO the
+    surface, opposite to the outward surface normal n). TCP_x is the
+    motion direction d re-orthogonalised against TCP_z. TCP_y = z x x.
+    Assumes d _|_ n.
+    """
+    z = -n / (np.linalg.norm(n) + 1e-12)              # ← flip: TCP_z = -n
     x = d - z * (d @ z)
     x = x / (np.linalg.norm(x) + 1e-12)
     y = np.cross(z, x)

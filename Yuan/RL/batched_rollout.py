@@ -44,7 +44,9 @@ def _normalize_angle_pair(pair: torch.Tensor) -> torch.Tensor:
 
 
 def build_target_rotmat_batch(d: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
-    z = _normalize(n)
+    """TCP_z = -n (tool faces INTO the surface, opposite to surface
+    outward normal). TCP_x = d projected onto z-perp. TCP_y = z x x."""
+    z = _normalize(-n)                                # ← flip: TCP_z = -n
     x = d - z * (d * z).sum(dim=-1, keepdim=True)
     x = _normalize(x)
     y = torch.cross(z, x, dim=-1)

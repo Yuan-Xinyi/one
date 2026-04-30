@@ -26,25 +26,57 @@ def _sample_unit_vec(rng: np.random.Generator) -> np.ndarray:
     return v / (np.linalg.norm(v) + 1e-12)
 
 
+def _uniform_sphere_n(rng: np.random.Generator) -> np.ndarray:
+    """Uniform random unit vector on S^2 via standard-normal + normalize.
+    Density is *truly* uniform per unit area on the sphere (unlike the
+    legacy tilt+azim sampling which biased toward the poles)."""
+    while True:
+        v = rng.standard_normal(3).astype(np.float32)
+        nrm = float(np.linalg.norm(v))
+        if nrm > 1e-6:
+            return v / nrm
+
+
 def sample_raw_c(rng: np.random.Generator,
                  n_tilt_max: float | None = None,
+                 n_tilt_range: tuple[float, float] | None = None,
                  p0_box: tuple[np.ndarray, np.ndarray] | None = None) -> np.ndarray:
-    """Sample c = [p0, d, n] in R^9. n_tilt_max defaults to cfg.N_TILT_MAX
-    (eval) but can be overridden for OOD splits."""
-    if n_tilt_max is None:
-        n_tilt_max = cfg.N_TILT_MAX
-    tilt = rng.uniform(0.0, n_tilt_max)
-    azim = rng.uniform(0.0, 2.0 * np.pi)
-    n = np.array([np.sin(tilt) * np.cos(azim),
-                  np.sin(tilt) * np.sin(azim),
-                  np.cos(tilt)], dtype=np.float32)
+    """Sample c = [p0, d, n] in R^9.
+
+    n is sampled uniform on the full sphere by default. Constraints:
+      - n_tilt_range = (lo, hi): keep only n whose tilt-from-+z is in band
+      - n_tilt_max:              keep only n with tilt <= n_tilt_max
+                                  (= polar cap of half-angle n_tilt_max)
+    Both use rejection sampling on the uniform sphere.
+    """
+    if n_tilt_range is not None:
+        lo, hi = float(n_tilt_range[0]), float(n_tilt_range[1])
+        cos_lo, cos_hi = float(np.cos(hi)), float(np.cos(lo))  # note swap
+        for _ in range(1000):
+            n = _uniform_sphere_n(rng)
+            if cos_lo <= float(n[2]) <= cos_hi:
+                break
+        else:
+            n = _uniform_sphere_n(rng)
+    elif n_tilt_max is not None and n_tilt_max < np.pi - 1e-6:
+        cos_max = float(np.cos(n_tilt_max))
+        for _ in range(1000):
+            n = _uniform_sphere_n(rng)
+            if float(n[2]) >= cos_max:
+                break
+        else:
+            n = _uniform_sphere_n(rng)
+    else:
+        n = _uniform_sphere_n(rng)
+
     while True:
         v = _sample_unit_vec(rng)
         d = v - n * (v @ n)
-        nrm = np.linalg.norm(d)
+        nrm = float(np.linalg.norm(d))
         if nrm > 1e-3:
             d = (d / nrm).astype(np.float32)
             break
+
     if p0_box is None:
         p0 = rng.uniform(cfg.P0_BOX_LO, cfg.P0_BOX_HI).astype(np.float32)
     else:
@@ -92,7 +124,8 @@ class FarsightedSeedEnv:
                  randomize: bool = True,
                  # OOD knobs (override sampling distributions)
                  n_tilt_range: tuple[float, float] | None = None,
-                 p0_box: tuple[np.ndarray, np.ndarray] | None = None):
+                 p0_box: tuple[np.ndarray, np.ndarray] | None = None,
+                 eval_T: int | None = None):
         if arm is None:
             from one.robots.manipulators.franka.fr3.fr3 import FR3
             arm = FR3()
@@ -114,6 +147,7 @@ class FarsightedSeedEnv:
         self.randomize = bool(randomize)
         self.n_tilt_range = n_tilt_range          # if None: use defaults
         self.p0_box = p0_box                      # if None: use defaults
+        self.eval_T = eval_T                      # fixed T in non-randomize mode
         self._cur: dict | None = None
         self._reach_kin = None
         self._reach_actions = None
@@ -121,8 +155,8 @@ class FarsightedSeedEnv:
         # cache home FK (TCP pose at home_qs)
         arm.fk(arm.home_qs)
         from Yuan.RL.controller import DLSController
-        ctrl = DLSController(arm)
-        p_home, R_home, _ = ctrl.fk_with_jac(
+        self._ctrl = DLSController(arm)              # cache for repeated FK
+        p_home, R_home, _ = self._ctrl.fk_with_jac(
             arm.home_qs[arm._chain.active_mask].astype(np.float32))
         self.p_home = p_home.astype(np.float32)
         self.z_home = R_home[:, 2].astype(np.float32)
@@ -195,19 +229,50 @@ class FarsightedSeedEnv:
     def _is_task_reachable(self, c: np.ndarray) -> bool:
         return bool(self._reachable_mask(c[None, :])[0])
 
+    def _sample_p0_n_via_random_q(self, rng):
+        """Sample p0, n by drawing a random joint config and forward-FK'ing.
+        Guarantees (p0, n) is *physically reachable* by FR3 (one IK solution
+        is the q we sampled). After the TCP_z=-n convention flip, n is the
+        outward surface normal: n = -R_tcp[:, 2]."""
+        chain = self.arm._chain
+        lo = chain.lmt_lo + float(cfg.RANDOM_Q_MARGIN)
+        hi = chain.lmt_up - float(cfg.RANDOM_Q_MARGIN)
+        q = rng.uniform(lo, hi).astype(np.float32)
+        p_tcp, R_tcp, _ = self._ctrl.fk_with_jac(q)
+        p0 = p_tcp.astype(np.float32)
+        n  = (-R_tcp[:, 2]).astype(np.float32)
+        return p0, n, q
+
     def _sample_task_candidate(self) -> dict:
         rng = self.rng
-        if self.n_tilt_range is not None:
-            tilt_max = float(rng.uniform(*self.n_tilt_range))
-        elif self.randomize:
-            tilt_max = float(rng.uniform(*cfg.DR_N_TILT))
+        q_sample: np.ndarray | None = None
+        if cfg.TASK_SAMPLE_MODE == "random_q":
+            # guaranteed reachable: random q -> FK -> (p0, n)
+            p0, n, q_sample = self._sample_p0_n_via_random_q(rng)
+            # if OOD wants a tilt band, rejection-sample over q for it
+            if self.n_tilt_range is not None:
+                lo_tilt, hi_tilt = self.n_tilt_range
+                cos_lo, cos_hi = float(np.cos(hi_tilt)), float(np.cos(lo_tilt))
+                for _ in range(500):
+                    if cos_lo <= float(n[2]) <= cos_hi:
+                        break
+                    p0, n, q_sample = self._sample_p0_n_via_random_q(rng)
+            # d: random unit vector in the plane perp to n
+            while True:
+                v = _sample_unit_vec(rng)
+                d = v - n * (v @ n)
+                nrm = float(np.linalg.norm(d))
+                if nrm > 1e-3:
+                    d = (d / nrm).astype(np.float32)
+                    break
+            c = np.concatenate([p0, d, n]).astype(np.float32)
         else:
-            tilt_max = cfg.N_TILT_MAX
-        # actually we sample one task at a time so just use tilt_max = sample
-        # bound; we want tilt itself drawn within [0, tilt_max]
-        c = sample_raw_c(rng, n_tilt_max=tilt_max,
-                         p0_box=self._training_p0_box())
-        c[:3] = self._sample_p0_in_shell(rng)
+            # legacy "workspace" mode
+            kwargs = dict(p0_box=self._training_p0_box())
+            if self.n_tilt_range is not None:
+                kwargs["n_tilt_range"] = self.n_tilt_range
+            c = sample_raw_c(rng, **kwargs)
+            c[:3] = self._sample_p0_in_shell(rng)
 
         if self.randomize:
             v_path = float(rng.uniform(*cfg.DR_V_PATH))
@@ -216,11 +281,14 @@ class FarsightedSeedEnv:
         else:
             v_path = cfg.V_PATH
             eps_p  = cfg.EPS_POS
-            T      = cfg.MAX_STEPS
+            T      = int(self.eval_T) if self.eval_T is not None else cfg.MAX_STEPS
         return {"c": c, "v_path": v_path, "eps_p": eps_p, "T": T,
-                "n_tilt_max": tilt_max}
+                "q_sample": q_sample}
 
     def _sample_tasks(self, count: int) -> list[dict]:
+        # random-q mode is guaranteed reachable by construction; skip filter
+        if cfg.TASK_SAMPLE_MODE == "random_q":
+            return [self._sample_task_candidate() for _ in range(count)]
         if (not self.randomize
                 or not cfg.DR_SAMPLE_REACHABLE_ONLY
                 or cfg.ACTION_MODE != "branch_descriptor"):
@@ -251,15 +319,27 @@ class FarsightedSeedEnv:
         dist_home_p0 = float(np.linalg.norm(p0 - self.p_home))
         cos_zhn = float(np.clip(self.z_home @ n, -1.0, 1.0))
         ang_zhn = float(np.arccos(cos_zhn))
+        # geom-aug features (v9): how the task relates to FR3's reachable region
+        shoulder = np.asarray(cfg.FR3_SHOULDER, dtype=np.float32)
+        dist_p0_shoulder = float(np.linalg.norm(p0 - shoulder))
+        reach_margin = float(max(0.0, cfg.FR3_REACH_RADIUS - np.linalg.norm(p0)))
+        n_dot_grav = float(-n[2])    # +1 = normal pointing down, -1 = up
         # task params (T normalised to [0, 1])
         v_norm = task["v_path"]                          # already small magnitude
         eps_norm = task["eps_p"] * 1000.0                # -> mm scale
         T_norm = task["T"] / float(cfg.MAX_STEPS)
-        return np.concatenate([
+        feats = [
             c,                                                # 9
             np.array([v_norm, eps_norm, T_norm], dtype=np.float32),
             np.array([dist_home_p0, ang_zhn], dtype=np.float32),
-        ]).astype(np.float32)
+        ]
+        # v9 geom-aug only emitted when config asks for the wider state
+        if cfg.STATE_DIM >= cfg.RAW_C_DIM + cfg.TASK_PARAM_DIM \
+                + cfg.FK_AUG_DIM + cfg.GEOM_AUG_DIM:
+            feats.append(np.array(
+                [dist_p0_shoulder, reach_margin, n_dot_grav],
+                dtype=np.float32))
+        return np.concatenate(feats).astype(np.float32)
 
     # ----- gym-like API -----
     def reset(self) -> np.ndarray:

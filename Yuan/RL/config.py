@@ -5,7 +5,9 @@ import numpy as np
 # ---------- Task / rollout (defaults; randomised at training time) ----------
 DT          = 0.02                  # control period [s] (50 Hz)
 V_PATH      = 0.25                  # default path linear velocity [m/s]
-MAX_STEPS   = 80                    # absolute upper bound on T per episode
+MAX_STEPS   = 240                   # absolute upper bound on T per episode
+                                    #   = 1.2 m max path at default v=0.25 m/s
+                                    #   covers most of FR3's 1.7 m diameter workspace
 EPS_POS     = 5e-3                  # default position tracking tolerance [m]
 EPS_POS_INIT= 5e-3                  # tolerance for the seed->p0 IK projection
 THETA_MAX   = np.deg2rad(5.0)       # z-axis vs plane-normal tolerance [rad]
@@ -23,10 +25,20 @@ BRANCH_IK_NUM_STARTS = 9            # deterministic IK starts for branch project
 
 # ---------- Domain randomisation (training only; eval uses defaults) ----------
 DR_ENABLE   = True
+# Task sampling mode (v10):
+#   "random_q":     sample random q in (contracted) joint limits, FK -> (p0, n).
+#                   Guaranteed reachable; no need for reachability rejection.
+#                   d is then sampled uniform in the plane perp to n.
+#   "workspace":    legacy — sample p0 from a box, n from a sphere, reject
+#                   unreachable (p0, n) via batched-IK pre-check.
+TASK_SAMPLE_MODE = "random_q"
+RANDOM_Q_MARGIN  = 0.05               # stay this many rad off joint-limit edges
 DR_V_PATH   = (0.10, 0.40)          # m/s
 DR_EPS_POS  = (3e-3, 1e-2)          # m
-DR_T        = (40, MAX_STEPS)       # int, inclusive
-DR_N_TILT   = (0.0, np.pi)          # full-sphere plane-normal sampling
+DR_T        = (40, MAX_STEPS)       # int, inclusive  (40 -> ~0.2 m, 240 -> 1.2 m)
+DR_N_TILT   = (0.0, np.pi)          # legacy field; unused — env now samples
+                                     #   n uniformly on the FULL sphere via
+                                     #   standard-normal + normalize.
 DR_P0_BOX_LO = np.array([-0.20, -0.75, 0.02], dtype=np.float32)
 DR_P0_BOX_HI = np.array([ 0.85,  0.75, 0.85], dtype=np.float32)
 DR_P0_RADIUS = (0.22, 0.88)         # coarse FR3 reachable shell from base
@@ -64,44 +76,69 @@ P0_BOX_HI   = np.array([0.60,  0.30, 0.55], dtype=np.float32)
 N_TILT_MAX  = np.deg2rad(45.0)      # plane-normal tilt off world +z
 
 # ---------- Network ----------
-# state layout: 9 (p0,d,n) + 3 (v_path, eps_p, T_norm) + 2 (fk-aug) = 14
+# v8 default: state_dim = 14 (no geom-aug). v9 added 3 geom-aug features
+# (dist_p0_shoulder, reach_margin, n_dot_grav) + bumped MIXTURE to 8 +
+# enabled UCB action selection — but eval showed -3.6 pp pol/orc regression,
+# so we revert to v8 settings as the production config. v9 code paths in
+# qnet.py / train.py / env._state_vec are kept but deactivated by these flags.
 STATE_DIM    = 14
 RAW_C_DIM    = 9                    # [p0, d, n] portion
 TASK_PARAM_DIM = 3                  # v_path, eps_p, T_norm
 FK_AUG_DIM   = 2                    # dist_home_p0, angle_z_home_n
+GEOM_AUG_DIM = 3                    # (only added to state when STATE_DIM=17)
 HIDDEN_DIM   = 256
 POLICY_TYPE  = "mixture"            # "gaussian" or "mixture"
-MIXTURE_COMPONENTS = 8
+MIXTURE_COMPONENTS = 4              # v8 sweet spot
 LOG_STD_INIT = -1.0                 # ~ exp(-1)=0.37 rad
 LOG_STD_MIN  = -5.0
 LOG_STD_MAX  = 1.0
 STATE_DEP_LOG_STD = True            # if False, fall back to a free Parameter
 
-# ---------- PPO ----------
+# ---------- Q ensemble + active sampling (v9, deactivated) ----------
+Q_ENSEMBLE_M    = 5                 # number of bootstrap Q networks
+ACTIVE_SAMPLING = False             # v9 ablation: -3.6 pp regression, off by default
+ACTIVE_K        = 8                 # candidate actions per state when active
+FR3_REACH_RADIUS = 0.855            # m, used for reach_margin feature
+FR3_SHOULDER     = (0.0, 0.0, 0.333)  # used for dist_p0_shoulder feature
+
+# ---------- PPO (legacy / unused in v8) ----------
 PPO_EPOCHS    = 8
-PPO_CLIP      = 0.2
-PPO_TARGET_KL = 0.05
+PPO_CLIP      = 0.3
+PPO_TARGET_KL = 0.10
 MINIBATCH     = 32
+
+# ---------- SAC (v8) ----------
+SAC_REPLAY_SIZE = 100_000           # FIFO buffer capacity
+SAC_BATCH       = 256               # Q / pi update minibatch from buffer
+SAC_K_Q         = 4                 # Q updates per env iter
+SAC_K_PI        = 1                 # policy updates per env iter
+SAC_LR_Q        = 3e-4
+SAC_LR_PI       = 3e-4
+SAC_LR_ALPHA    = 3e-4
+SAC_ALPHA_INIT  = 0.05              # initial entropy coefficient
+SAC_TARGET_H    = -4.0              # = -action_dim
+SAC_AUTO_ALPHA  = True              # learn alpha to hit target entropy
+SAC_WARMUP_ROLLOUTS = 1024          # collect this many before training starts
 
 # ---------- Optim ----------
 LR_PI       = 3e-4
 LR_V        = 1e-3
 BATCH_SIZE  = 96
-N_ITERS     = 6000
+N_ITERS     = 1500
 GRAD_CLIP   = 1.0
 SEED        = 0
 
 # ---------- Entropy annealing ----------
-ENT_COEF        = 3e-4                  # legacy (used if no annealing)
+ENT_COEF        = 5e-5                  # legacy (used if no annealing)
 ENT_COEF_INIT   = 2e-2                  # exploration-heavy at start
-ENT_COEF_FINAL  = 3e-4
-ENT_ANNEAL_END  = 3000                  # iter at which decay finishes
+ENT_COEF_FINAL  = 5e-5                  # 6x stronger decay than v6
+ENT_ANNEAL_END  = 1000                  # iter at which decay finishes
 
 # ---------- Logging ----------
 LOG_EVERY   = 10
 CKPT_EVERY  = 200
-CKPT_DIR    = "Yuan/RL/checkpoints_v6_branch"
+CKPT_DIR    = "Yuan/RL/checkpoints_v10_full_sphere"
 WANDB_ENABLE  = False
 WANDB_PROJECT = "fr3-rl-branch"
 WANDB_ENTITY  = None
-WANDB_RUN_NAME = "v6_branch_mixture"
+WANDB_RUN_NAME = "v10_sac_full_sphere_n"

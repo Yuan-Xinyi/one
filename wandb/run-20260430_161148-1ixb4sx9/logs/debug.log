@@ -17,3 +17,8 @@ config: {'DT': 0.02, 'V_PATH': 0.25, 'MAX_STEPS': 240, 'EPS_POS': 0.005, 'EPS_PO
 2026-04-30 16:11:50,074 INFO    MainThread:1456874 [wandb_run.py:_redirect():2472] Wrapping output streams.
 2026-04-30 16:11:50,074 INFO    MainThread:1456874 [wandb_run.py:_redirect():2495] Redirects installed.
 2026-04-30 16:11:50,075 INFO    MainThread:1456874 [wandb_init.py:init():1094] run started, returning control to user process
+2026-04-30 19:56:49,494 INFO    MainThread:1456874 [wandb_run.py:_finish():2321] finishing run xinyiyuan_robo/fr3-rl-branch/1ixb4sx9
+2026-04-30 19:56:49,494 INFO    MainThread:1456874 [wandb_run.py:_atexit_cleanup():2520] got exitcode: 0
+2026-04-30 19:56:49,494 INFO    MainThread:1456874 [wandb_run.py:_restore():2502] restore
+2026-04-30 19:56:49,494 INFO    MainThread:1456874 [wandb_run.py:_restore():2508] restore done
+2026-04-30 19:56:52,018 INFO    MainThread:1456874 [wandb_run.py:_footer_sync_info():3889] logging synced files

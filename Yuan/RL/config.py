@@ -144,12 +144,16 @@ SAC_LR_Q        = 3e-4
 SAC_LR_PI       = 3e-4
 SAC_LR_ALPHA    = 3e-4
 SAC_ALPHA_INIT  = 0.05              # initial entropy coefficient
-SAC_TARGET_H    = -8.0              # tighter than -action_dim;
-                                    # encourages policy to commit to a mode
-                                    # (was -4.0, observed too-loose at v10c)
+SAC_TARGET_H    = -6.0              # softened from -8.0 to keep the policy
+                                    # entropy higher for longer; lets PER
+                                    # actually propagate rare-success signals
+                                    # before the distribution collapses.
 SAC_AUTO_ALPHA  = True              # learn alpha to hit target entropy
 SAC_WARMUP_ROLLOUTS = 1024          # collect this many before training starts
-SAC_ACTION_SAMPLES_PER_TASK = 8     # rollout K policy samples per task into replay
+SAC_ACTION_SAMPLES_PER_TASK = 32    # K policy samples per task; bigger K
+                                    # makes the sampled-oracle a tighter
+                                    # upper bound on hard tasks
+                                    # (rare-success more likely captured)
 REWARD_USE_SAMPLED_ORACLE = True    # normalize each action by best of K actions on same task
 REWARD_ORACLE_MIN_STEPS = 1.0       # avoid division by zero when every sampled branch fails
 REWARD_FAIL_INIT_IK = 0.10
@@ -168,14 +172,14 @@ PER_ENABLE          = True
 PER_ALPHA           = 0.6
 PER_BETA            = 0.4
 PER_BETA_FINAL      = 1.0
-PER_BETA_ANNEAL_END = 5000
+PER_BETA_ANNEAL_END = 10000      # match N_ITERS so beta hits 1.0 by end
 PER_EPS             = 1e-3
 
 # ---------- Optim ----------
 LR_PI       = 3e-4
 LR_V        = 1e-3
-BATCH_SIZE  = 128                   # K=8 -> 1024 rollouts/iter; better wall-clock feedback
-N_ITERS     = 5000
+BATCH_SIZE  = 64                    # K=32 -> 2048 rollouts/iter (2x v11b)
+N_ITERS     = 10000
 GRAD_CLIP   = 1.0
 SEED        = 0
 
@@ -188,8 +192,8 @@ ENT_ANNEAL_END  = 1000                  # iter at which decay finishes
 # ---------- Logging ----------
 LOG_EVERY   = 10
 CKPT_EVERY  = 200
-CKPT_DIR    = "Yuan/RL/checkpoints_v11b_sampled_oracle_k8"
-WANDB_ENABLE  = False
+CKPT_DIR    = "Yuan/RL/checkpoints_v12_pen_per_fixA_10k"
+WANDB_ENABLE  = True
 WANDB_PROJECT = "fr3-rl-branch"
 WANDB_ENTITY  = None
-WANDB_RUN_NAME = "v11b_sac_flow_sampled_oracle_k8"
+WANDB_RUN_NAME = "v12_pen_per_fixA_10k"

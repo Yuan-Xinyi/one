@@ -210,18 +210,31 @@ def main():
             policy, states_np, tasks, device)
         buffer.add_batch(s_rep, a_np, L_np, T_np.astype(np.float32), r_np)
 
+        # PER beta annealing: linearly ramp from PER_BETA -> PER_BETA_FINAL
+        per_beta = float(cfg.PER_BETA)
+        if cfg.PER_ENABLE and cfg.PER_BETA_ANNEAL_END > 0:
+            t = min(1.0, it / float(cfg.PER_BETA_ANNEAL_END))
+            per_beta = cfg.PER_BETA + t * (cfg.PER_BETA_FINAL - cfg.PER_BETA)
+
         # ----- Q updates -----
         q_loss_val = 0.0
         qens_loss_val = 0.0
         for _ in range(cfg.SAC_K_Q):
-            s_b, a_b, r_b = buffer.sample(cfg.SAC_BATCH, device)
+            s_b, a_b, r_b, idx_np, w_b = buffer.sample(
+                cfg.SAC_BATCH, device, beta=per_beta)
             q_pred = qnet(s_b, a_b)
-            q_loss = ((q_pred - r_b) ** 2).mean()
+            td_err = q_pred - r_b
+            # IS-weighted MSE; with PER off, w_b is all-ones so equiv. to mean
+            q_loss = (w_b * td_err ** 2).mean()
             opt_q.zero_grad()
             q_loss.backward()
             torch.nn.utils.clip_grad_norm_(qnet.parameters(), cfg.GRAD_CLIP)
             opt_q.step()
             q_loss_val = float(q_loss.item())
+
+            # refresh priorities of the just-sampled rows with their |TD-err|
+            buffer.update_priorities(
+                idx_np, td_err.detach().abs().cpu().numpy())
 
             # optional ensemble (only active if cfg.ACTIVE_SAMPLING)
             if qens is not None:
@@ -239,7 +252,8 @@ def main():
         pi_loss_val = 0.0
         ent_val = 0.0
         for _ in range(cfg.SAC_K_PI):
-            s_b, _, _ = buffer.sample(cfg.SAC_BATCH, device)
+            s_b, _, _, _, _ = buffer.sample(cfg.SAC_BATCH, device,
+                                            beta=per_beta)
             a_repar, _, log_p = policy.rsample(s_b)
             q_val = qnet(s_b, a_repar)
             alpha = log_alpha.exp().detach()

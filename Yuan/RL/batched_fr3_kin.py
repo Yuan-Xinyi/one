@@ -10,6 +10,8 @@ import math
 
 import torch
 
+import Yuan.RL.config as cfg
+
 
 def _as_tensor(data, device, dtype):
     return torch.as_tensor(data, device=device, dtype=dtype)
@@ -58,7 +60,9 @@ class BatchedFR3Kinematics:
     """
 
     def __init__(self, device=None, dtype=torch.float32,
-                 tcp_offset: float = 0.0):
+                 tcp_offset: float | None = None):
+        if tcp_offset is None:
+            tcp_offset = float(getattr(cfg, "TCP_OFFSET", 0.0))
         self.device = torch.device('cpu' if device is None else device)
         self.dtype = dtype
         self.axis_z = _as_tensor([0.0, 0.0, 1.0], self.device, self.dtype)

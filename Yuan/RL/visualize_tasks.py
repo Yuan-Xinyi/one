@@ -77,11 +77,12 @@ def main():
     # world frame at base origin
     ossop.frame(length_scale=0.25, radius_scale=1.0).attach_to(base.scene)
 
-    from one.robots.manipulators.franka.fr3.fr3 import FR3
+    from Yuan.RL.fr3_with_pen import make_fr3_with_pen, attach_pen_visual
     if args.show_fr3:
-        arm_home = FR3()
+        arm_home, _ = make_fr3_with_pen()
         arm_home.fk(arm_home.home_qs)
         arm_home.attach_to(base.scene)
+        attach_pen_visual(arm_home)
 
     for i, task in enumerate(tasks):
         c = task['c']
@@ -123,12 +124,13 @@ def main():
 
         # one FR3 at the joint config that *generated* this task
         if args.show_q and task.get('q_sample') is not None:
-            arm_q = FR3()
+            arm_q, _ = make_fr3_with_pen()
             full_q = np.zeros(arm_q.qs.shape[0], dtype=np.float32)
             mask = arm_q._chain.active_mask
             full_q[mask] = task['q_sample']
             arm_q.fk(full_q)
             arm_q.attach_to(base.scene)
+            attach_pen_visual(arm_q)
 
         # text-style debug print
         q_str = (np.array2string(task.get('q_sample'), precision=2,

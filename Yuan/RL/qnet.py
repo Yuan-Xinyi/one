@@ -59,12 +59,22 @@ class QEnsemble(nn.Module):
 class ReplayBuffer:
     """FIFO buffer for (state, action, reward) transitions.
 
+    Optionally supports Prioritized Experience Replay (PER, Schaul 2016):
+      sample probability  p_i ∝ priority_i ** alpha
+      IS bias correction  w_i = (1 / (N * p_i)) ** beta   (normalized by max)
+
+    With cfg.PER_ENABLE=False, falls back to uniform random sampling and
+    weights are all 1.0 — behaviorally identical to the legacy buffer.
+
     Tensors live on CPU; minibatches are moved to the training device when
     sampled. Reward is the per-task-normalised rollout length (L / T).
     """
 
     def __init__(self, state_dim: int, action_dim: int,
-                 capacity: int = cfg.SAC_REPLAY_SIZE):
+                 capacity: int = cfg.SAC_REPLAY_SIZE,
+                 use_per: bool | None = None,
+                 per_alpha: float | None = None,
+                 per_eps: float | None = None):
         self.capacity = int(capacity)
         self.size = 0
         self.cursor = 0
@@ -73,6 +83,16 @@ class ReplayBuffer:
         self.r  = torch.zeros((capacity,),            dtype=torch.float32)
         self.T  = torch.zeros((capacity,),            dtype=torch.float32)
         self.L  = torch.zeros((capacity,),            dtype=torch.float32)
+
+        # PER state
+        self.use_per   = bool(getattr(cfg, "PER_ENABLE", False)
+                              if use_per is None else use_per)
+        self.per_alpha = float(getattr(cfg, "PER_ALPHA", 0.6)
+                               if per_alpha is None else per_alpha)
+        self.per_eps   = float(getattr(cfg, "PER_EPS", 1e-3)
+                               if per_eps is None else per_eps)
+        self.priorities    = np.zeros((capacity,), dtype=np.float64)
+        self.max_priority  = 1.0   # priority assigned to fresh samples
 
     def add_batch(self, s_np: np.ndarray, a_np: np.ndarray,
                   L_np: np.ndarray, T_np: np.ndarray,
@@ -87,6 +107,10 @@ class ReplayBuffer:
             r_t = L_t / T_t.clamp_min(1.0)
         else:
             r_t = torch.as_tensor(r_np, dtype=torch.float32)
+
+        # collect indices of inserted slots so we can mark their priority
+        inserted_idx = (np.arange(n, dtype=np.int64) + self.cursor) % self.capacity
+
         # FIFO insertion: handle wrap-around
         end = self.cursor + n
         if end <= self.capacity:
@@ -105,11 +129,51 @@ class ReplayBuffer:
         self.cursor = end % self.capacity
         self.size = min(self.capacity, self.size + n)
 
-    def sample(self, batch_size: int, device: torch.device):
-        idx = torch.randint(0, self.size, (batch_size,))
-        return (self.s[idx].to(device, non_blocking=True),
-                self.a[idx].to(device, non_blocking=True),
-                self.r[idx].to(device, non_blocking=True))
+        # New samples get max priority so they are guaranteed to be drawn
+        # at least once before being downweighted by their actual TD error.
+        self.priorities[inserted_idx] = self.max_priority
+
+    def sample(self, batch_size: int, device: torch.device,
+               beta: float = 1.0):
+        """Draw a minibatch. Returns (s, a, r, idx, weights).
+
+        idx is needed by the caller so they can call update_priorities(idx,
+        |TD-error|) after the gradient step. weights are IS bias corrections
+        — multiply your per-sample loss by these (and average) before
+        backward(). Under PER_ENABLE=False, idx is uniform and weights=1.
+        """
+        if self.use_per and self.size > 0:
+            p = self.priorities[:self.size] ** self.per_alpha
+            p_sum = p.sum()
+            if p_sum <= 0:
+                # fallback (e.g. all-zero priorities at warm start)
+                p_norm = np.full(self.size, 1.0 / self.size)
+            else:
+                p_norm = p / p_sum
+            idx_np = np.random.choice(self.size, size=batch_size,
+                                      p=p_norm, replace=True)
+            w = (1.0 / (self.size * p_norm[idx_np])) ** float(beta)
+            w_max = w.max() if w.size else 1.0
+            w = (w / w_max).astype(np.float32)
+        else:
+            idx_np = np.random.randint(0, self.size, size=batch_size).astype(np.int64)
+            w = np.ones(batch_size, dtype=np.float32)
+
+        idx_t = torch.as_tensor(idx_np, dtype=torch.long)
+        w_t   = torch.as_tensor(w,      dtype=torch.float32, device=device)
+        return (self.s[idx_t].to(device, non_blocking=True),
+                self.a[idx_t].to(device, non_blocking=True),
+                self.r[idx_t].to(device, non_blocking=True),
+                idx_np, w_t)
+
+    def update_priorities(self, idx_np: np.ndarray, abs_td_errors: np.ndarray):
+        """Refresh the priorities of the just-trained samples. No-op if PER off."""
+        if not self.use_per:
+            return
+        new_p = np.abs(np.asarray(abs_td_errors, dtype=np.float64)) + self.per_eps
+        self.priorities[idx_np] = new_p
+        if new_p.size:
+            self.max_priority = max(self.max_priority, float(new_p.max()))
 
     def __len__(self) -> int:
         return self.size

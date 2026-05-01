@@ -34,6 +34,7 @@ import torch
 import Yuan.RL.config as cfg
 from Yuan.RL.env import FarsightedSeedEnv
 from Yuan.RL.policy import make_policy
+from Yuan.RL.qnet import QNet
 from Yuan.RL.batched_rollout import (
     batched_rollout, branch_project_multistart, build_branch_rotmat_batch,
     _device_from_cfg,
@@ -74,7 +75,7 @@ class _StageCtx:
         self.owner.add(self.name, time.perf_counter() - self.t0)
 
 
-def _load_policy(ckpt_path, env, device):
+def _load_policy_and_q(ckpt_path, env, device):
     q_mid = torch.as_tensor(env.action_mid, dtype=torch.float32, device=device)
     q_half = torch.as_tensor(env.action_half, dtype=torch.float32, device=device)
     state = torch.load(ckpt_path, map_location=device, weights_only=False)
@@ -82,7 +83,15 @@ def _load_policy(ckpt_path, env, device):
                          policy_type=state.get("policy_type", "gaussian")).to(device)
     policy.load_state_dict(state["policy"])
     policy.eval()
-    return policy
+
+    qnet = QNet(cfg.STATE_DIM, env.action_dim).to(device)
+    qnet.load_state_dict(state["qnet"])
+    qnet.eval()
+    return policy, qnet
+
+
+def _load_policy(ckpt_path, env, device):
+    return _load_policy_and_q(ckpt_path, env, device)[0]
 
 
 def _rollout_chunked(actions_np, c_np, v_np, e_np, T_np, chunk=4096):
@@ -122,7 +131,7 @@ def _joint_limit_margin(kin: BatchedFR3Kinematics,
 # ---------------------------------------------------------------------------
 # core evaluation: precompute everything once, derive all strategies
 # ---------------------------------------------------------------------------
-def precompute(policy, env, n_tasks: int, K_max: int, seed: int, timer: _Timer):
+def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int, timer: _Timer):
     device = next(policy.parameters()).device
     rng = np.random.default_rng(seed)
     env.rng = np.random.default_rng(seed)
@@ -188,43 +197,84 @@ def precompute(policy, env, n_tasks: int, K_max: int, seed: int, timer: _Timer):
     score_manip = np.where(ok_mat, score_manip, -np.inf)
     score_jlm   = np.where(ok_mat, score_jlm,   -np.inf)
 
+    # ----- Q-ranked: K policy stochastic samples + Q score per (s, a) -----
+    # Sample K policy actions per task (replicate state K times along
+    # the sample dim).
+    with timer("09_policy_K_samples"):
+        rep_states_t = states_t.repeat(K_max, 1)               # (K*N, S)
+        with torch.no_grad():
+            a_pol_K, _ = policy.act(rep_states_t, deterministic=False)
+        a_pol_K_np = a_pol_K.cpu().numpy().astype(np.float32)   # (K*N, 4)
+
+    with timer("10_q_score_KxN"):
+        with torch.no_grad():
+            q_scores = qnet(rep_states_t, a_pol_K)              # (K*N,)
+        q_scores_np = q_scores.cpu().numpy().reshape(K_max, n_tasks)
+
+    with timer("11_rollout_pol_K"):
+        L_pol_flat = _rollout_chunked(a_pol_K_np, rep_c, rep_v, rep_e, rep_T)
+        L_pol_K = L_pol_flat.reshape(K_max, n_tasks)
+
     return {
         "tasks":   tasks,
         "T":       T_np,
         "L_det":   L_det,
-        "L_unif":  L_unif,            # (K_max, N)
-        "score_manip": score_manip,   # (K_max, N)
-        "score_jlm":   score_jlm,     # (K_max, N)
+        "L_unif":  L_unif,            # (K_max, N) — uniform random samples
+        "L_pol":   L_pol_K,           # (K_max, N) — policy stochastic samples
+        "q_pol":   q_scores_np,       # (K_max, N) — Q values for those policy samples
+        "score_manip": score_manip,   # (K_max, N) — heuristic score on UNIFORM samples
+        "score_jlm":   score_jlm,     # (K_max, N) — heuristic score on UNIFORM samples
     }
 
 
 def derive_strategy_lengths(out, K: int):
-    """For a given K, compute L for each strategy by reading from L_unif
-    using whatever index the strategy would have picked."""
-    L_unif = out["L_unif"][:K]
-    L_oracle = L_unif.max(axis=0)                                # (N,)
+    """For a given K, compute L for each strategy by looking up rollouts.
 
-    # heuristic picks the argmax of its score among the K (only over IK-ok)
-    sm = out["score_manip"][:K]
-    sj = out["score_jlm"][:K]
-    n  = L_unif.shape[1]
-    idx_manip = sm.argmax(axis=0)
-    idx_jlm   = sj.argmax(axis=0)
-    # if all K candidates failed IK (-inf row), fall back to L=0
+    Returns dict with keys:
+      uniform_oracle: K uniform samples, pick best L (god-mode)
+      manip_select:   K uniform samples, IK + manip score, pick argmax, look up L
+      jlm_select:     K uniform samples, IK + joint-margin score, pick argmax
+      q_ranked:       K policy stochastic samples, Q-net score, pick argmax  ← OURS
+      pol_stoch_orc:  K policy stochastic samples, pick best L (q_ranked ceiling)
+    """
+    L_unif = out["L_unif"][:K]
+    L_pol  = out["L_pol"][:K]
+    Qs     = out["q_pol"][:K]
+    sm     = out["score_manip"][:K]
+    sj     = out["score_jlm"][:K]
+    n      = L_unif.shape[1]
+    arange = np.arange(n)
+
+    # uniform-based god-mode
+    L_oracle = L_unif.max(axis=0)
+
+    # uniform + heuristic score (mask IK-failed rows)
     no_valid_m = ~np.isfinite(sm.max(axis=0))
     no_valid_j = ~np.isfinite(sj.max(axis=0))
-    L_manip = L_unif[idx_manip, np.arange(n)]
-    L_jlm   = L_unif[idx_jlm,   np.arange(n)]
+    L_manip = L_unif[sm.argmax(axis=0), arange]
+    L_jlm   = L_unif[sj.argmax(axis=0), arange]
     L_manip = np.where(no_valid_m, 0, L_manip)
     L_jlm   = np.where(no_valid_j, 0, L_jlm)
-    return L_oracle, L_manip, L_jlm
+
+    # policy stochastic + Q score
+    L_q     = L_pol[Qs.argmax(axis=0), arange]
+    # ceiling: if Q ranked perfectly, q_ranked == pol_stoch_orc
+    L_pol_orc = L_pol.max(axis=0)
+
+    return {
+        "uniform_oracle": L_oracle,
+        "manip_select":   L_manip,
+        "jlm_select":     L_jlm,
+        "q_ranked":       L_q,
+        "pol_stoch_orc":  L_pol_orc,
+    }
 
 
 # ---------------------------------------------------------------------------
 # realistic deployed-time measurement (not precomputed)
 # ---------------------------------------------------------------------------
 def time_strategy_deploy(strategy: str,
-                         policy, env, n_tasks: int, K: int, seed: int):
+                         policy, qnet, env, n_tasks: int, K: int, seed: int):
     """Run one strategy in the way it would be deployed (sample what it
     needs, do the smallest amount of rollout it needs). Returns wall_time."""
     device = next(policy.parameters()).device
@@ -259,6 +309,25 @@ def time_strategy_deploy(strategy: str,
         rep_e = np.tile(e_np, K); rep_T = np.tile(T_np, K)
         L = _rollout_chunked(a_flat, rep_c, rep_v, rep_e, rep_T)
         _ = L.reshape(K, n_tasks).max(axis=0)
+        _sync()
+        return time.perf_counter() - t0
+
+    if strategy == "q_ranked":
+        # 1) sample K policy actions per task
+        # 2) Q-net score each
+        # 3) argmax → pick 1 per task
+        # 4) rollout that 1
+        _sync(); t0 = time.perf_counter()
+        st = torch.as_tensor(states, dtype=torch.float32, device=device)
+        st_rep = st.repeat(K, 1)
+        with torch.no_grad():
+            a, _ = policy.act(st_rep, deterministic=False)        # (K*N, 4)
+            q = qnet(st_rep, a)                                   # (K*N,)
+        a = a.view(K, n_tasks, 4)
+        q = q.view(K, n_tasks)
+        idx = q.argmax(dim=0).cpu().numpy()
+        a_chosen = a[idx, torch.arange(n_tasks, device=device)].cpu().numpy().astype(np.float32)
+        _ = _rollout_chunked(a_chosen, c_np, v_np, e_np, T_np)
         _sync()
         return time.perf_counter() - t0
 
@@ -324,19 +393,27 @@ def report(out, K_list, deploy_times, min_oracle_dist: float):
 
     # main table: strategy x K -> ratio vs K_max upper bound
     print("\nratio of recovered length vs uniform oracle K=K_max  (avg over well-defined):")
-    header = f"  {'K':>5}  {'policy_det':>11}  {'uniform_oracle':>15}  " \
-             f"{'manip_select':>13}  {'jlm_select':>11}"
+    header = (f"  {'K':>5}  {'policy_det':>11}  {'unif_oracle':>12}  "
+              f"{'manip_K':>9}  {'jlm_K':>9}  {'q_ranked_K':>11}  "
+              f"{'pol_stoch_orc':>14}")
     print(header)
+    print("  " + "-" * (len(header) - 2))
     for K in K_list:
         if K > K_max: continue
-        L_orc, L_m, L_j = derive_strategy_lengths(out, K)
-        # policy_det doesn't depend on K — show it once for reference
-        r_pd  = _ratio_mean(L_det, L_top, mask=well)
-        r_orc = _ratio_mean(L_orc, L_top, mask=well)
-        r_m   = _ratio_mean(L_m,   L_top, mask=well)
-        r_j   = _ratio_mean(L_j,   L_top, mask=well)
-        print(f"  {K:>5d}  {r_pd:>11.4f}  {r_orc:>15.4f}  "
-              f"{r_m:>13.4f}  {r_j:>11.4f}")
+        d = derive_strategy_lengths(out, K)
+        r_pd  = _ratio_mean(L_det,                L_top, mask=well)
+        r_orc = _ratio_mean(d["uniform_oracle"],  L_top, mask=well)
+        r_m   = _ratio_mean(d["manip_select"],    L_top, mask=well)
+        r_j   = _ratio_mean(d["jlm_select"],      L_top, mask=well)
+        r_q   = _ratio_mean(d["q_ranked"],        L_top, mask=well)
+        r_pso = _ratio_mean(d["pol_stoch_orc"],   L_top, mask=well)
+        print(f"  {K:>5d}  {r_pd:>11.4f}  {r_orc:>12.4f}  "
+              f"{r_m:>9.4f}  {r_j:>9.4f}  {r_q:>11.4f}  {r_pso:>14.4f}")
+    print("\n  policy_det is K-independent (shown for reference).")
+    print("  q_ranked = OURS: K policy samples + Q-net argmax + 1 rollout. "
+          "No K-fold rollouts.")
+    print("  pol_stoch_orc is the ceiling for q_ranked: if Q ranked perfectly, "
+          "q_ranked = pol_stoch_orc.")
 
     print("\n  K=K_max corresponds to the true oracle; ratios for "
           "uniform_oracle approach 1.0 there by definition.")
@@ -345,16 +422,18 @@ def report(out, K_list, deploy_times, min_oracle_dist: float):
     p50 = np.percentile(L_unif, 50, axis=0)
     p90 = np.percentile(L_unif, 90, axis=0)
     pmax = L_unif.max(axis=0)
-    L_orc, L_m, L_j = derive_strategy_lengths(out, K_max)
     print("\nfraction of well-defined tasks where each method >= the "
           "K_max-distribution percentile:")
-    print(f"  {'method':>22}  {'>= median':>10}  {'>= p90':>8}  {'== max':>8}")
-    for name, L in [("policy_det", L_det),
-                    ("uniform_oracle K_max", L_orc),
-                    ("manip_select K_max", L_m),
-                    ("jlm_select K_max",  L_j)]:
+    print(f"  {'method':>24}  {'>= median':>10}  {'>= p90':>8}  {'== max':>8}")
+    d_max = derive_strategy_lengths(out, K_max)
+    for name, L in [("policy_det",                  L_det),
+                    ("uniform_oracle K_max",        d_max["uniform_oracle"]),
+                    ("manip_select K_max",          d_max["manip_select"]),
+                    ("jlm_select K_max",            d_max["jlm_select"]),
+                    ("q_ranked K_max (OURS)",       d_max["q_ranked"]),
+                    ("pol_stoch_orc K_max",         d_max["pol_stoch_orc"])]:
         f = well
-        print(f"  {name:>22}  "
+        print(f"  {name:>24}  "
               f"{(L[f] >= p50[f]).mean():>10.3f}  "
               f"{(L[f] >= p90[f]).mean():>8.3f}  "
               f"{(L[f] >= pmax[f]).mean():>8.3f}")
@@ -402,21 +481,19 @@ def main():
     print(f"device: {device}")
     env = FarsightedSeedEnv(seed=args.seed, randomize=True, use_collision=False)
     print(f"loading {args.ckpt}")
-    policy = _load_policy(args.ckpt, env, device)
+    policy, qnet = _load_policy_and_q(args.ckpt, env, device)
 
     timer = _Timer()
-    out = precompute(policy, env, args.n_tasks, K_max, args.seed, timer)
+    out = precompute(policy, qnet, env, args.n_tasks, K_max, args.seed, timer)
 
     deploy_times: dict[str, float] = {}
     if not args.no_deploy_timing:
-        # use the largest K for the deploy-time comparison; smaller K just
-        # scales rollout cost down for oracle, IK cost down for heuristics
         K_for_deploy = K_max
-        for strat in ("policy_det", "uniform_oracle",
-                      "manip_select", "jlmargin_select"):
+        for strat in ("policy_det", "q_ranked",
+                      "uniform_oracle", "manip_select", "jlmargin_select"):
             label = strat if strat == "policy_det" else f"{strat} K={K_for_deploy}"
             deploy_times[label] = time_strategy_deploy(
-                strat, policy, env, args.n_tasks, K_for_deploy, args.seed)
+                strat, policy, qnet, env, args.n_tasks, K_for_deploy, args.seed)
 
     report(out, K_list, deploy_times, min_oracle_dist=args.min_oracle_distance)
     report_pipeline(timer)

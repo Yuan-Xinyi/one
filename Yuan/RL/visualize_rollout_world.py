@@ -184,13 +184,15 @@ def visualize(env, state: np.ndarray, task: dict,
     base = ovw.World(cam_pos=(1.3, 1.0, 0.9),
                      cam_lookat_pos=(p0 + 0.18 * d).tolist(),
                      toggle_auto_cam_orbit=False)
-    # Use the exact same arm instance as rollout. The default env uses bare
-    # FR3, whose TCP is the flange frame; fr3_with_hand() adds a gripper TCP
-    # offset, which makes the displayed hand tip look off the target line.
+    # Use the exact same arm instance as rollout. env.arm is FR3 + Franka
+    # hand + pen (TCP at pen tip per cfg.USE_PEN_TCP), so the displayed TCP
+    # frame matches the controlled point.
+    from Yuan.RL.fr3_with_pen import attach_pen_visual
     arm = env.arm
     builtins.base = base
     builtins.arm = arm
     arm.attach_to(base.scene)
+    attach_pen_visual(arm)
     arm.toggle_tcp(length_scale=0.15, radius_scale=0.6)
     ossop.frame(length_scale=0.2, radius_scale=0.8).attach_to(base.scene)
     ossop.frame(pos=p0, rotmat=R_tgt, length_scale=0.18,

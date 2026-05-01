@@ -66,6 +66,18 @@ NULL_MANIP_FD_EPS = 1e-3            # serial-controller finite-difference step
 QDOT_MAX    = np.array([2.62, 2.62, 2.62, 2.62, 3.14, 3.14, 3.14],
                        dtype=np.float32)
 
+# ---------- End-effector geometry (FR3 hand + pen) ----------
+# The TCP we control is the PEN TIP, not the bare-arm flange.
+#   link7 → flange:        (0, 0, 0.107)              (FR3 fixed)
+#   flange → hand center:  (0, 0, HAND_TCP_OFFSET)    (FR3Gripper grasptarget)
+#   hand center → pen tip: (0, 0, PEN_LENGTH)         (rigid pen attached)
+# Total link7 → TCP offset along z: 0.107 + HAND_TCP_OFFSET + PEN_LENGTH.
+# BatchedFR3Kinematics ALREADY adds the 0.107; TCP_OFFSET adds the rest.
+USE_PEN_TCP      = True
+HAND_TCP_OFFSET  = 0.1034              # m, FR3 gripper acting center
+PEN_LENGTH       = 0.10                # m, pen extension
+TCP_OFFSET       = (HAND_TCP_OFFSET + PEN_LENGTH) if USE_PEN_TCP else 0.0
+
 # ---------- Self-collision ----------
 USE_COLLISION_CHECK = True
 
@@ -78,6 +90,12 @@ BATCHED_IK_MAX_ITERS = 50
 BATCHED_IK_DAMPING   = 1e-4
 BATCHED_IK_TOL_POS   = 1e-4
 BATCHED_IK_TOL_ROT   = 1e-3
+# Multi-start IK ranks 16 candidate q solutions by:
+#   score = pos_err + rot_err + IK_SWIVEL_W * swivel_cost - IK_MARGIN_W * margin
+# Joint-margin penalty pushes IK to choose solutions farther from joint
+# limits, mitigating step-0 joint_limit terminations during rollout.
+IK_SWIVEL_W = 0.05
+IK_MARGIN_W = 0.20                  # 0 disables; 0.2 ≈ comparable to swivel
 
 # ---------- Workspace sampling (FR3 base frame) ----------
 P0_BOX_LO   = np.array([0.30, -0.30, 0.20], dtype=np.float32)
@@ -141,6 +159,17 @@ REWARD_FAIL_ORIENT = 0.03
 REWARD_FAIL_POS = 0.00              # keep position failures ranked by L/T
 REWARD_CLIP_LO = -0.20
 REWARD_CLIP_HI = 1.00
+
+# ---------- Prioritized Experience Replay (PER, Schaul 2016) ----------
+# Sample buffer entries by p_i ∝ |TD-error|^alpha, debias gradient by
+# IS weight (1/(N*p_i))^beta. Beta anneals from PER_BETA -> PER_BETA_FINAL
+# linearly over the first PER_BETA_ANNEAL_END iters.
+PER_ENABLE          = True
+PER_ALPHA           = 0.6
+PER_BETA            = 0.4
+PER_BETA_FINAL      = 1.0
+PER_BETA_ANNEAL_END = 5000
+PER_EPS             = 1e-3
 
 # ---------- Optim ----------
 LR_PI       = 3e-4

@@ -71,7 +71,7 @@ def main():
 
     import one.scene.scene_object_primitive as ossop
     import one.viewer.world as ovw
-    from one.robots.manipulators.franka.fr3.fr3 import FR3
+    from Yuan.RL.fr3_with_pen import make_fr3_with_pen, attach_pen_visual
 
     base = ovw.World(cam_pos=(1.6, 1.4, 1.2),
                      cam_lookat_pos=(0.2, 0.0, 0.4),
@@ -82,13 +82,14 @@ def main():
     print(f"rendering {n} seed configs:")
     for i, q_active in enumerate(seeds):
         name, rgb = _group_for(i)
-        arm = FR3()
+        arm, _ = make_fr3_with_pen()
         arm.attach_to(base.scene)
         full_q = np.zeros(arm.qs.shape[0], dtype=np.float32)
         full_q[arm._chain.active_mask] = q_active
         arm.fk(full_q)
         arm.rgb = rgb
         arm.alpha = args.alpha
+        attach_pen_visual(arm, rgb=rgb, alpha=min(1.0, args.alpha + 0.3))
         if args.show_tcp:
             arm.toggle_tcp(length_scale=0.10, radius_scale=0.4)
         print(f"  seed {i:2d} [{name:>16s}]  q={np.array2string(q_active, precision=2, suppress_small=True)}")

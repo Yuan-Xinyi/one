@@ -127,8 +127,12 @@ class FarsightedSeedEnv:
                  p0_box: tuple[np.ndarray, np.ndarray] | None = None,
                  eval_T: int | None = None):
         if arm is None:
-            from one.robots.manipulators.franka.fr3.fr3 import FR3
-            arm = FR3()
+            # Default arm: FR3 + Franka hand + rigid pen, TCP at pen tip
+            # (when cfg.USE_PEN_TCP). The hand/pen offsets propagate via
+            # arm._loc_tcp_tf to DLSController and (separately) via
+            # cfg.TCP_OFFSET to BatchedFR3Kinematics.
+            from Yuan.RL.fr3_with_pen import make_fr3_with_pen
+            arm, _hand = make_fr3_with_pen()
         self.arm = arm
         self.ndof = int(arm.ndof)
         self.rng = np.random.default_rng(seed)

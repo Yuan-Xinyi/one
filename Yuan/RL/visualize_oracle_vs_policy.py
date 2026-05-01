@@ -50,10 +50,14 @@ def _rollout_chunked(actions_np, c_np, v_np, e_np, T_np, chunk=4096):
     return L
 
 
-def find_demo_task(policy, env, n_tasks, K, seed):
+def find_demo_task(policy, env, n_tasks, K, seed, only_idx: int | None = None):
     """Sample n_tasks; for each compare det policy vs best-of-K nullspace.
-    Return the index with the largest oracle - policy gap (length-wise),
-    plus the policy and oracle actions and per-task task dict."""
+
+    If ``only_idx`` is given, the heavy K-oracle sweep is computed ONLY for
+    that single task. Other tasks get L_best=0 / a_orc=zeros and should not
+    be selected by gap/good modes — used when the caller already knows
+    which demo to visualize.
+    """
     device = next(policy.parameters()).device
     rng = np.random.default_rng(seed)
     env.rng = np.random.default_rng(seed)
@@ -71,21 +75,40 @@ def find_demo_task(policy, env, n_tasks, K, seed):
     a_det_np = a_det.cpu().numpy().astype(np.float32)
     L_det = _rollout_chunked(a_det_np, c_np, v_np, e_np, T_np)
 
-    # K uniform (phi, psi) per task
-    phi = rng.uniform(0.0, 2*np.pi, size=(K, n_tasks)).astype(np.float32)
-    psi = rng.uniform(0.0, 2*np.pi, size=(K, n_tasks)).astype(np.float32)
-    a_orc = np.stack([np.cos(phi), np.sin(phi),
-                      np.cos(psi), np.sin(psi)], axis=-1)         # (K,N,4)
-    a_orc_flat = a_orc.reshape(K*n_tasks, 4).astype(np.float32)
-    rep_c = np.tile(c_np, (K, 1))
-    rep_v = np.tile(v_np, K)
-    rep_e = np.tile(e_np, K)
-    rep_T = np.tile(T_np, K)
-    L_flat = _rollout_chunked(a_orc_flat, rep_c, rep_v, rep_e, rep_T)
-    L_orc = L_flat.reshape(K, n_tasks)
-    best_k = L_orc.argmax(axis=0)                                  # (N,)
-    L_best = L_orc.max(axis=0)
-    a_orc_best = a_orc[best_k, np.arange(n_tasks)]                 # (N,4)
+    if only_idx is not None:
+        # K oracle sweep on a single task — saves N-1 task's worth of rollouts
+        c_one = c_np[only_idx:only_idx+1]
+        v_one = v_np[only_idx:only_idx+1]
+        e_one = e_np[only_idx:only_idx+1]
+        T_one = T_np[only_idx:only_idx+1]
+        phi = rng.uniform(0.0, 2*np.pi, size=K).astype(np.float32)
+        psi = rng.uniform(0.0, 2*np.pi, size=K).astype(np.float32)
+        a_orc_K = np.stack([np.cos(phi), np.sin(phi),
+                            np.cos(psi), np.sin(psi)], axis=-1).astype(np.float32)
+        L_K = _rollout_chunked(a_orc_K,
+                               np.tile(c_one, (K, 1)),
+                               np.tile(v_one, K),
+                               np.tile(e_one, K),
+                               np.tile(T_one, K))
+        L_best = np.zeros(n_tasks, dtype=np.int32)
+        L_best[only_idx] = int(L_K.max())
+        a_orc_best = np.zeros((n_tasks, 4), dtype=np.float32)
+        a_orc_best[only_idx] = a_orc_K[int(L_K.argmax())]
+    else:
+        # full sweep across all N tasks
+        phi = rng.uniform(0.0, 2*np.pi, size=(K, n_tasks)).astype(np.float32)
+        psi = rng.uniform(0.0, 2*np.pi, size=(K, n_tasks)).astype(np.float32)
+        a_orc = np.stack([np.cos(phi), np.sin(phi),
+                          np.cos(psi), np.sin(psi)], axis=-1)
+        a_orc_flat = a_orc.reshape(K*n_tasks, 4).astype(np.float32)
+        rep_c = np.tile(c_np, (K, 1))
+        rep_v = np.tile(v_np, K)
+        rep_e = np.tile(e_np, K)
+        rep_T = np.tile(T_np, K)
+        L_flat = _rollout_chunked(a_orc_flat, rep_c, rep_v, rep_e, rep_T)
+        L_orc = L_flat.reshape(K, n_tasks)
+        L_best = L_orc.max(axis=0)
+        a_orc_best = a_orc[L_orc.argmax(axis=0), np.arange(n_tasks)]
 
     return {
         "tasks":   tasks,
@@ -123,7 +146,7 @@ def tcp_positions(arm_for_fk, q_traj):
 def visualize(env, task, a_pol, info_pol, a_orc, info_orc, fps=30.0):
     import one.scene.scene_object_primitive as ossop
     import one.viewer.world as ovw
-    from one.robots.manipulators.franka.fr3.fr3 import FR3
+    from Yuan.RL.fr3_with_pen import make_fr3_with_pen, attach_pen_visual
 
     c = task["c"]
     p0, d, n = c[:3], c[3:6], c[6:9]
@@ -133,10 +156,11 @@ def visualize(env, task, a_pol, info_pol, a_orc, info_orc, fps=30.0):
     L_orc = info_orc["length"]
     path_len = float(T) * cfg.DT * v_path
 
-    # Two arm instances so we can fk them independently each tick
-    arm_pol = FR3()
-    arm_orc = FR3()
-    aux = FR3()                       # aux for tcp computation only
+    # Two arm instances (each = FR3 + Franka hand + pen) so we can fk them
+    # independently each tick. The aux arm is for offline TCP queries.
+    arm_pol, _ = make_fr3_with_pen()
+    arm_orc, _ = make_fr3_with_pen()
+    aux, _ = make_fr3_with_pen()
 
     pts_pol = tcp_positions(aux, info_pol["q_traj"])
     pts_orc = tcp_positions(aux, info_orc["q_traj"])
@@ -152,6 +176,9 @@ def visualize(env, task, a_pol, info_pol, a_orc, info_orc, fps=30.0):
     arm_orc.rgb = (0.95, 0.30, 0.55)     # magenta-ish (matches oracle trace)
     arm_pol.alpha = 0.35
     arm_orc.alpha = 0.35
+    # pen sticks: tint to match each arm so the pen is visually paired
+    attach_pen_visual(arm_pol, rgb=(0.20, 0.50, 0.95), alpha=0.85)
+    attach_pen_visual(arm_orc, rgb=(0.95, 0.30, 0.55), alpha=0.85)
     arm_pol.toggle_tcp(length_scale=0.12, radius_scale=0.5)
     arm_orc.toggle_tcp(length_scale=0.12, radius_scale=0.5)
     ossop.frame(length_scale=0.20, radius_scale=0.8).attach_to(base.scene)
@@ -265,7 +292,12 @@ def main():
     print(f"loading {args.ckpt}")
     policy = _load_policy(args.ckpt, env, device)
 
-    out = find_demo_task(policy, env, args.n_tasks, args.k, args.seed)
+    # If --task-idx is given, skip the full N-task oracle sweep — saves
+    # N-1 tasks' worth of rollouts (huge for N=200).
+    only_idx = args.task_idx if (args.task_idx is not None
+                                 and args.mode != "list") else None
+    out = find_demo_task(policy, env, args.n_tasks, args.k, args.seed,
+                         only_idx=only_idx)
     L_det, L_best, T_arr = out["L_det"], out["L_best"], out["T"]
     ratio = L_det.astype(np.float64) / np.maximum(L_best, 1)
 
@@ -297,6 +329,10 @@ def main():
 
     if args.task_idx is not None:
         idx = int(args.task_idx)
+        if idx < 0 or idx >= len(T_arr):
+            raise SystemExit(
+                f"--task-idx {idx} is out of range for --n-tasks {args.n_tasks}. "
+                f"Pass --n-tasks {idx + 1} or larger to include this task.")
     elif args.mode == "good":
         # require: feasible AND oracle covers at least min_frac of T
         # (so the demo isn't a tiny path even the oracle barely tackled).

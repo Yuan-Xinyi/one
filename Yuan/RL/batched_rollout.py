@@ -364,11 +364,27 @@ def _batched_ik_project(kin: BatchedFR3Kinematics,
     return q.clamp(kin.lmt_lo, kin.lmt_up), converged, fail_reason
 
 
+def _joint_margin_norm(kin: BatchedFR3Kinematics,
+                       q: torch.Tensor) -> torch.Tensor:
+    """Per-row min normalized distance to nearest joint limit, in [0, 0.5].
+    Higher = farther from any limit (safer for the next control step)."""
+    span = (kin.lmt_up - kin.lmt_lo).clamp_min(1e-6)
+    lo_d = (q - kin.lmt_lo) / span
+    up_d = (kin.lmt_up - q) / span
+    return torch.minimum(lo_d, up_d).min(dim=-1).values
+
+
 def branch_project_multistart(kin: BatchedFR3Kinematics,
                               p0: torch.Tensor,
                               R_tgt: torch.Tensor,
                               branch_action: torch.Tensor):
-    """Project branch descriptors with deterministic multi-start IK."""
+    """Project branch descriptors with deterministic multi-start IK.
+
+    Score among the num_starts converged candidates per task:
+        pos_err + rot_err + IK_SWIVEL_W * swivel_cost - IK_MARGIN_W * margin
+    The margin term steers selection away from near-joint-limit q so that
+    step-0 joint_limit terminations during rollout are reduced.
+    """
     batch_size = branch_action.shape[0]
     seed_bank = _branch_seed_bank(kin)
     num_starts = seed_bank.shape[0]
@@ -384,7 +400,10 @@ def branch_project_multistart(kin: BatchedFR3Kinematics,
     pos_err = (p_rep - p_tcp).norm(dim=-1)
     rot_err = _rotvec_between(R_tcp, R_rep).norm(dim=-1)
     swivel_cost = _swivel_cost_from_q(kin, q_all, p_rep, a_rep)
-    score = pos_err + rot_err + 0.05 * swivel_cost
+    margin = _joint_margin_norm(kin, q_all)
+    score = (pos_err + rot_err
+             + float(cfg.IK_SWIVEL_W) * swivel_cost
+             - float(cfg.IK_MARGIN_W) * margin)
     score = torch.where(ok_all, score, torch.full_like(score, float('inf')))
     score = score.view(batch_size, num_starts)
     best_idx = score.argmin(dim=-1)

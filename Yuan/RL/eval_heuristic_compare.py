@@ -131,7 +131,30 @@ def _joint_limit_margin(kin: BatchedFR3Kinematics,
 # ---------------------------------------------------------------------------
 # core evaluation: precompute everything once, derive all strategies
 # ---------------------------------------------------------------------------
-def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int, timer: _Timer):
+def _cache_path(ckpt_path: str, n_tasks: int, K_max: int, seed: int) -> str:
+    """Per-task data cache next to the ckpt, keyed by eval hyperparams."""
+    base = os.path.dirname(os.path.abspath(ckpt_path))
+    fname = (f"eval_cache_"
+             f"{os.path.basename(ckpt_path).replace('.pt','')}_"
+             f"n{n_tasks}_K{K_max}_s{seed}.npz")
+    return os.path.join(base, fname)
+
+
+def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
+               timer: _Timer, cache_path: str | None = None):
+    if cache_path and os.path.exists(cache_path):
+        print(f"[cache hit] loading {cache_path}")
+        d = np.load(cache_path, allow_pickle=True)
+        # tasks were stored as object array of dicts
+        return {
+            "tasks": list(d["tasks"]),
+            "T": d["T"], "L_det": d["L_det"],
+            "L_unif": d["L_unif"], "L_pol": d["L_pol"],
+            "q_pol": d["q_pol"],
+            "score_manip": d["score_manip"], "score_jlm": d["score_jlm"],
+            "score_manip_pol": d["score_manip_pol"],
+            "score_jlm_pol":   d["score_jlm_pol"],
+        }
     device = next(policy.parameters()).device
     rng = np.random.default_rng(seed)
     env.rng = np.random.default_rng(seed)
@@ -197,9 +220,7 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int, timer: _T
     score_manip = np.where(ok_mat, score_manip, -np.inf)
     score_jlm   = np.where(ok_mat, score_jlm,   -np.inf)
 
-    # ----- Q-ranked: K policy stochastic samples + Q score per (s, a) -----
-    # Sample K policy actions per task (replicate state K times along
-    # the sample dim).
+    # ----- Policy stochastic K samples + Q score + IK + heuristic scores -----
     with timer("09_policy_K_samples"):
         rep_states_t = states_t.repeat(K_max, 1)               # (K*N, S)
         with torch.no_grad():
@@ -215,58 +236,121 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int, timer: _T
         L_pol_flat = _rollout_chunked(a_pol_K_np, rep_c, rep_v, rep_e, rep_T)
         L_pol_K = L_pol_flat.reshape(K_max, n_tasks)
 
-    return {
+    # IK + heuristic scores on the POLICY samples (was previously only on
+    # uniform samples). Lets us score policy candidates with manip/jlm,
+    # which is OURS-style: policy filters to good region, heuristic picks
+    # the safest one within that region.
+    with timer("12_ik_project_pol_KxN"):
+        a_pol_t = torch.as_tensor(a_pol_K_np, device=device_kin, dtype=torch.float32)
+        # rep_c/d/n already computed for uniform samples; reuse them since
+        # both are (K*N, 3) and the task ordering matches.
+        R_tgt_pol = build_branch_rotmat_batch(d_t, n_t, a_pol_t)
+        q_pol_all, ik_ok_pol, _ = branch_project_multistart(
+            kin, p0_t, R_tgt_pol, a_pol_t)
+
+    with timer("13_score_manip_on_pol"):
+        m_d_pol = _directional_manip(kin, q_pol_all, d_t)
+
+    with timer("14_score_jlm_on_pol"):
+        margin_pol = _joint_limit_margin(kin, q_pol_all)
+
+    score_manip_pol = m_d_pol.view(K_max, n_tasks).cpu().numpy()
+    score_jlm_pol   = margin_pol.view(K_max, n_tasks).cpu().numpy()
+    ok_mat_pol      = ik_ok_pol.view(K_max, n_tasks).cpu().numpy()
+    score_manip_pol = np.where(ok_mat_pol, score_manip_pol, -np.inf)
+    score_jlm_pol   = np.where(ok_mat_pol, score_jlm_pol,   -np.inf)
+
+    out = {
         "tasks":   tasks,
         "T":       T_np,
         "L_det":   L_det,
-        "L_unif":  L_unif,            # (K_max, N) — uniform random samples
-        "L_pol":   L_pol_K,           # (K_max, N) — policy stochastic samples
-        "q_pol":   q_scores_np,       # (K_max, N) — Q values for those policy samples
-        "score_manip": score_manip,   # (K_max, N) — heuristic score on UNIFORM samples
-        "score_jlm":   score_jlm,     # (K_max, N) — heuristic score on UNIFORM samples
+        "L_unif":  L_unif,                  # (K_max, N) uniform samples
+        "L_pol":   L_pol_K,                 # (K_max, N) policy samples
+        "q_pol":   q_scores_np,             # (K_max, N) Q on policy samples
+        "score_manip":     score_manip,     # (K_max, N) manip on UNIFORM
+        "score_jlm":       score_jlm,       # (K_max, N) jlm   on UNIFORM
+        "score_manip_pol": score_manip_pol, # (K_max, N) manip on POLICY  ← NEW
+        "score_jlm_pol":   score_jlm_pol,   # (K_max, N) jlm   on POLICY  ← NEW
     }
+    if cache_path is not None:
+        try:
+            np.savez_compressed(cache_path,
+                                tasks=np.asarray(tasks, dtype=object),
+                                T=T_np, L_det=L_det, L_unif=L_unif,
+                                L_pol=L_pol_K, q_pol=q_scores_np,
+                                score_manip=score_manip, score_jlm=score_jlm,
+                                score_manip_pol=score_manip_pol,
+                                score_jlm_pol=score_jlm_pol)
+            print(f"[cache write] saved {cache_path}")
+        except Exception as e:
+            print(f"[cache write] failed: {e}")
+    return out
 
 
 def derive_strategy_lengths(out, K: int):
     """For a given K, compute L for each strategy by looking up rollouts.
 
-    Returns dict with keys:
-      uniform_oracle: K uniform samples, pick best L (god-mode)
-      manip_select:   K uniform samples, IK + manip score, pick argmax, look up L
-      jlm_select:     K uniform samples, IK + joint-margin score, pick argmax
-      q_ranked:       K policy stochastic samples, Q-net score, pick argmax  ← OURS
-      pol_stoch_orc:  K policy stochastic samples, pick best L (q_ranked ceiling)
+    All "policy_*" strategies sample K POLICY actions then score them with
+    a cheap selector and rollout only the chosen one — same deploy cost
+    as q_ranked, just different scorers.
     """
     L_unif = out["L_unif"][:K]
     L_pol  = out["L_pol"][:K]
     Qs     = out["q_pol"][:K]
-    sm     = out["score_manip"][:K]
-    sj     = out["score_jlm"][:K]
+    sm_u   = out["score_manip"][:K]      # manip on UNIFORM
+    sj_u   = out["score_jlm"][:K]        # jlm on UNIFORM
+    sm_p   = out["score_manip_pol"][:K]  # manip on POLICY
+    sj_p   = out["score_jlm_pol"][:K]    # jlm on POLICY
     n      = L_unif.shape[1]
     arange = np.arange(n)
 
     # uniform-based god-mode
     L_oracle = L_unif.max(axis=0)
 
-    # uniform + heuristic score (mask IK-failed rows)
-    no_valid_m = ~np.isfinite(sm.max(axis=0))
-    no_valid_j = ~np.isfinite(sj.max(axis=0))
-    L_manip = L_unif[sm.argmax(axis=0), arange]
-    L_jlm   = L_unif[sj.argmax(axis=0), arange]
-    L_manip = np.where(no_valid_m, 0, L_manip)
-    L_jlm   = np.where(no_valid_j, 0, L_jlm)
+    # ---- uniform-sample baselines ----
+    no_valid_mu = ~np.isfinite(sm_u.max(axis=0))
+    no_valid_ju = ~np.isfinite(sj_u.max(axis=0))
+    L_manip = np.where(no_valid_mu, 0, L_unif[sm_u.argmax(axis=0), arange])
+    L_jlm   = np.where(no_valid_ju, 0, L_unif[sj_u.argmax(axis=0), arange])
 
-    # policy stochastic + Q score
-    L_q     = L_pol[Qs.argmax(axis=0), arange]
+    # ---- policy-sample selectors ----
+    L_q          = L_pol[Qs.argmax(axis=0), arange]
+    no_valid_mp  = ~np.isfinite(sm_p.max(axis=0))
+    no_valid_jp  = ~np.isfinite(sj_p.max(axis=0))
+    L_pol_manip  = np.where(no_valid_mp, 0, L_pol[sm_p.argmax(axis=0), arange])
+    L_pol_jlm    = np.where(no_valid_jp, 0, L_pol[sj_p.argmax(axis=0), arange])
+
+    # combined: normalize each score to [0, 1] across samples-of-this-task,
+    # then sum with equal weights. Q first standardized to ~[0,1].
+    def _norm01(arr):
+        # arr is (K, N); normalize per task to [0,1] using min/max
+        a_min = arr.min(axis=0, keepdims=True)
+        a_max = arr.max(axis=0, keepdims=True)
+        rng = np.where(a_max - a_min > 1e-8, a_max - a_min, 1.0)
+        return (arr - a_min) / rng
+    Qn = _norm01(np.where(np.isfinite(Qs), Qs, -1e9))
+    Mn = _norm01(np.where(np.isfinite(sm_p), sm_p, -1e9))
+    Jn = _norm01(np.where(np.isfinite(sj_p), sj_p, -1e9))
+    combined = Qn + Mn + Jn
+    # mask IK fails (anywhere in policy samples — use any of the three)
+    valid_combined = np.isfinite(sm_p) & np.isfinite(sj_p)
+    combined = np.where(valid_combined, combined, -np.inf)
+    no_valid_c = ~np.isfinite(combined.max(axis=0))
+    L_pol_combined = np.where(no_valid_c, 0,
+                              L_pol[combined.argmax(axis=0), arange])
+
     # ceiling: if Q ranked perfectly, q_ranked == pol_stoch_orc
     L_pol_orc = L_pol.max(axis=0)
 
     return {
-        "uniform_oracle": L_oracle,
-        "manip_select":   L_manip,
-        "jlm_select":     L_jlm,
-        "q_ranked":       L_q,
-        "pol_stoch_orc":  L_pol_orc,
+        "uniform_oracle":  L_oracle,
+        "manip_select":    L_manip,
+        "jlm_select":      L_jlm,
+        "q_ranked":        L_q,
+        "policy_manip":    L_pol_manip,    # ← NEW
+        "policy_jlm":      L_pol_jlm,      # ← NEW
+        "policy_combined": L_pol_combined, # ← NEW (Q + manip + jlm)
+        "pol_stoch_orc":   L_pol_orc,
     }
 
 
@@ -376,7 +460,8 @@ def _ratio_mean(num: np.ndarray, den: np.ndarray, mask=None) -> float:
     return float((num[base] / den[base]).mean())
 
 
-def report(out, K_list, deploy_times, min_oracle_dist: float):
+def report(out, K_list, deploy_times,
+           min_oracle_dist: float, min_base_dist: float):
     T = out["T"]
     L_det = out["L_det"]
     L_unif = out["L_unif"]
@@ -384,36 +469,52 @@ def report(out, K_list, deploy_times, min_oracle_dist: float):
     L_top = L_unif.max(axis=0)              # K=K_max baseline
     v_path = np.array([t["v_path"] for t in out["tasks"]], dtype=np.float64)
     oracle_dist = L_top.astype(np.float64) * float(cfg.DT) * v_path
-    well = oracle_dist >= min_oracle_dist
+    p0 = np.stack([t["c"][:3] for t in out["tasks"]]).astype(np.float64)
+    base_dist = np.linalg.norm(p0, axis=-1)
+    cond_oracle = oracle_dist >= min_oracle_dist
+    cond_base   = base_dist  >= min_base_dist
+    well = cond_oracle & cond_base
 
     print(f"\n=== {len(T)} tasks; K_max={K_max} ===")
-    print(f"feasible     (L_top > 0)                       : {int((L_top > 0).sum())}/{len(T)}")
-    print(f"well-defined (oracle TCP distance >= {min_oracle_dist*100:.0f} cm)  : "
-          f"{int(well.sum())}/{len(T)}     ← used for stats below")
+    print(f"feasible     (L_top > 0)                                : "
+          f"{int((L_top > 0).sum())}/{len(T)}")
+    print(f"well-defined (oracle TCP >= {min_oracle_dist*100:.0f}cm AND ||p0|| "
+          f">= {min_base_dist*100:.0f}cm) : {int(well.sum())}/{len(T)}     ← used for stats")
 
-    # main table: strategy x K -> ratio vs K_max upper bound
-    print("\nratio of recovered length vs uniform oracle K=K_max  (avg over well-defined):")
-    header = (f"  {'K':>5}  {'policy_det':>11}  {'unif_oracle':>12}  "
-              f"{'manip_K':>9}  {'jlm_K':>9}  {'q_ranked_K':>11}  "
-              f"{'pol_stoch_orc':>14}")
-    print(header)
-    print("  " + "-" * (len(header) - 2))
+    # main table: uniform-sample baselines vs OURS (policy-sample selectors)
+    print("\n=== A. Uniform-sample baselines (random + cheap selector) ===")
+    header_a = (f"  {'K':>5}  {'unif_orc':>9}  {'manip_u':>9}  {'jlm_u':>9}")
+    print(header_a)
+    print("  " + "-" * (len(header_a) - 2))
     for K in K_list:
         if K > K_max: continue
         d = derive_strategy_lengths(out, K)
-        r_pd  = _ratio_mean(L_det,                L_top, mask=well)
         r_orc = _ratio_mean(d["uniform_oracle"],  L_top, mask=well)
         r_m   = _ratio_mean(d["manip_select"],    L_top, mask=well)
         r_j   = _ratio_mean(d["jlm_select"],      L_top, mask=well)
+        print(f"  {K:>5d}  {r_orc:>9.4f}  {r_m:>9.4f}  {r_j:>9.4f}")
+
+    print("\n=== B. Policy-sample selectors (OURS, K policy samples + cheap score + 1 rollout) ===")
+    r_pd = _ratio_mean(L_det, L_top, mask=well)
+    print(f"  reference: policy_det = {r_pd:.4f}  (K-independent)")
+    header_b = (f"  {'K':>5}  {'q_ranked':>9}  {'pol_manip':>10}  "
+                f"{'pol_jlm':>9}  {'pol_combd':>10}  {'pol_orc(ceil)':>14}")
+    print(header_b)
+    print("  " + "-" * (len(header_b) - 2))
+    for K in K_list:
+        if K > K_max: continue
+        d = derive_strategy_lengths(out, K)
         r_q   = _ratio_mean(d["q_ranked"],        L_top, mask=well)
+        r_pm  = _ratio_mean(d["policy_manip"],    L_top, mask=well)
+        r_pj  = _ratio_mean(d["policy_jlm"],      L_top, mask=well)
+        r_pc  = _ratio_mean(d["policy_combined"], L_top, mask=well)
         r_pso = _ratio_mean(d["pol_stoch_orc"],   L_top, mask=well)
-        print(f"  {K:>5d}  {r_pd:>11.4f}  {r_orc:>12.4f}  "
-              f"{r_m:>9.4f}  {r_j:>9.4f}  {r_q:>11.4f}  {r_pso:>14.4f}")
-    print("\n  policy_det is K-independent (shown for reference).")
-    print("  q_ranked = OURS: K policy samples + Q-net argmax + 1 rollout. "
-          "No K-fold rollouts.")
-    print("  pol_stoch_orc is the ceiling for q_ranked: if Q ranked perfectly, "
-          "q_ranked = pol_stoch_orc.")
+        print(f"  {K:>5d}  {r_q:>9.4f}  {r_pm:>10.4f}  "
+              f"{r_pj:>9.4f}  {r_pc:>10.4f}  {r_pso:>14.4f}")
+    print("\n  pol_orc is the ceiling: if scorer ranked perfectly, the chosen "
+          "L equals pol_orc.")
+    print("  pol_combd = normalized(Q) + normalized(manip) + normalized(jlm), "
+          "argmax per task.")
 
     print("\n  K=K_max corresponds to the true oracle; ratios for "
           "uniform_oracle approach 1.0 there by definition.")
@@ -422,18 +523,48 @@ def report(out, K_list, deploy_times, min_oracle_dist: float):
     p50 = np.percentile(L_unif, 50, axis=0)
     p90 = np.percentile(L_unif, 90, axis=0)
     pmax = L_unif.max(axis=0)
+    # ---- LOWER-BOUND focus: per-strategy ratio distribution ----
+    # For paper writing, the WORST cases matter more than the mean.
+    # Show per-strategy: mean, std, min, p10, p25, # of L=0 catastrophic
+    # failures, # of ratio<0.3 bad cases. All at K=K_max.
+    d_max = derive_strategy_lengths(out, K_max)
+    print("\n=== C. Per-strategy LOWER-BOUND stats at K=K_max  (well-defined n)===")
+    print("    'L=0' = catastrophic policy failure | 'r<0.3' = bad recovery")
+    print(f"  {'method':>26}  {'mean':>6}  {'std':>6}  {'min':>5}  "
+          f"{'p10':>5}  {'p25':>5}  {'L=0':>4}  {'r<0.3':>5}")
+    safe_top = np.where(L_top > 0, L_top, 1).astype(np.float64)
+    for name, L in [("policy_det",                    L_det),
+                    ("uniform_oracle K_max",          d_max["uniform_oracle"]),
+                    ("manip_select K_max",            d_max["manip_select"]),
+                    ("jlm_select K_max",              d_max["jlm_select"]),
+                    ("q_ranked K_max",                d_max["q_ranked"]),
+                    ("policy_manip K_max",            d_max["policy_manip"]),
+                    ("policy_jlm K_max",              d_max["policy_jlm"]),
+                    ("policy_combined K_max",         d_max["policy_combined"]),
+                    ("pol_stoch_orc K_max (ceiling)", d_max["pol_stoch_orc"])]:
+        L_w = L[well].astype(np.float64)
+        ratios = L_w / safe_top[well]
+        n_zero  = int((L_w == 0).sum())
+        n_bad   = int((ratios < 0.3).sum())
+        print(f"  {name:>26}  {ratios.mean():>6.3f}  {ratios.std():>6.3f}  "
+              f"{ratios.min():>5.3f}  {np.percentile(ratios, 10):>5.3f}  "
+              f"{np.percentile(ratios, 25):>5.3f}  {n_zero:>4d}  {n_bad:>5d}")
+
     print("\nfraction of well-defined tasks where each method >= the "
           "K_max-distribution percentile:")
-    print(f"  {'method':>24}  {'>= median':>10}  {'>= p90':>8}  {'== max':>8}")
-    d_max = derive_strategy_lengths(out, K_max)
-    for name, L in [("policy_det",                  L_det),
-                    ("uniform_oracle K_max",        d_max["uniform_oracle"]),
-                    ("manip_select K_max",          d_max["manip_select"]),
-                    ("jlm_select K_max",            d_max["jlm_select"]),
-                    ("q_ranked K_max (OURS)",       d_max["q_ranked"]),
-                    ("pol_stoch_orc K_max",         d_max["pol_stoch_orc"])]:
+    print(f"  {'method':>26}  {'>= median':>10}  {'>= p90':>8}  {'== max':>8}")
+    # d_max already computed above for section C
+    for name, L in [("policy_det",                    L_det),
+                    ("uniform_oracle K_max",          d_max["uniform_oracle"]),
+                    ("manip_select K_max",            d_max["manip_select"]),
+                    ("jlm_select K_max",              d_max["jlm_select"]),
+                    ("q_ranked K_max",                d_max["q_ranked"]),
+                    ("policy_manip K_max  (OURS)",    d_max["policy_manip"]),
+                    ("policy_jlm K_max    (OURS)",    d_max["policy_jlm"]),
+                    ("policy_combined K_max (OURS)",  d_max["policy_combined"]),
+                    ("pol_stoch_orc K_max  (ceiling)", d_max["pol_stoch_orc"])]:
         f = well
-        print(f"  {name:>24}  "
+        print(f"  {name:>26}  "
               f"{(L[f] >= p50[f]).mean():>10.3f}  "
               f"{(L[f] >= p90[f]).mean():>8.3f}  "
               f"{(L[f] >= pmax[f]).mean():>8.3f}")
@@ -472,6 +603,10 @@ def main():
                     help="drop tasks whose K_max oracle TCP path is shorter "
                          "than this many METERS (intrinsically infeasible). "
                          "default 0.20 m (20 cm).")
+    ap.add_argument("--min-base-dist", type=float, default=0.30,
+                    help="drop tasks whose start point p0 is closer than "
+                         "this many meters to the FR3 base origin (no "
+                         "swivel freedom inside near-base shell). default 0.30 m.")
     args = ap.parse_args()
 
     K_list = [int(k) for k in args.k_list.split(",") if k.strip()]
@@ -484,7 +619,9 @@ def main():
     policy, qnet = _load_policy_and_q(args.ckpt, env, device)
 
     timer = _Timer()
-    out = precompute(policy, qnet, env, args.n_tasks, K_max, args.seed, timer)
+    cache = _cache_path(args.ckpt, args.n_tasks, K_max, args.seed)
+    out = precompute(policy, qnet, env, args.n_tasks, K_max, args.seed, timer,
+                     cache_path=cache)
 
     deploy_times: dict[str, float] = {}
     if not args.no_deploy_timing:
@@ -495,7 +632,9 @@ def main():
             deploy_times[label] = time_strategy_deploy(
                 strat, policy, qnet, env, args.n_tasks, K_for_deploy, args.seed)
 
-    report(out, K_list, deploy_times, min_oracle_dist=args.min_oracle_distance)
+    report(out, K_list, deploy_times,
+           min_oracle_dist=args.min_oracle_distance,
+           min_base_dist=args.min_base_dist)
     report_pipeline(timer)
 
 

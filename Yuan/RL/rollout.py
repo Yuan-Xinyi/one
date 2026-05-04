@@ -80,7 +80,10 @@ def _ik_project(arm, R_tgt: np.ndarray, p_tgt: np.ndarray,
 
 def _branch_project(arm, branch_action: np.ndarray,
                     p0: np.ndarray, d: np.ndarray, n: np.ndarray):
-    device = torch.device("cpu")
+    # Match the device that batched_rollout uses; otherwise borderline-IK
+    # actions selected by GPU eval can fail to converge on CPU due to
+    # accumulator-order floating-point differences.
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     kin = BatchedFR3Kinematics(device=device)
     action = torch.as_tensor(branch_action[None], dtype=torch.float32, device=device)
     p0_t = torch.as_tensor(p0[None], dtype=torch.float32, device=device)

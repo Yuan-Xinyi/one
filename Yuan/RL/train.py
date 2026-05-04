@@ -170,12 +170,13 @@ def main():
     opt_pi = torch.optim.Adam(policy.parameters(), lr=cfg.SAC_LR_PI)
     opt_q  = torch.optim.Adam(qnet.parameters(), lr=cfg.SAC_LR_Q)
 
-    # QEnsemble was used for v9 active sampling; deactivated since
-    # v9 ablation showed regression. We allocate it lazily only if
-    # active sampling is enabled, to save ~10% per-iter compute.
+    # v13: train Q ensemble for deploy-time uncertainty-aware ranking
+    # (mean - lambda*std). Decoupled from cfg.ACTIVE_SAMPLING — that flag
+    # controlled v9-style task selection which ablated to a regression;
+    # the ensemble itself is useful for q_ranked at deploy.
     qens = None
     opt_qe = None
-    if cfg.ACTIVE_SAMPLING:
+    if cfg.ACTIVE_SAMPLING or getattr(cfg, "TRAIN_Q_ENSEMBLE", False):
         qens = QEnsemble(state_dim, action_dim, m=cfg.Q_ENSEMBLE_M).to(device)
         opt_qe = torch.optim.Adam(qens.parameters(), lr=cfg.SAC_LR_Q)
 
@@ -210,6 +211,21 @@ def main():
             policy, states_np, tasks, device)
         buffer.add_batch(s_rep, a_np, L_np, T_np.astype(np.float32), r_np)
 
+        # ----- Pairwise ranking-loss inputs from the FRESH K samples -----
+        # _collect_rollout_samples returns rows tiled as
+        #   row k*B + i = sample k of task i,   for k in [0,K), i in [0,B)
+        # → reshape to (K, B, ...) then transpose to (B, K, ...) so that
+        #   each row of the second axis is one task's K policy samples.
+        rank_K = int(cfg.SAC_ACTION_SAMPLES_PER_TASK)
+        rank_B = int(cfg.BATCH_SIZE)
+        s_grid = torch.as_tensor(s_rep,  dtype=torch.float32, device=device
+                                 ).view(rank_K, rank_B, -1).transpose(0, 1)
+        a_grid = torch.as_tensor(a_np,   dtype=torch.float32, device=device
+                                 ).view(rank_K, rank_B, -1).transpose(0, 1)
+        r_grid = torch.as_tensor(r_np,   dtype=torch.float32, device=device
+                                 ).view(rank_K, rank_B).transpose(0, 1)
+        # shapes now: s_grid (B, K, S), a_grid (B, K, A), r_grid (B, K)
+
         # PER beta annealing: linearly ramp from PER_BETA -> PER_BETA_FINAL
         per_beta = float(cfg.PER_BETA)
         if cfg.PER_ENABLE and cfg.PER_BETA_ANNEAL_END > 0:
@@ -218,35 +234,74 @@ def main():
 
         # ----- Q updates -----
         q_loss_val = 0.0
+        q_rank_val = 0.0
         qens_loss_val = 0.0
+        rank_w = float(getattr(cfg, "Q_RANK_LOSS_WEIGHT", 0.0))
+        rank_margin = float(getattr(cfg, "Q_RANK_MARGIN", 0.05))
         for _ in range(cfg.SAC_K_Q):
             s_b, a_b, r_b, idx_np, w_b = buffer.sample(
                 cfg.SAC_BATCH, device, beta=per_beta)
             q_pred = qnet(s_b, a_b)
             td_err = q_pred - r_b
             # IS-weighted MSE; with PER off, w_b is all-ones so equiv. to mean
-            q_loss = (w_b * td_err ** 2).mean()
+            q_loss_mse = (w_b * td_err ** 2).mean()
+
+            # ----- Pairwise ranking loss on FRESH K samples -----
+            # Forward Q on (B*K) flat, reshape to (B, K), then within each
+            # task compare every (i, j) pair: sign(r_i - r_j) should match
+            # sign(Q_i - Q_j). Hinge with margin.
+            if rank_w > 0:
+                q_rank = qnet(s_grid.reshape(-1, s_grid.shape[-1]),
+                              a_grid.reshape(-1, a_grid.shape[-1])
+                              ).view(rank_B, rank_K)
+                q_diff = q_rank.unsqueeze(2) - q_rank.unsqueeze(1)   # (B,K,K)
+                r_diff = r_grid.unsqueeze(2) - r_grid.unsqueeze(1)   # (B,K,K)
+                sign_r = torch.sign(r_diff)
+                # only train on pairs with non-trivial reward gap
+                pair_mask = (r_diff.abs() > rank_margin * 0.5).float()
+                hinge = torch.relu(rank_margin - sign_r * q_diff)
+                rank_loss = (hinge * pair_mask).sum() / pair_mask.sum().clamp_min(1.0)
+                q_rank_val = float(rank_loss.item())
+                q_loss = q_loss_mse + rank_w * rank_loss
+            else:
+                q_loss = q_loss_mse
+
             opt_q.zero_grad()
             q_loss.backward()
             torch.nn.utils.clip_grad_norm_(qnet.parameters(), cfg.GRAD_CLIP)
             opt_q.step()
-            q_loss_val = float(q_loss.item())
+            q_loss_val = float(q_loss_mse.item())
 
             # refresh priorities of the just-sampled rows with their |TD-err|
             buffer.update_priorities(
                 idx_np, td_err.detach().abs().cpu().numpy())
 
-            # optional ensemble (only active if cfg.ACTIVE_SAMPLING)
+            # ----- Q ensemble update (mirrors single Q's loss) -----
             if qens is not None:
                 qe_preds = qens(s_b, a_b)
                 mask = (torch.rand(qens.m, s_b.shape[0], device=device) < 0.8).float()
-                qe_loss = ((qe_preds - r_b.unsqueeze(0)) ** 2 * mask).sum() \
+                qe_mse = ((qe_preds - r_b.unsqueeze(0)) ** 2 * mask).sum() \
                           / mask.sum().clamp_min(1.0)
+                qe_loss = qe_mse
+                if rank_w > 0:
+                    # ensemble pairwise loss: average per-member ranking loss
+                    qe_rank = qens(s_grid.reshape(-1, s_grid.shape[-1]),
+                                   a_grid.reshape(-1, a_grid.shape[-1])
+                                   ).view(qens.m, rank_B, rank_K)
+                    qe_diff = qe_rank.unsqueeze(3) - qe_rank.unsqueeze(2)
+                    # broadcast r_diff/sign_r across members
+                    r_diff_b = r_diff.unsqueeze(0)
+                    sign_r_b = sign_r.unsqueeze(0)
+                    pair_mask_b = pair_mask.unsqueeze(0)
+                    qe_hinge = torch.relu(rank_margin - sign_r_b * qe_diff)
+                    qe_rank_loss = (qe_hinge * pair_mask_b).sum() / \
+                                   (pair_mask_b.sum() * qens.m).clamp_min(1.0)
+                    qe_loss = qe_mse + rank_w * qe_rank_loss
                 opt_qe.zero_grad()
                 qe_loss.backward()
                 torch.nn.utils.clip_grad_norm_(qens.parameters(), cfg.GRAD_CLIP)
                 opt_qe.step()
-                qens_loss_val = float(qe_loss.item())
+                qens_loss_val = float(qe_mse.item())
 
         # ----- policy updates -----
         pi_loss_val = 0.0
@@ -312,6 +367,8 @@ def main():
                     "train/mean_T": mean_T,
                     "train/success_rate": succ,
                     "loss/q": q_loss_val,
+                    "loss/q_rank": q_rank_val,
+                    "loss/q_ensemble": qens_loss_val,
                     "loss/pi": pi_loss_val,
                     "policy/alpha": alpha_now,
                     "policy/entropy": ent_val,

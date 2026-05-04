@@ -1,0 +1,61 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/lqin/.netrc.
+wandb: Currently logged in as: xinyiyuan (xinyiyuan_robo) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.26.1
+wandb: Run data is saved locally in /home/lqin/one/wandb/run-20260504_123331-bvu3qnah
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run v13_q_calibrated_10k
+wandb: ⭐️ View project at https://wandb.ai/xinyiyuan_robo/fr3-rl-branch
+wandb: 🚀 View run at https://wandb.ai/xinyiyuan_robo/fr3-rl-branch/runs/bvu3qnah
+[CVT] database loaded from /home/lqin/one/one/robots/manipulators/franka/fr3/data
+[warmup] collecting 1024 rollouts before learning starts
+[    1/10000] buf= 4096 R=0.627 raw=0.270 orc=0.422 len= 38.2/150.7 succ=0.07 q=0.0532 qens=0.1912 pi=-1.023 a=0.0500 H=+2.72 (6.5s) [pos_err_exceeded:1307|joint_limit:486|max_steps:139|self_collision:106]
+[   10/10000] buf=22528 R=0.570 raw=0.362 orc=0.589 len= 48.7/145.9 succ=0.15 q=0.0719 qens=0.1609 pi=-0.755 a=0.0497 H=+2.70 (33.2s) [pos_err_exceeded:1097|joint_limit:525|max_steps:298|self_collision:121]
+[   20/10000] buf=43008 R=0.636 raw=0.304 orc=0.460 len= 36.8/139.1 succ=0.10 q=0.0693 qens=0.1564 pi=-0.763 a=0.0494 H=+2.73 (61.3s) [pos_err_exceeded:1149|joint_limit:555|max_steps:202|self_collision:137]
+[   30/10000] buf=63488 R=0.655 raw=0.380 orc=0.579 len= 47.8/132.6 succ=0.16 q=0.0520 qens=0.1574 pi=-0.720 a=0.0491 H=+2.72 (90.1s) [pos_err_exceeded:1134|joint_limit:502|max_steps:324|self_collision:82]
+[   40/10000] buf=83968 R=0.578 raw=0.392 orc=0.597 len= 50.5/138.9 succ=0.17 q=0.0516 qens=0.1728 pi=-0.824 a=0.0488 H=+2.74 (118.4s) [pos_err_exceeded:957|joint_limit:542|max_steps:338|self_collision:135]
+[   50/10000] buf=104448 R=0.627 raw=0.364 orc=0.553 len= 46.2/146.5 succ=0.12 q=0.0502 qens=0.1487 pi=-0.807 a=0.0485 H=+2.70 (147.5s) [pos_err_exceeded:1111|joint_limit:493|max_steps:246|self_collision:180]
+[   60/10000] buf=124928 R=0.602 raw=0.330 orc=0.488 len= 39.7/145.2 succ=0.16 q=0.0612 qens=0.1571 pi=-0.704 a=0.0482 H=+2.69 (176.5s) [pos_err_exceeded:1149|max_steps:333|joint_limit:316|self_collision:238]
+[   70/10000] buf=145408 R=0.629 raw=0.396 orc=0.623 len= 43.8/132.1 succ=0.20 q=0.0652 qens=0.1607 pi=-0.731 a=0.0479 H=+2.64 (206.0s) [pos_err_exceeded:1110|joint_limit:406|max_steps:404|self_collision:114]
+[   80/10000] buf=165888 R=0.616 raw=0.406 orc=0.620 len= 45.7/133.2 succ=0.20 q=0.0697 qens=0.1631 pi=-0.650 a=0.0477 H=+2.66 (235.9s) [pos_err_exceeded:968|joint_limit:476|max_steps:415|self_collision:184]
+[   90/10000] buf=186368 R=0.665 raw=0.406 orc=0.581 len= 45.2/129.9 succ=0.20 q=0.0859 qens=0.1635 pi=-0.740 a=0.0474 H=+2.71 (264.7s) [pos_err_exceeded:1092|joint_limit:416|max_steps:411|self_collision:85]
+[  100/10000] buf=200000 R=0.684 raw=0.370 orc=0.510 len= 49.0/152.1 succ=0.11 q=0.0801 qens=0.1583 pi=-0.720 a=0.0471 H=+2.60 (293.2s) [pos_err_exceeded:1176|joint_limit:574|max_steps:227|self_collision:67]
+[  110/10000] buf=200000 R=0.607 raw=0.366 orc=0.579 len= 43.8/136.7 succ=0.15 q=0.0658 qens=0.1713 pi=-0.702 a=0.0468 H=+2.68 (322.7s) [pos_err_exceeded:1196|joint_limit:453|max_steps:298|self_collision:91]
+[  120/10000] buf=200000 R=0.642 raw=0.372 orc=0.552 len= 47.7/145.0 succ=0.17 q=0.0791 qens=0.1640 pi=-0.715 a=0.0465 H=+2.67 (351.6s) [pos_err_exceeded:1135|joint_limit:430|max_steps:350|self_collision:131]
+[  130/10000] buf=200000 R=0.584 raw=0.335 orc=0.507 len= 38.7/133.5 succ=0.15 q=0.0620 qens=0.1714 pi=-0.704 a=0.0463 H=+2.63 (382.8s) [pos_err_exceeded:1094|joint_limit:467|max_steps:302|self_collision:167]
+[  140/10000] buf=200000 R=0.644 raw=0.368 orc=0.578 len= 52.5/149.6 succ=0.15 q=0.0647 qens=0.1597 pi=-0.720 a=0.0460 H=+2.65 (413.0s) [pos_err_exceeded:1162|joint_limit:481|max_steps:308|self_collision:74]
+[  150/10000] buf=200000 R=0.671 raw=0.399 orc=0.594 len= 44.3/125.8 succ=0.15 q=0.0648 qens=0.1499 pi=-0.770 a=0.0457 H=+2.66 (442.3s) [pos_err_exceeded:1114|joint_limit:506|max_steps:314|self_collision:91]
+[  160/10000] buf=200000 R=0.571 raw=0.379 orc=0.579 len= 45.8/130.2 succ=0.16 q=0.0660 qens=0.1638 pi=-0.674 a=0.0454 H=+2.61 (471.5s) [pos_err_exceeded:981|joint_limit:492|max_steps:323|self_collision:249]
+[  170/10000] buf=200000 R=0.649 raw=0.374 orc=0.583 len= 47.4/146.4 succ=0.14 q=0.0601 qens=0.1447 pi=-0.723 a=0.0452 H=+2.65 (500.7s) [pos_err_exceeded:1213|joint_limit:467|max_steps:292|init_ik_fail:38]
+[  180/10000] buf=200000 R=0.617 raw=0.336 orc=0.511 len= 44.5/142.0 succ=0.10 q=0.0616 qens=0.1539 pi=-0.817 a=0.0449 H=+2.68 (531.5s) [pos_err_exceeded:1351|joint_limit:347|max_steps:211|self_collision:81]
+[  190/10000] buf=200000 R=0.639 raw=0.386 orc=0.580 len= 45.1/139.7 succ=0.17 q=0.0573 qens=0.1570 pi=-0.725 a=0.0446 H=+2.63 (560.4s) [pos_err_exceeded:1112|joint_limit:423|max_steps:357|self_collision:106]
+[  200/10000] buf=200000 R=0.639 raw=0.399 orc=0.584 len= 54.6/143.2 succ=0.17 q=0.0558 qens=0.1503 pi=-0.725 a=0.0444 H=+2.64 (590.0s) [pos_err_exceeded:1101|joint_limit:505|max_steps:338|self_collision:78]
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+[  210/10000] buf=200000 R=0.599 raw=0.357 orc=0.542 len= 42.6/143.0 succ=0.17 q=0.0686 qens=0.1653 pi=-0.684 a=0.0441 H=+2.66 (619.4s) [pos_err_exceeded:1138|joint_limit:440|max_steps:349|self_collision:98]
+[  220/10000] buf=200000 R=0.709 raw=0.469 orc=0.607 len= 47.9/123.6 succ=0.28 q=0.0505 qens=0.1519 pi=-0.712 a=0.0438 H=+2.65 (648.3s) [pos_err_exceeded:856|max_steps:567|joint_limit:544|self_collision:77]
+[  230/10000] buf=200000 R=0.656 raw=0.410 orc=0.601 len= 52.4/142.1 succ=0.14 q=0.0711 qens=0.1610 pi=-0.723 a=0.0436 H=+2.67 (678.1s) [pos_err_exceeded:1151|joint_limit:477|max_steps:284|self_collision:109]
+[  240/10000] buf=200000 R=0.651 raw=0.340 orc=0.509 len= 44.3/141.4 succ=0.16 q=0.0691 qens=0.1522 pi=-0.711 a=0.0433 H=+2.62 (707.8s) [pos_err_exceeded:1150|joint_limit:406|max_steps:335|self_collision:153]
+[  250/10000] buf=200000 R=0.641 raw=0.387 orc=0.591 len= 47.4/141.2 succ=0.15 q=0.0652 qens=0.1426 pi=-0.757 a=0.0430 H=+2.68 (737.2s) [pos_err_exceeded:1283|joint_limit:372|max_steps:302|self_collision:89]
+[  260/10000] buf=200000 R=0.631 raw=0.375 orc=0.547 len= 44.2/140.6 succ=0.14 q=0.0744 qens=0.1510 pi=-0.725 a=0.0428 H=+2.67 (766.5s) [pos_err_exceeded:1191|joint_limit:498|max_steps:293|self_collision:58]
+[  270/10000] buf=200000 R=0.617 raw=0.400 orc=0.579 len= 50.9/143.1 succ=0.22 q=0.0633 qens=0.1479 pi=-0.752 a=0.0425 H=+2.66 (796.4s) [pos_err_exceeded:972|joint_limit:469|max_steps:444|self_collision:127]
+[  280/10000] buf=200000 R=0.620 raw=0.353 orc=0.537 len= 41.2/132.5 succ=0.13 q=0.0503 qens=0.1350 pi=-0.782 a=0.0423 H=+2.70 (824.5s) [pos_err_exceeded:1115|joint_limit:488|max_steps:269|self_collision:132]
+[  290/10000] buf=200000 R=0.619 raw=0.349 orc=0.535 len= 45.0/138.3 succ=0.15 q=0.0501 qens=0.1574 pi=-0.690 a=0.0420 H=+2.64 (854.6s) [pos_err_exceeded:1166|joint_limit:486|max_steps:315|self_collision:81]
+[  300/10000] buf=200000 R=0.674 raw=0.417 orc=0.595 len= 45.8/131.2 succ=0.21 q=0.0538 qens=0.1448 pi=-0.740 a=0.0418 H=+2.63 (883.2s) [pos_err_exceeded:1085|joint_limit:472|max_steps:422|self_collision:66]
+[  310/10000] buf=200000 R=0.624 raw=0.323 orc=0.494 len= 41.2/140.2 succ=0.10 q=0.0676 qens=0.1467 pi=-0.714 a=0.0415 H=+2.66 (912.4s) [pos_err_exceeded:1272|joint_limit:482|max_steps:197|self_collision:91]
+[  320/10000] buf=200000 R=0.626 raw=0.366 orc=0.556 len= 46.6/141.9 succ=0.15 q=0.0796 qens=0.1592 pi=-0.702 a=0.0413 H=+2.65 (941.7s) [pos_err_exceeded:1218|joint_limit:445|max_steps:298|self_collision:85]
+[  330/10000] buf=200000 R=0.659 raw=0.391 orc=0.543 len= 50.4/146.1 succ=0.19 q=0.0787 qens=0.1538 pi=-0.718 a=0.0410 H=+2.66 (971.5s) [pos_err_exceeded:1026|joint_limit:477|max_steps:390|self_collision:151]
+[  340/10000] buf=200000 R=0.599 raw=0.357 orc=0.565 len= 44.3/136.6 succ=0.14 q=0.0626 qens=0.1579 pi=-0.675 a=0.0408 H=+2.67 (1000.5s) [pos_err_exceeded:1117|joint_limit:434|max_steps:279|self_collision:181]
+[  350/10000] buf=200000 R=0.690 raw=0.384 orc=0.522 len= 50.1/145.5 succ=0.14 q=0.0722 qens=0.1455 pi=-0.752 a=0.0405 H=+2.60 (1030.7s) [pos_err_exceeded:1258|joint_limit:429|max_steps:284|self_collision:73]
+[  360/10000] buf=200000 R=0.589 raw=0.342 orc=0.509 len= 40.0/138.6 succ=0.13 q=0.0721 qens=0.1651 pi=-0.679 a=0.0403 H=+2.66 (1060.6s) [pos_err_exceeded:1038|joint_limit:530|max_steps:269|self_collision:199]
+[  370/10000] buf=200000 R=0.666 raw=0.364 orc=0.516 len= 43.6/141.8 succ=0.15 q=0.0605 qens=0.1554 pi=-0.775 a=0.0401 H=+2.67 (1089.3s) [pos_err_exceeded:1230|joint_limit:396|max_steps:302|self_collision:120]
+[  380/10000] buf=200000 R=0.699 raw=0.423 orc=0.571 len= 50.5/137.6 succ=0.18 q=0.0407 qens=0.1533 pi=-0.727 a=0.0398 H=+2.63 (1119.0s) [pos_err_exceeded:1057|joint_limit:510|max_steps:359|self_collision:99]
+[  390/10000] buf=200000 R=0.585 raw=0.368 orc=0.534 len= 39.8/135.8 succ=0.18 q=0.0659 qens=0.1629 pi=-0.711 a=0.0396 H=+2.69 (1149.4s) [pos_err_exceeded:989|joint_limit:462|max_steps:376|self_collision:198]
+[  400/10000] buf=200000 R=0.660 raw=0.371 orc=0.547 len= 45.6/136.7 succ=0.18 q=0.0722 qens=0.1505 pi=-0.759 a=0.0393 H=+2.65 (1178.1s) [pos_err_exceeded:1020|joint_limit:480|max_steps:369|self_collision:164]
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+[  410/10000] buf=200000 R=0.611 raw=0.355 orc=0.526 len= 52.0/158.8 succ=0.09 q=0.0562 qens=0.1606 pi=-0.773 a=0.0391 H=+2.61 (1207.7s) [pos_err_exceeded:1031|joint_limit:533|self_collision:261|max_steps:190]
+[  420/10000] buf=200000 R=0.580 raw=0.313 orc=0.514 len= 40.5/142.8 succ=0.11 q=0.0506 qens=0.1326 pi=-0.691 a=0.0389 H=+2.67 (1237.9s) [pos_err_exceeded:1179|joint_limit:452|max_steps:227|self_collision:165]
+[  430/10000] buf=200000 R=0.692 raw=0.383 orc=0.543 len= 47.7/138.6 succ=0.17 q=0.0567 qens=0.1422 pi=-0.721 a=0.0386 H=+2.58 (1267.4s) [pos_err_exceeded:1150|joint_limit:404|max_steps:352|self_collision:140]
+[  440/10000] buf=200000 R=0.586 raw=0.300 orc=0.458 len= 40.6/148.1 succ=0.07 q=0.0589 qens=0.1518 pi=-0.693 a=0.0384 H=+2.66 (1296.4s) [pos_err_exceeded:1206|joint_limit:530|self_collision:150|max_steps:139]
+[  450/10000] buf=200000 R=0.654 raw=0.389 orc=0.568 len= 46.6/133.1 succ=0.19 q=0.0683 qens=0.1522 pi=-0.702 a=0.0382 H=+2.63 (1325.8s) [pos_err_exceeded:1125|joint_limit:432|max_steps:386|self_collision:91]
+[  460/10000] buf=200000 R=0.611 raw=0.324 orc=0.512 len= 41.6/149.0 succ=0.14 q=0.0534 qens=0.1357 pi=-0.759 a=0.0380 H=+2.64 (1355.8s) [pos_err_exceeded:1033|joint_limit:616|max_steps:279|self_collision:117]
+[  470/10000] buf=200000 R=0.656 raw=0.348 orc=0.501 len= 39.8/141.7 succ=0.14 q=0.0617 qens=0.1542 pi=-0.654 a=0.0377 H=+2.66 (1384.6s) [pos_err_exceeded:1271|joint_limit:347|max_steps:288|self_collision:132]
+[  480/10000] buf=200000 R=0.633 raw=0.363 orc=0.557 len= 43.5/140.4 succ=0.16 q=0.0510 qens=0.1463 pi=-0.668 a=0.0375 H=+2.63 (1413.9s) [pos_err_exceeded:1082|joint_limit:545|max_steps:327|self_collision:86]

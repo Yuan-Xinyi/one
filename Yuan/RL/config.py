@@ -126,6 +126,18 @@ STATE_DEP_LOG_STD = True            # if False, fall back to a free Parameter
 Q_ENSEMBLE_M    = 5                 # number of bootstrap Q networks
 ACTIVE_SAMPLING = False             # v9 ablation: -3.6 pp regression, off by default
 ACTIVE_K        = 8                 # candidate actions per state when active
+# v13: train the Q ensemble even when ACTIVE_SAMPLING=False — used at deploy
+# for uncertainty-aware q_ranked (mean - lambda*std). Decoupled from the
+# v9 active-task-selection mechanism that ablated to a regression.
+TRAIN_Q_ENSEMBLE = True
+# Pairwise ranking loss on the fresh batch of K policy samples per task.
+# Q is trained with regression but DEPLOYED with argmax — pairwise loss
+# directly trains Q to rank correctly within a task's K candidates.
+Q_RANK_LOSS_WEIGHT = 0.5            # mixture weight: total = MSE + W * rank
+Q_RANK_MARGIN      = 0.05           # margin in pairwise hinge
+# Separate hidden dim for Q (gives Q more capacity than policy without
+# bloating the policy net). Set to HIDDEN_DIM if not specified.
+Q_HIDDEN_DIM    = 512
 FR3_REACH_RADIUS = 0.855            # m, used for reach_margin feature
 FR3_SHOULDER     = (0.0, 0.0, 0.333)  # used for dist_p0_shoulder feature
 
@@ -192,8 +204,8 @@ ENT_ANNEAL_END  = 1000                  # iter at which decay finishes
 # ---------- Logging ----------
 LOG_EVERY   = 10
 CKPT_EVERY  = 200
-CKPT_DIR    = "Yuan/RL/checkpoints_v12_pen_per_fixA_10k"
+CKPT_DIR    = "Yuan/RL/checkpoints_v13_q_calibrated_10k"
 WANDB_ENABLE  = True
 WANDB_PROJECT = "fr3-rl-branch"
 WANDB_ENTITY  = None
-WANDB_RUN_NAME = "v12_pen_per_fixA_10k"
+WANDB_RUN_NAME = "v13_q_calibrated_10k"

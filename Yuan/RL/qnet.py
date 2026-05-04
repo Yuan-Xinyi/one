@@ -14,11 +14,19 @@ import Yuan.RL.config as cfg
 
 
 class QNet(nn.Module):
-    """Two-layer MLP critic Q(c, q) -> scalar reward prediction."""
+    """Two-layer MLP critic Q(c, q) -> scalar reward prediction.
+
+    Hidden width defaults to ``cfg.Q_HIDDEN_DIM`` (or ``cfg.HIDDEN_DIM`` if
+    that field isn't defined). Q usually wants more capacity than the
+    policy because it has to model the full reward landscape, not just
+    output a good action.
+    """
 
     def __init__(self, state_dim: int, action_dim: int,
-                 hidden: int = cfg.HIDDEN_DIM):
+                 hidden: int | None = None):
         super().__init__()
+        if hidden is None:
+            hidden = int(getattr(cfg, "Q_HIDDEN_DIM", cfg.HIDDEN_DIM))
         self.net = nn.Sequential(
             nn.Linear(state_dim + action_dim, hidden), nn.Tanh(),
             nn.Linear(hidden, hidden), nn.Tanh(),
@@ -34,13 +42,16 @@ class QEnsemble(nn.Module):
 
     Each member is an independent QNet trained on a randomly subsampled
     minibatch. Disagreement std across members estimates epistemic
-    uncertainty σ̂(c, q), used by active task sampling.
+    uncertainty σ̂(c, q), used at deploy as ``mean(Q) - λ·std(Q)`` for
+    pessimistic ranking.
     """
 
     def __init__(self, state_dim: int, action_dim: int,
                  m: int = cfg.Q_ENSEMBLE_M,
-                 hidden: int = cfg.HIDDEN_DIM):
+                 hidden: int | None = None):
         super().__init__()
+        if hidden is None:
+            hidden = int(getattr(cfg, "Q_HIDDEN_DIM", cfg.HIDDEN_DIM))
         self.m = int(m)
         self.members = nn.ModuleList(
             [QNet(state_dim, action_dim, hidden) for _ in range(self.m)])

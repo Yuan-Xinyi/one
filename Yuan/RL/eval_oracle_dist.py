@@ -97,7 +97,8 @@ def evaluate_oracle_distribution(policy, env, n_tasks=32, K=1000, seed=12345):
 
 
 def _summarize(out, K_eval=(1, 8, 32, 128, 1000),
-               min_oracle_dist: float = 0.20):
+               min_oracle_dist: float = 0.20,
+               min_base_dist: float = 0.30):
     T = out["T"]
     L_det = out["L_det"]
     L_st  = out["L_stoch"]
@@ -105,13 +106,19 @@ def _summarize(out, K_eval=(1, 8, 32, 128, 1000),
     K = L_st.shape[0]
     L_best = L_st.max(axis=0)
 
-    # "well-defined" tasks: oracle (best-of-K_max) actually moves the TCP
-    # at least min_oracle_dist meters along the path direction. Threshold
-    # is absolute physical distance (meters), not relative to T. Distance
-    # per oracle = L_best * DT * v_path.
+    # "well-defined" tasks must satisfy BOTH:
+    #   (a) oracle (best-of-K_max) actually moves the TCP at least
+    #       min_oracle_dist meters along the path direction, and
+    #   (b) the start point p0 is at least min_base_dist meters from the
+    #       FR3 base — points inside the near-base shell have effectively
+    #       no swivel freedom and unfairly penalize any policy.
     v_path = np.array([t["v_path"] for t in out["tasks"]], dtype=np.float64)
     oracle_dist = L_best.astype(np.float64) * float(cfg.DT) * v_path
-    well = oracle_dist >= min_oracle_dist
+    p0 = np.stack([t["c"][:3] for t in out["tasks"]]).astype(np.float64)
+    base_dist = np.linalg.norm(p0, axis=-1)
+    cond_oracle = oracle_dist >= min_oracle_dist
+    cond_base   = base_dist  >= min_base_dist
+    well = cond_oracle & cond_base
 
     def _ratio_mean(num, den, mask=None):
         m = (den > 0) if mask is None else (mask & (den > 0))
@@ -122,8 +129,14 @@ def _summarize(out, K_eval=(1, 8, 32, 128, 1000),
     print(f"\n=== {n_tasks} tasks  (K={K} uniform (phi,psi) per task) ===")
     n_feas = int((L_best > 0).sum())
     n_well = int(well.sum())
-    print(f"feasible       (L_best > 0)                    : {n_feas}/{n_tasks}")
-    print(f"well-defined   (oracle TCP distance >= {min_oracle_dist*100:.0f} cm) : "
+    n_drop_oracle = int((~cond_oracle & cond_base).sum())
+    n_drop_base   = int((cond_oracle & ~cond_base).sum())
+    n_drop_both   = int((~cond_oracle & ~cond_base).sum())
+    print(f"feasible       (L_best > 0)                            : {n_feas}/{n_tasks}")
+    print(f"dropped: oracle TCP < {min_oracle_dist*100:.0f} cm only             : {n_drop_oracle}")
+    print(f"dropped: ||p0|| < {min_base_dist*100:.0f} cm (near base) only       : {n_drop_base}")
+    print(f"dropped: BOTH conditions failed                        : {n_drop_both}")
+    print(f"well-defined   (both filters pass)                     : "
           f"{n_well}/{n_tasks}     ← used for stats below")
 
     # det / best-of-K ratio across K growth — the key signal.
@@ -223,6 +236,11 @@ def main():
                          "below this — those tasks are intrinsically "
                          "infeasible and unfairly penalize the policy. "
                          "default 0.20 m (20 cm).")
+    ap.add_argument("--min-base-dist", type=float, default=0.30,
+                    help="drop tasks whose start point p0 is closer than "
+                         "this many meters to the FR3 base origin — points "
+                         "inside the near-base shell have effectively no "
+                         "swivel freedom. default 0.30 m.")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -236,7 +254,8 @@ def main():
                                        n_tasks=args.n_tasks,
                                        K=args.k,
                                        seed=args.seed)
-    _summarize(out, min_oracle_dist=args.min_oracle_distance)
+    _summarize(out, min_oracle_dist=args.min_oracle_distance,
+               min_base_dist=args.min_base_dist)
 
 
 if __name__ == "__main__":

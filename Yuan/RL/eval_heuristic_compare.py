@@ -84,7 +84,10 @@ def _load_policy_and_q(ckpt_path, env, device):
     policy.load_state_dict(state["policy"])
     policy.eval()
 
-    qnet = QNet(cfg.STATE_DIM, env.action_dim).to(device)
+    # Auto-detect Q hidden dim from checkpoint so older ckpts (h=256)
+    # load even when cfg.Q_HIDDEN_DIM has been bumped (e.g., to 512 for v13).
+    q_hidden = state["qnet"]["net.0.weight"].shape[0]
+    qnet = QNet(cfg.STATE_DIM, env.action_dim, hidden=q_hidden).to(device)
     qnet.load_state_dict(state["qnet"])
     qnet.eval()
     return policy, qnet
@@ -145,8 +148,10 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
     if cache_path and os.path.exists(cache_path):
         print(f"[cache hit] loading {cache_path}")
         d = np.load(cache_path, allow_pickle=True)
-        # tasks were stored as object array of dicts
-        return {
+        # backwards-compat: log_p_pol was added later. If missing, recompute it
+        # from cached actions + policy.
+        log_p_pol = d["log_p_pol"] if "log_p_pol" in d.files else None
+        out = {
             "tasks": list(d["tasks"]),
             "T": d["T"], "L_det": d["L_det"],
             "L_unif": d["L_unif"], "L_pol": d["L_pol"],
@@ -155,6 +160,13 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
             "score_manip_pol": d["score_manip_pol"],
             "score_jlm_pol":   d["score_jlm_pol"],
         }
+        if log_p_pol is not None:
+            out["log_p_pol"] = log_p_pol
+        # backwards-compat: q_robust scores added later
+        if "q_robust_min" in d.files:
+            out["q_robust_min"] = d["q_robust_min"]
+            out["q_robust_mean"] = d["q_robust_mean"]
+        return out
     device = next(policy.parameters()).device
     rng = np.random.default_rng(seed)
     env.rng = np.random.default_rng(seed)
@@ -232,6 +244,48 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
             q_scores = qnet(rep_states_t, a_pol_K)              # (K*N,)
         q_scores_np = q_scores.cpu().numpy().reshape(K_max, n_tasks)
 
+    # ----- log p_pol(a|s) for mode-seeking deployment -----
+    # For multimodal flow policies, deterministic z=0 lands BETWEEN modes.
+    # Mode-seeking via argmax log p(a|s) finds the actual peak instead.
+    with timer("10b_logp_KxN"):
+        with torch.no_grad():
+            if hasattr(policy, "log_prob_action"):
+                log_p_pol = policy.log_prob_action(rep_states_t, a_pol_K)
+            else:
+                log_p_pol = torch.zeros(rep_states_t.shape[0], device=device)
+        log_p_pol_np = log_p_pol.cpu().numpy().reshape(K_max, n_tasks)
+
+    # ----- Q-robust score: worst-case Q in a small (φ, ψ) ball -----
+    # For each candidate, generate J angular perturbations of (φ, ψ),
+    # re-encode to (cos, sin) pairs, query Q on all neighbors, then take
+    # the MIN as a robustness score. Picks candidates whose neighborhood
+    # is also high-Q, avoiding narrow fail-strips inside otherwise good
+    # regions.
+    J_robust = 8
+    delta_rad = 0.15
+    with timer("10c_q_robust_KxN"):
+        # decode current (φ, ψ) per sample
+        phi = torch.atan2(a_pol_K[:, 1], a_pol_K[:, 0])              # (KN,)
+        psi = torch.atan2(a_pol_K[:, 3], a_pol_K[:, 2])              # (KN,)
+        # angular perturbations
+        d_phi = torch.randn(a_pol_K.shape[0], J_robust, device=device) * delta_rad
+        d_psi = torch.randn(a_pol_K.shape[0], J_robust, device=device) * delta_rad
+        phi_p = phi[:, None] + d_phi
+        psi_p = psi[:, None] + d_psi
+        a_neigh = torch.stack([torch.cos(phi_p), torch.sin(phi_p),
+                                torch.cos(psi_p), torch.sin(psi_p)],
+                              dim=-1)                                # (KN, J, 4)
+        # batch query Q on all (state, neighbor) pairs
+        st_rep = rep_states_t[:, None, :].expand(-1, J_robust, -1).reshape(-1, rep_states_t.shape[-1])
+        a_flat = a_neigh.reshape(-1, 4)
+        with torch.no_grad():
+            q_neigh = qnet(st_rep, a_flat).view(a_pol_K.shape[0], J_robust)
+        # worst-case Q over the J neighbors → (KN,)
+        q_robust_min = q_neigh.min(dim=-1).values
+        q_robust_mean = q_neigh.mean(dim=-1)
+        q_robust_min_np = q_robust_min.cpu().numpy().reshape(K_max, n_tasks)
+        q_robust_mean_np = q_robust_mean.cpu().numpy().reshape(K_max, n_tasks)
+
     with timer("11_rollout_pol_K"):
         L_pol_flat = _rollout_chunked(a_pol_K_np, rep_c, rep_v, rep_e, rep_T)
         L_pol_K = L_pol_flat.reshape(K_max, n_tasks)
@@ -267,10 +321,13 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
         "L_unif":  L_unif,                  # (K_max, N) uniform samples
         "L_pol":   L_pol_K,                 # (K_max, N) policy samples
         "q_pol":   q_scores_np,             # (K_max, N) Q on policy samples
-        "score_manip":     score_manip,     # (K_max, N) manip on UNIFORM
-        "score_jlm":       score_jlm,       # (K_max, N) jlm   on UNIFORM
-        "score_manip_pol": score_manip_pol, # (K_max, N) manip on POLICY  ← NEW
-        "score_jlm_pol":   score_jlm_pol,   # (K_max, N) jlm   on POLICY  ← NEW
+        "log_p_pol": log_p_pol_np,          # (K_max, N) log p(a|s) on policy samples
+        "q_robust_min":  q_robust_min_np,   # (K_max, N) worst-case Q in ball  ← NEW
+        "q_robust_mean": q_robust_mean_np,  # (K_max, N) mean Q in ball        ← NEW
+        "score_manip":     score_manip,
+        "score_jlm":       score_jlm,
+        "score_manip_pol": score_manip_pol,
+        "score_jlm_pol":   score_jlm_pol,
     }
     if cache_path is not None:
         try:
@@ -278,6 +335,9 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
                                 tasks=np.asarray(tasks, dtype=object),
                                 T=T_np, L_det=L_det, L_unif=L_unif,
                                 L_pol=L_pol_K, q_pol=q_scores_np,
+                                log_p_pol=log_p_pol_np,
+                                q_robust_min=q_robust_min_np,
+                                q_robust_mean=q_robust_mean_np,
                                 score_manip=score_manip, score_jlm=score_jlm,
                                 score_manip_pol=score_manip_pol,
                                 score_jlm_pol=score_jlm_pol)
@@ -301,6 +361,14 @@ def derive_strategy_lengths(out, K: int):
     sj_u   = out["score_jlm"][:K]        # jlm on UNIFORM
     sm_p   = out["score_manip_pol"][:K]  # manip on POLICY
     sj_p   = out["score_jlm_pol"][:K]    # jlm on POLICY
+    log_p  = out.get("log_p_pol", None)
+    if log_p is not None:
+        log_p = log_p[:K]
+    qr_min  = out.get("q_robust_min", None)
+    qr_mean = out.get("q_robust_mean", None)
+    if qr_min is not None:
+        qr_min  = qr_min[:K]
+        qr_mean = qr_mean[:K]
     n      = L_unif.shape[1]
     arange = np.arange(n)
 
@@ -339,6 +407,31 @@ def derive_strategy_lengths(out, K: int):
     L_pol_combined = np.where(no_valid_c, 0,
                               L_pol[combined.argmax(axis=0), arange])
 
+    # ---- Mode-seeking via log_p argmax (NEW: extracts safety from policy
+    # geometry alone, no external IK info needed). For multimodal flow
+    # policies, deterministic z=0 lands BETWEEN modes; argmax log_p
+    # finds the actual mode in the K samples.
+    if log_p is not None:
+        L_mode_logp = L_pol[log_p.argmax(axis=0), arange]
+        # combined log_p + Q (both normalized per task to [0, 1])
+        Qn = _norm01(np.where(np.isfinite(Qs), Qs, -1e9))
+        Pn = _norm01(np.where(np.isfinite(log_p), log_p, -1e9))
+        logp_q = Qn + Pn
+        L_logp_q = L_pol[logp_q.argmax(axis=0), arange]
+    else:
+        L_mode_logp = L_pol[0]   # fallback (won't be used)
+        L_logp_q   = L_pol[0]
+
+    # ---- Q-robust selection (NEW): pick action whose ε-ball has high
+    # worst-case (or mean) Q. Avoids "policy mean lands in narrow
+    # fail-strip surrounded by good region" failure mode.
+    if qr_min is not None:
+        L_q_robust_min  = L_pol[qr_min.argmax(axis=0),  arange]
+        L_q_robust_mean = L_pol[qr_mean.argmax(axis=0), arange]
+    else:
+        L_q_robust_min  = L_pol[0]
+        L_q_robust_mean = L_pol[0]
+
     # ceiling: if Q ranked perfectly, q_ranked == pol_stoch_orc
     L_pol_orc = L_pol.max(axis=0)
 
@@ -347,9 +440,13 @@ def derive_strategy_lengths(out, K: int):
         "manip_select":    L_manip,
         "jlm_select":      L_jlm,
         "q_ranked":        L_q,
-        "policy_manip":    L_pol_manip,    # ← NEW
-        "policy_jlm":      L_pol_jlm,      # ← NEW
-        "policy_combined": L_pol_combined, # ← NEW (Q + manip + jlm)
+        "policy_manip":    L_pol_manip,
+        "policy_jlm":      L_pol_jlm,
+        "policy_combined": L_pol_combined,
+        "policy_mode_logp": L_mode_logp,
+        "policy_logp_q":   L_logp_q,
+        "policy_q_robust_min":  L_q_robust_min,    # ← NEW: argmax min Q in ball
+        "policy_q_robust_mean": L_q_robust_mean,   # ← NEW: argmax mean Q in ball
         "pol_stoch_orc":   L_pol_orc,
     }
 
@@ -497,20 +594,24 @@ def report(out, K_list, deploy_times,
     print("\n=== B. Policy-sample selectors (OURS, K policy samples + cheap score + 1 rollout) ===")
     r_pd = _ratio_mean(L_det, L_top, mask=well)
     print(f"  reference: policy_det = {r_pd:.4f}  (K-independent)")
-    header_b = (f"  {'K':>5}  {'q_ranked':>9}  {'pol_manip':>10}  "
-                f"{'pol_jlm':>9}  {'pol_combd':>10}  {'pol_orc(ceil)':>14}")
+    header_b = (f"  {'K':>5}  {'q_ranked':>9}  {'q_robmin':>9}  "
+                f"{'q_robmen':>9}  {'pol_jlm':>9}  {'pol_combd':>10}  "
+                f"{'pol_orc(ceil)':>14}")
     print(header_b)
     print("  " + "-" * (len(header_b) - 2))
     for K in K_list:
         if K > K_max: continue
         d = derive_strategy_lengths(out, K)
-        r_q   = _ratio_mean(d["q_ranked"],        L_top, mask=well)
-        r_pm  = _ratio_mean(d["policy_manip"],    L_top, mask=well)
-        r_pj  = _ratio_mean(d["policy_jlm"],      L_top, mask=well)
-        r_pc  = _ratio_mean(d["policy_combined"], L_top, mask=well)
-        r_pso = _ratio_mean(d["pol_stoch_orc"],   L_top, mask=well)
-        print(f"  {K:>5d}  {r_q:>9.4f}  {r_pm:>10.4f}  "
-              f"{r_pj:>9.4f}  {r_pc:>10.4f}  {r_pso:>14.4f}")
+        r_q    = _ratio_mean(d["q_ranked"],              L_top, mask=well)
+        r_qrmn = _ratio_mean(d["policy_q_robust_min"],   L_top, mask=well)
+        r_qrme = _ratio_mean(d["policy_q_robust_mean"],  L_top, mask=well)
+        r_pj   = _ratio_mean(d["policy_jlm"],            L_top, mask=well)
+        r_pc   = _ratio_mean(d["policy_combined"],       L_top, mask=well)
+        r_pso  = _ratio_mean(d["pol_stoch_orc"],         L_top, mask=well)
+        print(f"  {K:>5d}  {r_q:>9.4f}  {r_qrmn:>9.4f}  "
+              f"{r_qrme:>9.4f}  {r_pj:>9.4f}  {r_pc:>10.4f}  {r_pso:>14.4f}")
+    print("\n  q_robmin = argmax_{k} min_{δ in ball} Q(s, a_k+δ)  worst-case neighborhood Q")
+    print("  q_robmen = argmax_{k} mean_{δ in ball} Q(s, a_k+δ)  expected neighborhood Q")
     print("\n  pol_orc is the ceiling: if scorer ranked perfectly, the chosen "
           "L equals pol_orc.")
     print("  pol_combd = normalized(Q) + normalized(manip) + normalized(jlm), "
@@ -541,6 +642,10 @@ def report(out, K_list, deploy_times,
                     ("policy_manip K_max",            d_max["policy_manip"]),
                     ("policy_jlm K_max",              d_max["policy_jlm"]),
                     ("policy_combined K_max",         d_max["policy_combined"]),
+                    ("policy_mode_logp K_max",        d_max["policy_mode_logp"]),
+                    ("policy_logp_q K_max",           d_max["policy_logp_q"]),
+                    ("policy_q_robust_min K_max",     d_max["policy_q_robust_min"]),
+                    ("policy_q_robust_mean K_max",    d_max["policy_q_robust_mean"]),
                     ("pol_stoch_orc K_max (ceiling)", d_max["pol_stoch_orc"])]:
         L_w = L[well].astype(np.float64)
         ratios = L_w / safe_top[well]

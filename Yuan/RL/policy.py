@@ -371,6 +371,14 @@ class FlowPolicy(nn.Module):
         log_pu = log_pz + log_det_inv
         return log_pu - _log_tanh_linear_jac(u, self.q_half)
 
+    def log_prob_action(self, s, a):
+        """Density at the *squashed* action a. Inverts a = mid + tanh(u)*half
+        to recover u, then calls log_prob(s, u). Used at deploy for
+        mode-seeking selection: argmax_k log_prob_action(s, a_k)."""
+        x = ((a - self.q_mid) / self.q_half).clamp(-1 + 1e-6, 1 - 1e-6)
+        u = torch.atanh(x)
+        return self.log_prob(s, u)
+
     def entropy(self, s):
         # No closed-form; one-sample MC estimate (used only for logging).
         _, _, log_pa = self.rsample(s)

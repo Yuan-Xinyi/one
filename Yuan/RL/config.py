@@ -97,6 +97,51 @@ BATCHED_IK_TOL_ROT   = 1e-3
 IK_SWIVEL_W = 0.05
 IK_MARGIN_W = 0.20                  # 0 disables; 0.2 ≈ comparable to swivel
 
+# ---------- Contact mode (v14, opt-in) ----------
+# Per-task surface = plane through p0 with outward normal n (already in c).
+# Pen tip lightly contacts the surface; rollout target is OFFSET below the
+# surface by CONTACT_PENETRATION_TARGET so the spring-loaded contact settles
+# to F_target = K_n * penetration_target.
+#
+# Phantom (kinematic) rollout cannot see force failures — so this mode is
+# the regime where phantom_select breaks down and learned policy can win.
+USE_CONTACT_MODE          = False           # opt-in; existing pipeline unchanged
+CONTACT_K_N               = 2000.0          # surface normal stiffness [N/m]
+CONTACT_PENETRATION_TARGET= 0.005           # m → F_target = 10 N at K_n=2000
+CONTACT_PEN_MIN           = 0.0035          # m → F_min = 7 N  (lost contact below)
+CONTACT_PEN_MAX           = 0.0065          # m → F_max = 13 N (too hard above)
+CONTACT_GRACE_STEPS       = 10              # don't enforce force bounds during settle
+# Tightening rationale (smoke test 2026-05-05):
+# loose ±15N around 10N → contact rollout ~ same as geo, phantom still wins.
+# tight ±3N around 10N → phantom_select gap vs oracle jumps 0.4pp → 16.6pp
+# at K=8. That is the regime where RL has something to learn that phantom
+# can't predict (force tracking under joint-limit / IK strain).
+
+# ---------- Contact tip-dynamics (v2, opt-in) ----------
+# v1 used a static spring: F = K_n · pen_kinematic. Phantom can in principle
+# match this by tightening its normal-direction tolerance — so v1 is a
+# disguised tighter-tolerance kinematic check.
+#
+# v2 adds a 1-DOF mass-spring at the pen tip along the surface normal,
+# representing tooling/sensor compliance and real arm inertia projected to
+# TCP. The tip position z_dyn LAGS the kinematic position z_kin via a
+# lightly-damped second-order ODE. During first-impact transient and
+# arm acceleration phases, z_dyn OVERSHOOTS z_kin → F can spike to 1.7×
+# the static value → triggers force_high in cases that any STATIC
+# (kinematic-only) phantom predicts as safe.
+#
+# Equilibrium when in contact:
+#     K_grip · (z_kin - z_eq) = K_n · z_eq
+#     z_eq = K_grip / (K_grip + K_n) · z_kin    (≈ 0.91 · z_kin at defaults)
+# Natural frequency ω_n = √(K_grip / m_tip) ≈ 200 rad/s with defaults.
+# Damping ratio    ζ   = C_grip / (2·√(K_grip·m_tip)) ≈ 0.10  → ~73% overshoot
+# on a step input. dt_sub * ω_n = 0.2 → stable explicit-Euler integration.
+CONTACT_USE_DYNAMICS  = False               # opt-in (v2)
+CONTACT_TIP_MASS      = 0.5                 # kg, effective tip+sensor mass
+CONTACT_GRIP_K        = 20000.0             # N/m, gripper-to-tip stiffness
+CONTACT_GRIP_C        = 20.0                # N·s/m, gripper-to-tip damping
+CONTACT_N_SUBSTEPS    = 20                  # ODE substeps per control step
+
 # ---------- Workspace sampling (FR3 base frame) ----------
 P0_BOX_LO   = np.array([0.30, -0.30, 0.20], dtype=np.float32)
 P0_BOX_HI   = np.array([0.60,  0.30, 0.55], dtype=np.float32)

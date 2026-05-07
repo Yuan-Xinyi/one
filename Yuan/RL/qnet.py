@@ -37,6 +37,39 @@ class QNet(nn.Module):
         return self.net(torch.cat([s, a], dim=-1)).squeeze(-1)
 
 
+class ResidualNet(nn.Module):
+    """Residual predictor R(s, a) → real_L - phantom_L (both as ratios in [0, 1]).
+
+    Used in v15 residual-corrected bandit framework: at deploy, candidate
+    selection is argmax over (phantom_L_pred + R(s, a)), where phantom_L_pred
+    comes from a cheap analytic forward simulator and R captures the
+    surrogate's structured bias. R is supervised — no Bellman bootstrap.
+
+    Output range is small (~ ±0.1 typical) because phantom is already 96%
+    accurate on geometric tasks, BUT can be much larger (~±0.3) on contact
+    tasks where phantom is blind to force failures. Tanh-bounded with
+    learnable scale to allow the network to express the full range while
+    keeping outputs well-conditioned.
+    """
+
+    def __init__(self, state_dim: int, action_dim: int,
+                 hidden: int | None = None,
+                 max_residual: float = 0.5):
+        super().__init__()
+        if hidden is None:
+            hidden = int(getattr(cfg, "Q_HIDDEN_DIM", cfg.HIDDEN_DIM))
+        self.net = nn.Sequential(
+            nn.Linear(state_dim + action_dim, hidden), nn.Tanh(),
+            nn.Linear(hidden, hidden), nn.Tanh(),
+            nn.Linear(hidden, 1),
+        )
+        self.max_residual = float(max_residual)
+
+    def forward(self, s: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
+        raw = self.net(torch.cat([s, a], dim=-1)).squeeze(-1)
+        return self.max_residual * torch.tanh(raw)
+
+
 class QEnsemble(nn.Module):
     """Bootstrap Q ensemble for uncertainty estimation (NeuralUCB-style).
 

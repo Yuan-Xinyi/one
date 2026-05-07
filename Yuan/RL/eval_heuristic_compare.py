@@ -108,6 +108,37 @@ def _rollout_chunked(actions_np, c_np, v_np, e_np, T_np, chunk=4096):
     return L
 
 
+def _branch_project_chunked(kin, p0, R_tgt, action, chunk=4096):
+    """Chunked branch_project_multistart to bound peak GPU memory.
+
+    Internal IK uses 16 starts per row, so per chunk processes
+    chunk*16 IK problems. chunk=4096 → 65k IK problems, ~10GB peak.
+    """
+    n = p0.shape[0]
+    if n <= chunk:
+        return branch_project_multistart(kin, p0, R_tgt, action)
+    qs_list, ok_list = [], []
+    for s in range(0, n, chunk):
+        e = min(s + chunk, n)
+        q, ok, _ = branch_project_multistart(
+            kin, p0[s:e], R_tgt[s:e], action[s:e])
+        qs_list.append(q)
+        ok_list.append(ok)
+    return torch.cat(qs_list, dim=0), torch.cat(ok_list, dim=0), None
+
+
+def _qnet_chunked(qnet, s_t, a_t, chunk=16384):
+    """Chunked Q forward to bound peak memory."""
+    n = s_t.shape[0]
+    if n <= chunk:
+        return qnet(s_t, a_t)
+    out_list = []
+    for st in range(0, n, chunk):
+        e = min(st + chunk, n)
+        out_list.append(qnet(s_t[st:e], a_t[st:e]))
+    return torch.cat(out_list, dim=0)
+
+
 # ---------------------------------------------------------------------------
 # heuristic scores at the IK-projected initial configuration
 # ---------------------------------------------------------------------------
@@ -162,10 +193,13 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
         }
         if log_p_pol is not None:
             out["log_p_pol"] = log_p_pol
-        # backwards-compat: q_robust scores added later
         if "q_robust_min" in d.files:
             out["q_robust_min"] = d["q_robust_min"]
             out["q_robust_mean"] = d["q_robust_mean"]
+        # backwards-compat: jlm_det / manip_det added for reject_fallback
+        if "jlm_det" in d.files:
+            out["jlm_det"]   = d["jlm_det"]
+            out["manip_det"] = d["manip_det"]
         return out
     device = next(policy.parameters()).device
     rng = np.random.default_rng(seed)
@@ -189,6 +223,29 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
     with timer("03_policy_rollout"):
         L_det = _rollout_chunked(a_det_np, c_np, v_np, e_np, T_np)
 
+    # ----- Compute jlm/manip on policy_det's resolved q -----
+    # Used by reject_fallback strategy: if policy_det's q is unsafe
+    # (low jlm or low manip), trigger brute-force fallback at deploy.
+    device_kin = _device_from_cfg()
+    kin_for_det = BatchedFR3Kinematics(device=device_kin)
+    with timer("03b_ik_det_safety"):
+        c_det_t = torch.as_tensor(c_np, device=device_kin, dtype=torch.float32)
+        a_det_t_kin = torch.as_tensor(a_det_np, device=device_kin, dtype=torch.float32)
+        p0_d = c_det_t[:, :3]
+        d_d  = c_det_t[:, 3:6]
+        n_d  = c_det_t[:, 6:9]
+        R_tgt_det = build_branch_rotmat_batch(d_d, n_d, a_det_t_kin)
+        q_det_all, ik_ok_det, _ = branch_project_multistart(
+            kin_for_det, p0_d, R_tgt_det, a_det_t_kin)
+        jlm_det  = _joint_limit_margin(kin_for_det, q_det_all)
+        manip_det = _directional_manip(kin_for_det, q_det_all, d_d)
+        # mask out IK failures (treat as worst-case)
+        jlm_det_np  = jlm_det.cpu().numpy()
+        manip_det_np = manip_det.cpu().numpy()
+        ik_ok_det_np = ik_ok_det.cpu().numpy()
+        jlm_det_np  = np.where(ik_ok_det_np, jlm_det_np, -1.0)
+        manip_det_np = np.where(ik_ok_det_np, manip_det_np, -1.0)
+
     with timer("04_uniform_sample_K"):
         phi = rng.uniform(0.0, 2 * np.pi, size=(K_max, n_tasks)).astype(np.float32)
         psi = rng.uniform(0.0, 2 * np.pi, size=(K_max, n_tasks)).astype(np.float32)
@@ -208,15 +265,16 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
     # Heuristics CAN use these scores to pick a candidate without rolling
     # out anything beyond the chosen one.
     with timer("06_ik_project_KxN"):
-        device_kin = _device_from_cfg()
-        kin = BatchedFR3Kinematics(device=device_kin)
+        # device_kin and kin_for_det already created above for safety check;
+        # reuse for the K*N batch.
+        kin = kin_for_det
         c_t = torch.as_tensor(rep_c, device=device_kin, dtype=torch.float32)
         a_t = torch.as_tensor(a_unif_flat, device=device_kin, dtype=torch.float32)
         p0_t = c_t[:, :3]
         d_t  = c_t[:, 3:6]
         n_t  = c_t[:, 6:9]
         R_tgt = build_branch_rotmat_batch(d_t, n_t, a_t)
-        q_all, ik_ok, _ = branch_project_multistart(kin, p0_t, R_tgt, a_t)
+        q_all, ik_ok, _ = _branch_project_chunked(kin, p0_t, R_tgt, a_t)
         # q_all: (K*N, 7),  ik_ok: (K*N,) bool
 
     with timer("07_score_manipulability"):
@@ -241,7 +299,7 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
 
     with timer("10_q_score_KxN"):
         with torch.no_grad():
-            q_scores = qnet(rep_states_t, a_pol_K)              # (K*N,)
+            q_scores = _qnet_chunked(qnet, rep_states_t, a_pol_K)
         q_scores_np = q_scores.cpu().numpy().reshape(K_max, n_tasks)
 
     # ----- log p_pol(a|s) for mode-seeking deployment -----
@@ -279,7 +337,8 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
         st_rep = rep_states_t[:, None, :].expand(-1, J_robust, -1).reshape(-1, rep_states_t.shape[-1])
         a_flat = a_neigh.reshape(-1, 4)
         with torch.no_grad():
-            q_neigh = qnet(st_rep, a_flat).view(a_pol_K.shape[0], J_robust)
+            q_neigh = _qnet_chunked(qnet, st_rep, a_flat).view(
+                a_pol_K.shape[0], J_robust)
         # worst-case Q over the J neighbors → (KN,)
         q_robust_min = q_neigh.min(dim=-1).values
         q_robust_mean = q_neigh.mean(dim=-1)
@@ -299,7 +358,7 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
         # rep_c/d/n already computed for uniform samples; reuse them since
         # both are (K*N, 3) and the task ordering matches.
         R_tgt_pol = build_branch_rotmat_batch(d_t, n_t, a_pol_t)
-        q_pol_all, ik_ok_pol, _ = branch_project_multistart(
+        q_pol_all, ik_ok_pol, _ = _branch_project_chunked(
             kin, p0_t, R_tgt_pol, a_pol_t)
 
     with timer("13_score_manip_on_pol"):
@@ -318,16 +377,18 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
         "tasks":   tasks,
         "T":       T_np,
         "L_det":   L_det,
-        "L_unif":  L_unif,                  # (K_max, N) uniform samples
-        "L_pol":   L_pol_K,                 # (K_max, N) policy samples
-        "q_pol":   q_scores_np,             # (K_max, N) Q on policy samples
-        "log_p_pol": log_p_pol_np,          # (K_max, N) log p(a|s) on policy samples
-        "q_robust_min":  q_robust_min_np,   # (K_max, N) worst-case Q in ball  ← NEW
-        "q_robust_mean": q_robust_mean_np,  # (K_max, N) mean Q in ball        ← NEW
+        "L_unif":  L_unif,
+        "L_pol":   L_pol_K,
+        "q_pol":   q_scores_np,
+        "log_p_pol": log_p_pol_np,
+        "q_robust_min":  q_robust_min_np,
+        "q_robust_mean": q_robust_mean_np,
         "score_manip":     score_manip,
         "score_jlm":       score_jlm,
         "score_manip_pol": score_manip_pol,
         "score_jlm_pol":   score_jlm_pol,
+        "jlm_det":   jlm_det_np,            # (N,) policy_det's q safety
+        "manip_det": manip_det_np,          # (N,) policy_det's q manip
     }
     if cache_path is not None:
         try:
@@ -340,7 +401,8 @@ def precompute(policy, qnet, env, n_tasks: int, K_max: int, seed: int,
                                 q_robust_mean=q_robust_mean_np,
                                 score_manip=score_manip, score_jlm=score_jlm,
                                 score_manip_pol=score_manip_pol,
-                                score_jlm_pol=score_jlm_pol)
+                                score_jlm_pol=score_jlm_pol,
+                                jlm_det=jlm_det_np, manip_det=manip_det_np)
             print(f"[cache write] saved {cache_path}")
         except Exception as e:
             print(f"[cache write] failed: {e}")
@@ -432,6 +494,34 @@ def derive_strategy_lengths(out, K: int):
         L_q_robust_min  = L_pol[0]
         L_q_robust_mean = L_pol[0]
 
+    # ---- Reject + fallback (NEW) ---------------------------------
+    # Pre-deploy safety check on policy_det's resolved q. If unsafe (low jlm
+    # or low manip), trigger a K=8 fallback. We try TWO fallback sources:
+    # (a) UNIFORM K=8 random (φ, ψ): broad coverage, ignores policy
+    # (b) POLICY K=8 stochastic: uses policy distribution, more principled
+    # Each is a separate strategy; report compares.
+    jlm_det   = out.get("jlm_det", None)
+    manip_det = out.get("manip_det", None)
+    K_fb = min(8, K)
+    L_fb_unif = out["L_unif"][:K_fb].max(axis=0)   # (N,) K=8 uniform best L
+    L_fb_pol  = out["L_pol"][:K_fb].max(axis=0)    # (N,) K=8 policy-stoch best L
+
+    def _reject_fallback(L_base, L_fb, jlm_thr, manip_thr):
+        if jlm_det is None or manip_det is None:
+            return L_base, np.zeros(n, dtype=bool)
+        reject = (jlm_det < jlm_thr) | (manip_det < manip_thr)
+        return np.where(reject, L_fb, L_base), reject
+
+    # uniform fallback variants (existing)
+    L_pdet_rej_u,  _ = _reject_fallback(out["L_det"],   L_fb_unif, 0.05, 0.20)
+    L_qrmin_rej_u, _ = _reject_fallback(L_q_robust_min, L_fb_unif, 0.05, 0.20)
+    L_combd_rej_u, _ = _reject_fallback(L_pol_combined, L_fb_unif, 0.05, 0.20)
+
+    # policy-stoch fallback variants (NEW)
+    L_pdet_rej_p,  _ = _reject_fallback(out["L_det"],   L_fb_pol,  0.05, 0.20)
+    L_qrmin_rej_p, _ = _reject_fallback(L_q_robust_min, L_fb_pol,  0.05, 0.20)
+    L_combd_rej_p, _ = _reject_fallback(L_pol_combined, L_fb_pol,  0.05, 0.20)
+
     # ceiling: if Q ranked perfectly, q_ranked == pol_stoch_orc
     L_pol_orc = L_pol.max(axis=0)
 
@@ -445,8 +535,16 @@ def derive_strategy_lengths(out, K: int):
         "policy_combined": L_pol_combined,
         "policy_mode_logp": L_mode_logp,
         "policy_logp_q":   L_logp_q,
-        "policy_q_robust_min":  L_q_robust_min,    # ← NEW: argmax min Q in ball
-        "policy_q_robust_mean": L_q_robust_mean,   # ← NEW: argmax mean Q in ball
+        "policy_q_robust_min":  L_q_robust_min,
+        "policy_q_robust_mean": L_q_robust_mean,
+        # uniform K=8 fallback
+        "pdet_reject_fb":     L_pdet_rej_u,
+        "qrmin_reject_fb":    L_qrmin_rej_u,
+        "combd_reject_fb":    L_combd_rej_u,
+        # policy-stoch K=8 fallback (NEW: more principled)
+        "pdet_reject_fb_pol":  L_pdet_rej_p,
+        "qrmin_reject_fb_pol": L_qrmin_rej_p,
+        "combd_reject_fb_pol": L_combd_rej_p,
         "pol_stoch_orc":   L_pol_orc,
     }
 
@@ -527,7 +625,7 @@ def time_strategy_deploy(strategy: str,
         a_t = torch.as_tensor(a_flat, device=device_kin, dtype=torch.float32)
         p0_t = c_t[:, :3]; d_t = c_t[:, 3:6]; n_t = c_t[:, 6:9]
         R_tgt = build_branch_rotmat_batch(d_t, n_t, a_t)
-        q_all, ik_ok, _ = branch_project_multistart(kin, p0_t, R_tgt, a_t)
+        q_all, ik_ok, _ = _branch_project_chunked(kin, p0_t, R_tgt, a_t)
 
         if strategy == "manip_select":
             score = _directional_manip(kin, q_all, d_t)
@@ -646,6 +744,12 @@ def report(out, K_list, deploy_times,
                     ("policy_logp_q K_max",           d_max["policy_logp_q"]),
                     ("policy_q_robust_min K_max",     d_max["policy_q_robust_min"]),
                     ("policy_q_robust_mean K_max",    d_max["policy_q_robust_mean"]),
+                    ("pdet + reject + K=8 unif fb",   d_max["pdet_reject_fb"]),
+                    ("qrmin + reject + K=8 unif fb",  d_max["qrmin_reject_fb"]),
+                    ("combd + reject + K=8 unif fb",  d_max["combd_reject_fb"]),
+                    ("pdet + reject + K=8 pol fb",    d_max["pdet_reject_fb_pol"]),
+                    ("qrmin + reject + K=8 pol fb",   d_max["qrmin_reject_fb_pol"]),
+                    ("combd + reject + K=8 pol fb",   d_max["combd_reject_fb_pol"]),
                     ("pol_stoch_orc K_max (ceiling)", d_max["pol_stoch_orc"])]:
         L_w = L[well].astype(np.float64)
         ratios = L_w / safe_top[well]
@@ -654,6 +758,20 @@ def report(out, K_list, deploy_times,
         print(f"  {name:>26}  {ratios.mean():>6.3f}  {ratios.std():>6.3f}  "
               f"{ratios.min():>5.3f}  {np.percentile(ratios, 10):>5.3f}  "
               f"{np.percentile(ratios, 25):>5.3f}  {n_zero:>4d}  {n_bad:>5d}")
+
+    # ---- D. Reject + fallback diagnostics ----------------------------------
+    jlm_det = out.get("jlm_det", None)
+    manip_det = out.get("manip_det", None)
+    if jlm_det is not None and manip_det is not None:
+        reject_mask = (jlm_det < 0.05) | (manip_det < 0.20)
+        reject_well = reject_mask & well
+        n_reject = int(reject_well.sum())
+        n_total  = int(well.sum())
+        print(f"\n=== D. Reject + fallback diagnostics ===")
+        print(f"  threshold: jlm < 0.05 OR manip < 0.20")
+        print(f"  reject rate (well-defined): {n_reject}/{n_total} = {n_reject/max(n_total,1):.2%}")
+        print(f"  → at deploy, {n_reject/max(n_total,1):.0%} of tasks would trigger K=8 brute-force fallback")
+        print(f"    (others use single-shot policy_det / q_ranked / etc.)")
 
     print("\nfraction of well-defined tasks where each method >= the "
           "K_max-distribution percentile:")

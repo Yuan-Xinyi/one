@@ -1,0 +1,318 @@
+_wandb:
+    value:
+        cli_version: 0.26.1
+        e:
+            stzhq0i7hjhh9sn6m7wbvtrnj5so4ibk:
+                cpu_count: 16
+                cpu_count_logical: 24
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "1967315451904"
+                        used: "1642118922240"
+                email: xyuan749@connect.hkust-gz.edu.cn
+                executable: /home/lqin/miniconda3/envs/one/bin/python
+                git:
+                    commit: a3f00e0f4b2c2e2d740b1d7e179fd119f287e5e2
+                    remote: https://github.com/Yuan-Xinyi/one.git
+                gpu: NVIDIA GeForce RTX 4090
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 16384
+                      memoryTotal: "25757220864"
+                      name: NVIDIA GeForce RTX 4090
+                      uuid: GPU-b340dc5a-b3b1-b187-521e-0d17869bef71
+                host: wrs
+                memory:
+                    total: "134833184768"
+                os: Linux-5.15.0-174-generic-x86_64-with-glibc2.35
+                program: -m Yuan.RL.train
+                python: CPython 3.12.12
+                root: /home/lqin/one
+                startedAt: "2026-05-04T03:33:31.041781Z"
+                writerId: stzhq0i7hjhh9sn6m7wbvtrnj5so4ibk
+        m: []
+        python_version: 3.12.12
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 2
+                - 3
+                - 13
+                - 16
+                - 61
+            "4": 3.12.12
+            "5": 0.26.1
+            "12": 0.26.1
+            "13": linux-x86_64
+ACTION_MODE:
+    value: branch_descriptor
+ACTIVE_K:
+    value: 8
+ACTIVE_SAMPLING:
+    value: false
+BATCH_SIZE:
+    value: 64
+BATCHED_COLLISION_CHECK:
+    value: true
+BATCHED_COLLISION_MARGIN:
+    value: 0
+BATCHED_IK_DAMPING:
+    value: 0.0001
+BATCHED_IK_MAX_ITERS:
+    value: 50
+BATCHED_IK_TOL_POS:
+    value: 0.0001
+BATCHED_IK_TOL_ROT:
+    value: 0.001
+BATCHED_ROLLOUT:
+    value: true
+BATCHED_ROLLOUT_DEVICE:
+    value: auto
+BRANCH_ACTION_DIM:
+    value: 4
+BRANCH_FD_EPS:
+    value: 0.001
+BRANCH_IK_NUM_STARTS:
+    value: 16
+BRANCH_SWIVEL_GAIN:
+    value: 0.15
+CKPT_DIR:
+    value: Yuan/RL/checkpoints_v13_q_calibrated_10k
+CKPT_EVERY:
+    value: 200
+DLS_LAMBDA:
+    value: 0.05
+DR_ENABLE:
+    value: true
+DR_EPS_POS:
+    value:
+        - 0.003
+        - 0.01
+DR_N_TILT:
+    value:
+        - 0
+        - 3.141592653589793
+DR_P0_RADIUS:
+    value:
+        - 0.22
+        - 0.88
+DR_REACHABILITY_PHI_SAMPLES:
+    value: 4
+DR_REACHABILITY_PSI_SAMPLES:
+    value: 2
+DR_REACHABILITY_TRIES:
+    value: 4000
+DR_SAMPLE_REACHABLE_ONLY:
+    value: true
+DR_T:
+    value:
+        - 40
+        - 240
+DR_V_PATH:
+    value:
+        - 0.1
+        - 0.4
+DT:
+    value: 0.02
+ENT_ANNEAL_END:
+    value: 1000
+ENT_COEF:
+    value: 5e-05
+ENT_COEF_FINAL:
+    value: 5e-05
+ENT_COEF_INIT:
+    value: 0.02
+EPS_POS:
+    value: 0.005
+EPS_POS_INIT:
+    value: 0.005
+FK_AUG_DIM:
+    value: 2
+FLOW_LAYERS:
+    value: 4
+FR3_REACH_RADIUS:
+    value: 0.855
+FR3_SHOULDER:
+    value:
+        - 0
+        - 0
+        - 0.333
+GEOM_AUG_DIM:
+    value: 3
+GRAD_CLIP:
+    value: 1
+HAND_TCP_OFFSET:
+    value: 0.1034
+HIDDEN_DIM:
+    value: 256
+IK_MARGIN_W:
+    value: 0.2
+IK_SWIVEL_W:
+    value: 0.05
+INIT_IK_ORIENT_MODE:
+    value: z_axis
+K_NULL:
+    value: 0.5
+KOMEGA:
+    value: 5
+KP_LIN:
+    value: 5
+LOG_EVERY:
+    value: 10
+LOG_STD_INIT:
+    value: -1
+LOG_STD_MAX:
+    value: 1
+LOG_STD_MIN:
+    value: -5
+LR_PI:
+    value: 0.0003
+LR_V:
+    value: 0.001
+MAX_STEPS:
+    value: 240
+MINIBATCH:
+    value: 32
+MIXTURE_COMPONENTS:
+    value: 4
+N_ITERS:
+    value: 10000
+N_TILT_MAX:
+    value: 0.7853981633974483
+NULL_ANGLE_ATTRACT_GAIN:
+    value: 0
+NULL_ANGLE_GAIN:
+    value: 0.4
+NULL_ANGLE_MARGIN:
+    value: 0.13962634015954636
+NULL_JOINT_LIMIT_GAIN:
+    value: 0.2
+NULL_MANIP_DAMPING:
+    value: 0.001
+NULL_MANIP_FD_EPS:
+    value: 0.001
+NULL_MANIP_GAIN:
+    value: 0.6
+NULL_USE_MANIPULABILITY:
+    value: true
+PATH_STEP:
+    value: 0.005
+PEN_LENGTH:
+    value: 0.1
+PER_ALPHA:
+    value: 0.6
+PER_BETA:
+    value: 0.4
+PER_BETA_ANNEAL_END:
+    value: 10000
+PER_BETA_FINAL:
+    value: 1
+PER_ENABLE:
+    value: true
+PER_EPS:
+    value: 0.001
+POLICY_TYPE:
+    value: flow
+PPO_CLIP:
+    value: 0.3
+PPO_EPOCHS:
+    value: 8
+PPO_TARGET_KL:
+    value: 0.1
+Q_ENSEMBLE_M:
+    value: 5
+Q_HIDDEN_DIM:
+    value: 512
+Q_RANK_LOSS_WEIGHT:
+    value: 0.5
+Q_RANK_MARGIN:
+    value: 0.05
+RANDOM_Q_MARGIN:
+    value: 0.05
+RAW_C_DIM:
+    value: 9
+REWARD_CLIP_HI:
+    value: 1
+REWARD_CLIP_LO:
+    value: -0.2
+REWARD_FAIL_INIT_IK:
+    value: 0.1
+REWARD_FAIL_JOINT_LIMIT:
+    value: 0.03
+REWARD_FAIL_ORIENT:
+    value: 0.03
+REWARD_FAIL_POS:
+    value: 0
+REWARD_FAIL_SELF_COLLISION:
+    value: 0.05
+REWARD_ORACLE_MIN_STEPS:
+    value: 1
+REWARD_USE_SAMPLED_ORACLE:
+    value: true
+SAC_ACTION_SAMPLES_PER_TASK:
+    value: 32
+SAC_ALPHA_INIT:
+    value: 0.05
+SAC_AUTO_ALPHA:
+    value: true
+SAC_BATCH:
+    value: 512
+SAC_K_PI:
+    value: 2
+SAC_K_Q:
+    value: 8
+SAC_LR_ALPHA:
+    value: 0.0003
+SAC_LR_PI:
+    value: 0.0003
+SAC_LR_Q:
+    value: 0.0003
+SAC_REPLAY_SIZE:
+    value: 200000
+SAC_TARGET_H:
+    value: -6
+SAC_WARMUP_ROLLOUTS:
+    value: 1024
+SEED:
+    value: 0
+SEED_MANIFOLD_COEF:
+    value: 0.25
+SEED_MANIFOLD_REG:
+    value: true
+SEED_ORIENT_ERR_SCALE:
+    value: 1.0471975511965976
+SEED_POS_ERR_SCALE:
+    value: 0.2
+STATE_DEP_LOG_STD:
+    value: true
+STATE_DIM:
+    value: 14
+TASK_PARAM_DIM:
+    value: 3
+TASK_SAMPLE_MODE:
+    value: random_q
+TCP_OFFSET:
+    value: 0.20340000000000003
+THETA_MAX:
+    value: 0.08726646259971647
+TRAIN_Q_ENSEMBLE:
+    value: true
+USE_COLLISION_CHECK:
+    value: true
+USE_PEN_TCP:
+    value: true
+V_PATH:
+    value: 0.25
+WANDB_ENABLE:
+    value: true
+WANDB_ENTITY:
+    value: null
+WANDB_PROJECT:
+    value: fr3-rl-branch
+WANDB_RUN_NAME:
+    value: v13_q_calibrated_10k

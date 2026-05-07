@@ -125,7 +125,8 @@ class FarsightedSeedEnv:
                  # OOD knobs (override sampling distributions)
                  n_tilt_range: tuple[float, float] | None = None,
                  p0_box: tuple[np.ndarray, np.ndarray] | None = None,
-                 eval_T: int | None = None):
+                 eval_T: int | None = None,
+                 contact_mode: bool | None = None):
         if arm is None:
             # Default arm: FR3 + Franka hand + rigid pen, TCP at pen tip
             # (when cfg.USE_PEN_TCP). The hand/pen offsets propagate via
@@ -152,6 +153,11 @@ class FarsightedSeedEnv:
         self.n_tilt_range = n_tilt_range          # if None: use defaults
         self.p0_box = p0_box                      # if None: use defaults
         self.eval_T = eval_T                      # fixed T in non-randomize mode
+        # contact_mode: when True, env.collect_batch uses
+        # batched_rollout_contact (linear-spring contact + force failures)
+        # instead of batched_rollout. Default falls back to cfg.USE_CONTACT_MODE.
+        self.contact_mode = (cfg.USE_CONTACT_MODE if contact_mode is None
+                             else bool(contact_mode))
         self._cur: dict | None = None
         self._reach_kin = None
         self._reach_actions = None
@@ -399,14 +405,17 @@ class FarsightedSeedEnv:
         Ts      = np.empty(batch_size, dtype=np.int32)
         reasons: list[str] = []
         if cfg.BATCHED_ROLLOUT and self.mjc is None:
-            from Yuan.RL.batched_rollout import batched_rollout
+            if self.contact_mode:
+                from Yuan.RL.batched_rollout import batched_rollout_contact as _br
+            else:
+                from Yuan.RL.batched_rollout import batched_rollout as _br
             c_batch = np.stack([task["c"] for task in tasks], axis=0)
             v_batch = np.asarray([task["v_path"] for task in tasks],
                                  dtype=np.float32)
             eps_batch = np.asarray([task["eps_p"] for task in tasks],
                                    dtype=np.float32)
             Ts[:] = np.asarray([task["T"] for task in tasks], dtype=np.int32)
-            out = batched_rollout(actions, c_batch, v_batch, eps_batch, Ts)
+            out = _br(actions, c_batch, v_batch, eps_batch, Ts)
             lengths[:] = out["lengths"]
             rewards[:] = lengths.astype(np.float32) / Ts.astype(np.float32)
             if cfg.SEED_MANIFOLD_REG and cfg.ACTION_MODE == "joint_seed":

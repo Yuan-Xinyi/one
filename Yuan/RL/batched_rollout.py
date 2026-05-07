@@ -374,7 +374,8 @@ def batched_rollout_segment(q_init: torch.Tensor,
                             sphere_cc=None,
                             kin: BatchedFR3Kinematics | None = None,
                             is_phantom: bool = False,
-                            q_ref: torch.Tensor | None = None) -> dict:
+                            q_ref: torch.Tensor | None = None,
+                            record_traj: bool = False) -> dict:
     """Run controller from step `start_step` (exclusive) to `end_step` (inclusive)
     on a (B, 7) joint state. Caller supplies pre-built R_tgt, p0, d_dir.
 
@@ -383,12 +384,22 @@ def batched_rollout_segment(q_init: torch.Tensor,
             `_batched_nullspace_objective_grad`).
         is_phantom: if True, skip the nullspace term entirely.
         alive_mask: caller carries over which rows are still active.
+        q_ref: null-space pull target. Accepts:
+              - None: defaults to q_init (stay-near-current behavior)
+              - shape (B, 7): constant target throughout the segment
+              - shape (T+1, B, 7) where T = end_step - start_step:
+                time-varying. Step at relative index t uses q_ref[t].
+                Used for "moving waypoint" guidance.
+        record_traj: if True, also returns 'q_record' of shape
+            (n_steps + 1, B, 7) with q at every step (initial + after each
+            controller update). Cheap; useful for visualization.
 
     Returns dict:
         'q_final'       (B, 7) joint state at end_step (or last alive step)
         'lengths'       (B,)   absolute step index where the row last advanced
         'alive_out'     (B,)   bool, still alive after end_step
         'last_pos_err', 'last_orient_err' (B,)
+        'q_record'      (n_steps+1, B, 7), only if record_traj=True
     """
     device = q_init.device
     B = q_init.shape[0]
@@ -404,15 +415,21 @@ def batched_rollout_segment(q_init: torch.Tensor,
     else:
         alive = alive_mask.clone()
     q = q_init.clone()
+    # q_ref normalization: support None / (B,7) / (T+1, B, 7)
+    q_ref_traj = None
     if q_ref is None:
-        q_ref = q.clone()
+        q_ref_const = q.clone()
+    elif q_ref.ndim == 3:
+        q_ref_const = None
+        q_ref_traj = q_ref.clone()                          # (T+1, B, 7)
     else:
-        q_ref = q_ref.clone()
+        q_ref_const = q_ref.clone()
     lengths = torch.full((B,), float(start_step),
                          device=device, dtype=torch.float32).long()
     last_pos_err = torch.zeros_like(v_path)
     last_orient_err = torch.zeros_like(v_path)
     in_horizon_global = torch.ones_like(alive)
+    q_record_buf = [q.clone()] if record_traj else None
 
     for step in range(start_step + 1, end_step + 1):
         in_horizon = step <= T_total
@@ -432,8 +449,14 @@ def batched_rollout_segment(q_init: torch.Tensor,
         q_dot = (Jpinv @ x_dot.unsqueeze(-1)).squeeze(-1)
         if not is_phantom:
             N = eye7 - Jpinv @ J
+            if q_ref_traj is not None:
+                rel = step - start_step                     # in [1, T]
+                rel = max(0, min(rel, q_ref_traj.shape[0] - 1))
+                q_ref_now = q_ref_traj[rel]
+            else:
+                q_ref_now = q_ref_const
             q_dot_secondary = _batched_nullspace_objective_grad(
-                kin, q, d_dir, R_tgt, q_ref, gains=preset_gains)
+                kin, q, d_dir, R_tgt, q_ref_now, gains=preset_gains)
             q_dot = q_dot + (N @ q_dot_secondary.unsqueeze(-1)).squeeze(-1)
         q_dot = q_dot.clamp(-kin.qdot_max, kin.qdot_max)
         q_new_raw = q + q_dot * dt
@@ -459,11 +482,16 @@ def batched_rollout_segment(q_init: torch.Tensor,
         q = torch.where(ok.unsqueeze(-1), q_new, q)
         alive = alive & in_horizon & ~(fail_pos | fail_ori | fail_lmt | fail_col)
         in_horizon_global = in_horizon
+        if record_traj:
+            q_record_buf.append(q.clone())
 
-    return {
+    out = {
         'q_final': q,
         'lengths': lengths,
         'alive_out': alive & in_horizon_global,
         'last_pos_err': last_pos_err,
         'last_orient_err': last_orient_err,
     }
+    if record_traj:
+        out['q_record'] = torch.stack(q_record_buf, dim=0)
+    return out

@@ -43,6 +43,14 @@ def manifold_snap(kin, q: torch.Tensor, x_target: torch.Tensor,
     return q
 
 
+def _z_ang_deg(kin, q, plane_normal_unit):
+    """Angle (deg) between FK(q)'s TCP-z and -plane_normal."""
+    _, R_tcp, _, _ = kin.tcp_fk_jac(q.unsqueeze(0))
+    z_cur = R_tcp[0, :, 2]
+    cos_v = (z_cur * (-plane_normal_unit)).sum().clamp(-1.0, 1.0)
+    return float(torch.arccos(cos_v).item() * 180.0 / 3.14159265)
+
+
 def backward_sample(model: CFMFlowModel, kin: BatchedFR3Kinematics,
                     q_goal: torch.Tensor,
                     path_pts: torch.Tensor,           # (T, 3)
@@ -50,29 +58,63 @@ def backward_sample(model: CFMFlowModel, kin: BatchedFR3Kinematics,
                     direction: torch.Tensor,          # (3,)
                     n_ode_steps: int = 16,
                     cfg_scale: float = 1.0,
-                    snap_iters: int = 3) -> torch.Tensor:
+                    snap_iters: int = 3,
+                    direction_per_step: torch.Tensor | None = None,
+                    debug_orient: bool = False,
+                    ) -> torch.Tensor:
     """One sampled q-trajectory of shape (T, 7).
-    q_traj[T-1] = q_goal; q_traj[i-1] sampled by CFM conditioned on q_traj[i]."""
+    q_traj[T-1] = q_goal; q_traj[i-1] sampled by CFM conditioned on q_traj[i].
+
+    If `direction_per_step` is given (shape (T-1, 3)), it overrides the
+    global `direction` cond on a per-segment basis: at the backward step
+    that emits q_traj[i-1] from q_traj[i], the direction fed into cond is
+    direction_per_step[i-1] (i.e., the local tangent of segment i-1 → i).
+    Used for zero-shot curved-path inference.
+
+    If `debug_orient=True`, prints z-axis angle (TCP-z vs -plane_normal)
+    before and after manifold_snap for every backward step. Cheap; useful
+    to confirm whether snap is breaking orientation alignment.
+    """
     device = q_goal.device
     T = path_pts.shape[0]
     q_traj = torch.zeros(T, 7, device=device, dtype=torch.float32)
     q_traj[T - 1] = q_goal
     q_next = q_goal
 
+    if debug_orient:
+        pn_unit = plane_normal / plane_normal.norm().clamp_min(1e-12)
+        diag_rows = []
+        # also record the goal pose as reference
+        ang_goal = _z_ang_deg(kin, q_goal, pn_unit)
+
     for i in range(T - 1, 0, -1):
         x_curr = path_pts[i - 1]                      # x_i in dataset terms
         x_next = path_pts[i]
-        cond = torch.cat([q_next, x_curr, x_next, plane_normal, direction]
+        d_i = direction if direction_per_step is None else direction_per_step[i - 1]
+        cond = torch.cat([q_next, x_curr, x_next, plane_normal, d_i]
                          ).unsqueeze(0)                # (1, COND_DIM)
         # CFM sample
         q_curr = model.sample(cond, n_steps=n_ode_steps,
                               cfg_scale=cfg_scale).squeeze(0)
         q_curr = q_curr.clamp(kin.lmt_lo, kin.lmt_up)
+        if debug_orient:
+            ang_pre = _z_ang_deg(kin, q_curr, pn_unit)
         # snap to manifold
         if snap_iters > 0:
             q_curr = manifold_snap(kin, q_curr, x_curr, n_iters=snap_iters)
+        if debug_orient:
+            ang_post = _z_ang_deg(kin, q_curr, pn_unit)
+            diag_rows.append((i - 1, ang_pre, ang_post))
         q_traj[i - 1] = q_curr
         q_next = q_curr
+
+    if debug_orient:
+        print(f"    [orient-diag] z-ang to -plane_normal (deg)  "
+              f"goal={ang_goal:5.2f}°  THETA_MAX=5.00°")
+        print(f"      ckpt :  pre-snap  →  post-snap")
+        for (ci, pre, post) in diag_rows:
+            warn = " ⚠ over-tol" if post > 5.0 else ""
+            print(f"      {ci:>4d} :  {pre:6.2f}°   →   {post:6.2f}°{warn}")
     return q_traj
 
 

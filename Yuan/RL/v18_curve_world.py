@@ -136,7 +136,7 @@ def dls_forward_rollout(kin: BatchedFR3Kinematics,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", default="Yuan/RL/checkpoints_v18_multi/best.pt")
-    ap.add_argument("--curve-type", default="arc",
+    ap.add_argument("--curve-type", default="line",
                     choices=["line", "arc", "s_curve"])
     ap.add_argument("--n-checkpoints", type=int, default=5)
     ap.add_argument("--ctrl-stride", type=int, default=4,
@@ -144,7 +144,11 @@ def main():
                          "animation frame (1 = every step ≈ 50 fps target)")
     ap.add_argument("--v-path", type=float, default=0.10,
                     help="DLS controller path velocity [m/s]")
-    ap.add_argument("--K-arms", type=int, default=6)
+    ap.add_argument("--K-arms", type=int, default=4,
+                    help="how many arms to visualize after diversity-pick")
+    ap.add_argument("--K-pool", type=int, default=24,
+                    help="how many CFM samples to attempt; from the successes "
+                         "we pick the K-arms most q_0-diverse via greedy max-min")
     ap.add_argument("--n-ode-steps", type=int, default=16)
     ap.add_argument("--snap-iters", type=int, default=8)
     ap.add_argument("--seed", type=int, default=None,
@@ -215,13 +219,15 @@ def main():
     R_T = torch.as_tensor(task['R_target_at_goal'], device=device, dtype=torch.float32)
     x_T = path_pts[-1]
 
-    q_Ts, _ = _dense_ik_at(kin, x_T, R_T, args.K_arms * 4, rng)
+    K_pool = max(args.K_arms, args.K_pool)
+    q_Ts, _ = _dense_ik_at(kin, x_T, R_T, K_pool * 4, rng)
     if q_Ts.shape[0] == 0:
         print("no IK at goal — retry with another --seed")
         return
-    if q_Ts.shape[0] > args.K_arms:
-        idx = rng.permutation(q_Ts.shape[0])[:args.K_arms]
+    if q_Ts.shape[0] > K_pool:
+        idx = rng.permutation(q_Ts.shape[0])[:K_pool]
         q_Ts = q_Ts[idx]
+    print(f"  pool: {q_Ts.shape[0]} candidate q_T's at goal\n")
 
     q_trajs_dense = []
     sigs = []
@@ -257,18 +263,44 @@ def main():
               f"DLS frames={q_dense.shape[0]}  ctrl-trace max-to-ckpt={ctrl_err_mm:.1f}mm  "
               f"[{tag}]")
 
-    # filter to completed-only by default
+    # filter to successes (unless --show-failed)
     n_total = len(q_trajs_dense)
     n_ok = sum(success_flags)
-    if not args.show_failed and n_ok > 0:
-        keep = [i for i, s in enumerate(success_flags) if s]
-        q_trajs_dense = [q_trajs_dense[i] for i in keep]
-        sigs = [sigs[i] for i in keep]
-        print(f"\n  → showing {len(keep)}/{n_total} arms that completed all "
-              f"segments (use --show-failed to include partial)")
-    elif n_ok == 0 and not args.show_failed:
-        print(f"\n  ⚠ no arm completed; falling back to showing all "
-              f"{n_total} (failed) arms")
+    if args.show_failed:
+        keep_pool = list(range(n_total))
+    elif n_ok > 0:
+        keep_pool = [i for i, s in enumerate(success_flags) if s]
+    else:
+        print(f"\n  ⚠ no arm completed; falling back to all {n_total} (failed) arms")
+        keep_pool = list(range(n_total))
+
+    # diversity pick: greedy max-min over q_0 in joint-space L2
+    target = min(args.K_arms, len(keep_pool))
+    if len(keep_pool) <= target:
+        keep = keep_pool
+    else:
+        q0_pool = np.stack([q_trajs_dense[i][0] for i in keep_pool], axis=0)  # (P, 7)
+        # start from the q_0 farthest from the pool centroid (most extreme)
+        centroid = q0_pool.mean(axis=0)
+        first = int(np.argmax(np.linalg.norm(q0_pool - centroid, axis=1)))
+        picked_local = [first]
+        while len(picked_local) < target:
+            # for every candidate, distance to nearest already-picked
+            d_to_picked = np.full(q0_pool.shape[0], np.inf)
+            for j in range(q0_pool.shape[0]):
+                if j in picked_local:
+                    d_to_picked[j] = -np.inf                # exclude
+                    continue
+                for p in picked_local:
+                    d_to_picked[j] = min(d_to_picked[j],
+                                          float(np.linalg.norm(q0_pool[j] - q0_pool[p])))
+            picked_local.append(int(np.argmax(d_to_picked)))
+        keep = [keep_pool[j] for j in picked_local]
+
+    q_trajs_dense = [q_trajs_dense[i] for i in keep]
+    sigs = [sigs[i] for i in keep]
+    print(f"\n  → pool: {n_total} attempted, {n_ok} OK; "
+          f"diversity-picked {len(keep)} for viewer")
 
     K = len(q_trajs_dense)
     M_max = max(q.shape[0] for q in q_trajs_dense)

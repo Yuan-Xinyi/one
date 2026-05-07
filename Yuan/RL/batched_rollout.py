@@ -1,8 +1,10 @@
-"""Torch batched rollout for the FR3 farsighted-seed task.
+"""Torch batched IK projection and segmented rollout for v18.
 
-This module mirrors ``rollout.py`` but evaluates a full batch together. It is
-intended for training data collection; visualization still uses the serial
-rollout so it can keep full trajectories and WRS scene state.
+Public surface used by the v18 pipeline:
+    _branch_seed_bank          deterministic IK start postures
+    _batched_ik_project        DLS IK with branch-aware null-space objective
+    batched_rollout_segment    segmented Cartesian DLS rollout from q_init
+    _device_from_cfg, _load_fr3_sphere_collision_cls   helpers
 """
 from __future__ import annotations
 
@@ -41,31 +43,6 @@ def _normalize_angle_pair(pair: torch.Tensor) -> torch.Tensor:
     default = torch.zeros_like(pair)
     default[:, 0] = 1.0
     return torch.where(norm > 1e-6, pair / norm.clamp_min(1e-12), default)
-
-
-def build_target_rotmat_batch(d: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
-    """TCP_z = -n (tool faces INTO the surface, opposite to surface
-    outward normal). TCP_x = d projected onto z-perp. TCP_y = z x x."""
-    z = _normalize(-n)                                # ← flip: TCP_z = -n
-    x = d - z * (d * z).sum(dim=-1, keepdim=True)
-    x = _normalize(x)
-    y = torch.cross(z, x, dim=-1)
-    return torch.stack([x, y, z], dim=-1)
-
-
-def build_branch_rotmat_batch(d: torch.Tensor, n: torch.Tensor,
-                              branch_action: torch.Tensor) -> torch.Tensor:
-    """Build full TCP rotation from path frame plus tool-roll descriptor psi."""
-    R0 = build_target_rotmat_batch(d, n)
-    psi_vec = _normalize_angle_pair(branch_action[:, 2:4])
-    cpsi = psi_vec[:, 0:1]
-    spsi = psi_vec[:, 1:2]
-    x0 = R0[:, :, 0]
-    y0 = R0[:, :, 1]
-    z = R0[:, :, 2]
-    x = _normalize(cpsi * x0 + spsi * y0)
-    y = torch.cross(z, x, dim=-1)
-    return torch.stack([x, y, z], dim=-1)
 
 
 def _z_axis_error_from_rotmats(R_cur: torch.Tensor,
@@ -141,9 +118,9 @@ def _swivel_grad_fd(kin: BatchedFR3Kinematics,
 
 
 def _branch_seed_bank(kin: BatchedFR3Kinematics) -> torch.Tensor:
-    """Deterministic set of FR3 postures covering common IK branches.
-    Expanded to 16 for full-sphere n distributions (some normals only have
-    IK solutions reachable from "wrist-flipped" or "back-pose" seeds)."""
+    """Deterministic FR3 postures covering the common IK branches.
+    Sized for full-sphere n distributions (some normals only have IK
+    solutions reachable from "wrist-flipped" or "back-pose" seeds)."""
     seeds = torch.tensor([
         # canonical (FR3 home, elbow up/down ±)
         [0.0, -0.785398163, 0.0, -2.35619449, 0.0, 1.57079632679, 0.785398163397],
@@ -250,9 +227,9 @@ def _batched_nullspace_objective_grad(kin: BatchedFR3Kinematics,
                                       R_tgt: torch.Tensor,
                                       q_ref: torch.Tensor,
                                       gains: dict | None = None) -> torch.Tensor:
-    """Nullspace gradient. `gains` is an optional dict that overrides cfg's
-    NULL_* scalar gains with PER-ROW (B,) tensors. Used by sequential
-    rollouts that switch nullspace preset mid-trajectory. Keys recognized:
+    """Nullspace gradient. `gains` optionally overrides cfg's NULL_* scalar
+    gains with PER-ROW (B,) tensors (used by sequential rollouts that switch
+    nullspace preset mid-trajectory). Recognized keys:
         'manip', 'jlm', 'angle_boundary', 'angle_attract', 'k_null'
     Each value can be a python float (broadcast) or a (B,) tensor.
     """
@@ -337,7 +314,7 @@ def _batched_ik_project(kin: BatchedFR3Kinematics,
         if not active.any():
             break
 
-        # Match the serial solver's trust-region style.
+        # Trust-region-style step bounding (matches the serial solver).
         pos_scale = torch.where(pos_err > 0.1, 0.1 / pos_err.clamp_min(1e-12),
                                 torch.ones_like(pos_err))
         rot_scale = torch.where(rot_err > 0.3, 0.3 / rot_err.clamp_min(1e-12),
@@ -382,190 +359,6 @@ def _batched_ik_project(kin: BatchedFR3Kinematics,
     return q.clamp(kin.lmt_lo, kin.lmt_up), converged, fail_reason
 
 
-def _joint_margin_norm(kin: BatchedFR3Kinematics,
-                       q: torch.Tensor) -> torch.Tensor:
-    """Per-row min normalized distance to nearest joint limit, in [0, 0.5].
-    Higher = farther from any limit (safer for the next control step)."""
-    span = (kin.lmt_up - kin.lmt_lo).clamp_min(1e-6)
-    lo_d = (q - kin.lmt_lo) / span
-    up_d = (kin.lmt_up - q) / span
-    return torch.minimum(lo_d, up_d).min(dim=-1).values
-
-
-def branch_project_multistart(kin: BatchedFR3Kinematics,
-                              p0: torch.Tensor,
-                              R_tgt: torch.Tensor,
-                              branch_action: torch.Tensor):
-    """Project branch descriptors with deterministic multi-start IK.
-
-    Score among the num_starts converged candidates per task:
-        pos_err + rot_err + IK_SWIVEL_W * swivel_cost - IK_MARGIN_W * margin
-    The margin term steers selection away from near-joint-limit q so that
-    step-0 joint_limit terminations during rollout are reduced.
-    """
-    batch_size = branch_action.shape[0]
-    seed_bank = _branch_seed_bank(kin)
-    num_starts = seed_bank.shape[0]
-    q_seed = seed_bank.view(1, num_starts, 7).expand(batch_size, num_starts, 7)
-    q_seed = q_seed.reshape(batch_size * num_starts, 7).clone()
-    p_rep = p0[:, None, :].expand(batch_size, num_starts, 3).reshape(-1, 3)
-    R_rep = R_tgt[:, None, :, :].expand(batch_size, num_starts, 3, 3).reshape(-1, 3, 3)
-    a_rep = branch_action[:, None, :].expand(batch_size, num_starts, 4).reshape(-1, 4)
-
-    q_all, ok_all, _ = _batched_ik_project(kin, q_seed, p_rep, R_rep,
-                                           branch_action=a_rep)
-    p_tcp, R_tcp, _, _ = kin.tcp_fk_jac(q_all)
-    pos_err = (p_rep - p_tcp).norm(dim=-1)
-    rot_err = _rotvec_between(R_tcp, R_rep).norm(dim=-1)
-    swivel_cost = _swivel_cost_from_q(kin, q_all, p_rep, a_rep)
-    margin = _joint_margin_norm(kin, q_all)
-    score = (pos_err + rot_err
-             + float(cfg.IK_SWIVEL_W) * swivel_cost
-             - float(cfg.IK_MARGIN_W) * margin)
-    score = torch.where(ok_all, score, torch.full_like(score, float('inf')))
-    score = score.view(batch_size, num_starts)
-    best_idx = score.argmin(dim=-1)
-    ik_ok = torch.isfinite(score.gather(1, best_idx.view(-1, 1)).squeeze(1))
-    q_all = q_all.view(batch_size, num_starts, 7)
-    q_best = q_all[torch.arange(batch_size, device=kin.device), best_idx]
-    reasons = np.array(['init_ik_fail'] * batch_size, dtype=object)
-    reasons[ik_ok.detach().cpu().numpy()] = 'ik_ok'
-    return q_best, ik_ok, reasons
-
-
-def batched_rollout(q_seed_np: np.ndarray,
-                    c_np: np.ndarray,
-                    v_path_np: np.ndarray,
-                    eps_p_np: np.ndarray,
-                    T_np: np.ndarray,
-                    action_mode: str | None = None) -> dict:
-    """Evaluate a batch of seed actions.
-
-    Args:
-        q_seed_np: ``(B, 7)`` active joint seeds.
-        c_np: ``(B, 9)`` contexts ``[p0, d, n]``.
-        v_path_np: ``(B,)`` path speeds.
-        eps_p_np: ``(B,)`` position tolerances.
-        T_np: ``(B,)`` rollout horizons.
-    """
-    device = _device_from_cfg()
-    kin = BatchedFR3Kinematics(device=device)
-    if cfg.USE_COLLISION_CHECK and cfg.BATCHED_COLLISION_CHECK:
-        sphere_cls = _load_fr3_sphere_collision_cls()
-        sphere_cc = sphere_cls(device=device,
-                               margin=cfg.BATCHED_COLLISION_MARGIN)
-    else:
-        sphere_cc = None
-    action = torch.as_tensor(q_seed_np, device=device, dtype=torch.float32)
-    c = torch.as_tensor(c_np, device=device, dtype=torch.float32)
-    v_path = torch.as_tensor(v_path_np, device=device, dtype=torch.float32)
-    eps_p = torch.as_tensor(eps_p_np, device=device, dtype=torch.float32)
-    T = torch.as_tensor(T_np, device=device, dtype=torch.long)
-
-    p0 = c[:, :3]
-    d = c[:, 3:6]
-    n = c[:, 6:9]
-    if action_mode is None:
-        action_mode = cfg.ACTION_MODE
-
-    if action_mode == "branch_descriptor":
-        branch_action = action
-        R_tgt = build_branch_rotmat_batch(d, n, branch_action)
-        q_seed = _branch_seed_bank(kin)[0].view(1, 7).expand(action.shape[0], 7).clone()
-    else:
-        branch_action = None
-        R_tgt = build_target_rotmat_batch(d, n)
-        q_seed = action.clamp(kin.lmt_lo, kin.lmt_up)
-    seed_p, seed_R, _, _ = kin.tcp_fk_jac(q_seed)
-    seed_pos_err = (p0 - seed_p).norm(dim=-1)
-    seed_orient_err = _z_axis_rotvec(seed_R, R_tgt).norm(dim=-1)
-
-    if action_mode == "branch_descriptor":
-        q, ik_ok, reasons = branch_project_multistart(kin, p0, R_tgt, branch_action)
-    else:
-        q, ik_ok, reasons = _batched_ik_project(kin, q_seed, p0, R_tgt,
-                                                branch_action=branch_action)
-    lengths = torch.zeros((q.shape[0],), device=device, dtype=torch.long)
-    alive = ik_ok.clone()
-    q_ref = q.clone()
-    max_T = int(T.max().item()) if T.numel() else 0
-    last_pos_err = torch.zeros_like(v_path)
-    last_orient_err = torch.zeros_like(v_path)
-
-    eye7 = torch.eye(7, device=device, dtype=torch.float32).expand(q.shape[0], 7, 7)
-    theta_max = torch.as_tensor(float(cfg.THETA_MAX), device=device,
-                                dtype=torch.float32)
-    dt = float(cfg.DT)
-
-    for step in range(1, max_T + 1):
-        in_horizon = step <= T
-        step_alive = alive & in_horizon
-        if not step_alive.any():
-            break
-
-        p_ref = p0 + (step * dt) * v_path.unsqueeze(-1) * d
-        p_dot_ff = v_path.unsqueeze(-1) * d
-        p_tcp, R_tcp, J, _ = kin.tcp_fk_jac(q)
-        z_tgt = R_tgt[:, :, 2]
-        omega_err, theta = _z_axis_error_from_rotmats(R_tcp, R_tgt)
-        x_dot = torch.cat([
-            p_dot_ff + float(cfg.KP_LIN) * (p_ref - p_tcp),
-            float(cfg.KOMEGA) * omega_err,
-        ], dim=-1)
-
-        Jpinv = _dls_pinv(J, float(cfg.DLS_LAMBDA))
-        q_dot = (Jpinv @ x_dot.unsqueeze(-1)).squeeze(-1)
-        N = eye7 - Jpinv @ J
-        q_dot_secondary = _batched_nullspace_objective_grad(
-            kin, q, d, R_tgt, q_ref)
-        q_dot = q_dot + (N @ q_dot_secondary.unsqueeze(-1)).squeeze(-1)
-        q_dot = q_dot.clamp(-kin.qdot_max, kin.qdot_max)
-        q_new_raw = q + q_dot * dt
-        joint_limit_hit = ((q_new_raw < kin.lmt_lo - 1e-6)
-                           | (q_new_raw > kin.lmt_up + 1e-6)).any(dim=-1)
-        q_new = q_new_raw.clamp(kin.lmt_lo, kin.lmt_up)
-
-        p_new, R_new, _, _ = kin.tcp_fk_jac(q_new)
-        pos_err = (p_ref - p_new).norm(dim=-1)
-        orient_err = torch.acos(
-            (R_new[:, :, 2] * z_tgt).sum(dim=-1).clamp(-1.0, 1.0))
-        if sphere_cc is None:
-            self_collision = torch.zeros_like(step_alive)
-        else:
-            self_collision = sphere_cc.is_collided(kin.link_transforms(q_new))
-        last_pos_err = torch.where(step_alive, pos_err, last_pos_err)
-        last_orient_err = torch.where(step_alive, orient_err, last_orient_err)
-
-        fail_pos = step_alive & (pos_err > eps_p)
-        fail_ori = step_alive & (orient_err > theta_max)
-        fail_lmt = step_alive & joint_limit_hit
-        fail_col = step_alive & self_collision
-        ok = step_alive & ~(fail_pos | fail_ori | fail_lmt | fail_col)
-
-        lengths = torch.where(ok, torch.full_like(lengths, step), lengths)
-        q = torch.where(ok.unsqueeze(-1), q_new, q)
-
-        fail_pos_np = fail_pos.detach().cpu().numpy()
-        fail_ori_np = fail_ori.detach().cpu().numpy()
-        fail_lmt_np = fail_lmt.detach().cpu().numpy()
-        reasons[fail_pos_np] = 'pos_err_exceeded'
-        reasons[fail_ori_np] = 'orient_err_exceeded'
-        reasons[fail_lmt_np] = 'joint_limit'
-        reasons[fail_col.detach().cpu().numpy()] = 'self_collision'
-        alive = alive & in_horizon & ~(fail_pos | fail_ori | fail_lmt | fail_col)
-
-    complete = (ik_ok & (lengths >= T)).detach().cpu().numpy()
-    reasons[complete] = 'max_steps'
-    return {
-        'lengths': lengths.detach().cpu().numpy().astype(np.int32),
-        'reasons': reasons.tolist(),
-        'pos_err': last_pos_err.detach().cpu().numpy(),
-        'orient_err': last_orient_err.detach().cpu().numpy(),
-        'seed_pos_err': seed_pos_err.detach().cpu().numpy(),
-        'seed_orient_err': seed_orient_err.detach().cpu().numpy(),
-    }
-
-
 def batched_rollout_segment(q_init: torch.Tensor,
                             R_tgt: torch.Tensor,
                             branch_action: torch.Tensor,
@@ -583,18 +376,19 @@ def batched_rollout_segment(q_init: torch.Tensor,
                             is_phantom: bool = False,
                             q_ref: torch.Tensor | None = None) -> dict:
     """Run controller from step `start_step` (exclusive) to `end_step` (inclusive)
-    on a (B, 7) joint state. Same dynamics as batched_rollout but:
-      - takes pre-built R_tgt, p0, d_dir (caller computes them once)
-      - takes per-batch nullspace gain overrides via `preset_gains` dict
-      - is_phantom=True skips the nullspace term entirely
-      - alive_mask lets caller carry over which rows are still active
+    on a (B, 7) joint state. Caller supplies pre-built R_tgt, p0, d_dir.
 
-    Returns dict with:
-      'q_final'    (B, 7)  — joint state at end_step (or last alive step)
-      'lengths'    (B,)    — last step the row was still alive (relative to 0,
-                            absolute index up to end_step)
-      'alive_out'  (B,)    — bool, still alive after end_step
-      'last_pos_err','last_orient_err' (B,)
+    Args:
+        preset_gains: per-batch nullspace gain overrides (see
+            `_batched_nullspace_objective_grad`).
+        is_phantom: if True, skip the nullspace term entirely.
+        alive_mask: caller carries over which rows are still active.
+
+    Returns dict:
+        'q_final'       (B, 7) joint state at end_step (or last alive step)
+        'lengths'       (B,)   absolute step index where the row last advanced
+        'alive_out'     (B,)   bool, still alive after end_step
+        'last_pos_err', 'last_orient_err' (B,)
     """
     device = q_init.device
     B = q_init.shape[0]
@@ -672,295 +466,4 @@ def batched_rollout_segment(q_init: torch.Tensor,
         'alive_out': alive & in_horizon_global,
         'last_pos_err': last_pos_err,
         'last_orient_err': last_orient_err,
-    }
-
-
-def batched_rollout_contact(q_seed_np: np.ndarray,
-                            c_np: np.ndarray,
-                            v_path_np: np.ndarray,
-                            eps_p_np: np.ndarray,
-                            T_np: np.ndarray,
-                            action_mode: str | None = None,
-                            k_n: float | None = None,
-                            pen_target: float | None = None,
-                            pen_min: float | None = None,
-                            pen_max: float | None = None,
-                            grace_steps: int | None = None,
-                            use_dynamics: bool | None = None,
-                            tip_mass: float | None = None,
-                            grip_k: float | None = None,
-                            grip_c: float | None = None,
-                            n_substeps: int | None = None) -> dict:
-    """Contact-mode rollout: same dynamics as batched_rollout, plus a linear
-    spring contact model along the surface normal.
-
-    Surface (per task): plane through p0 with outward normal n_out = c[6:9].
-    Pen tip target is OFFSET into the surface by `pen_target` so equilibrium
-    contact force F = k_n * pen_target.
-
-    NEW failure modes:
-        force_high : penetration > pen_max  (any step after grace)
-        force_low  : penetration < pen_min  (any step after grace, lost contact)
-
-    Existing failure modes (joint_limit, pos_err, orient_err, self_collision)
-    still apply, but pos_err is checked against p_ref shifted into the surface
-    (so loose normal tracking + spring force handle the contact direction).
-    """
-    if k_n        is None: k_n        = float(cfg.CONTACT_K_N)
-    if pen_target is None: pen_target = float(cfg.CONTACT_PENETRATION_TARGET)
-    if pen_min    is None: pen_min    = float(cfg.CONTACT_PEN_MIN)
-    if pen_max    is None: pen_max    = float(cfg.CONTACT_PEN_MAX)
-    if grace_steps is None: grace_steps = int(cfg.CONTACT_GRACE_STEPS)
-    if use_dynamics is None:
-        use_dynamics = bool(getattr(cfg, "CONTACT_USE_DYNAMICS", False))
-    if tip_mass   is None: tip_mass   = float(getattr(cfg, "CONTACT_TIP_MASS", 0.5))
-    if grip_k     is None: grip_k     = float(getattr(cfg, "CONTACT_GRIP_K", 20000.0))
-    if grip_c     is None: grip_c     = float(getattr(cfg, "CONTACT_GRIP_C", 20.0))
-    if n_substeps is None: n_substeps = int(getattr(cfg, "CONTACT_N_SUBSTEPS", 20))
-
-    device = _device_from_cfg()
-    kin = BatchedFR3Kinematics(device=device)
-    if cfg.USE_COLLISION_CHECK and cfg.BATCHED_COLLISION_CHECK:
-        sphere_cls = _load_fr3_sphere_collision_cls()
-        sphere_cc = sphere_cls(device=device,
-                               margin=cfg.BATCHED_COLLISION_MARGIN)
-    else:
-        sphere_cc = None
-    action = torch.as_tensor(q_seed_np, device=device, dtype=torch.float32)
-    c = torch.as_tensor(c_np, device=device, dtype=torch.float32)
-    v_path = torch.as_tensor(v_path_np, device=device, dtype=torch.float32)
-    eps_p = torch.as_tensor(eps_p_np, device=device, dtype=torch.float32)
-    T = torch.as_tensor(T_np, device=device, dtype=torch.long)
-
-    p0 = c[:, :3]
-    d_dir = c[:, 3:6]
-    n_out = c[:, 6:9]                                      # outward normal
-    if action_mode is None:
-        action_mode = cfg.ACTION_MODE
-    if action_mode == "branch_descriptor":
-        branch_action = action
-        R_tgt = build_branch_rotmat_batch(d_dir, n_out, branch_action)
-    else:
-        branch_action = None
-        R_tgt = build_target_rotmat_batch(d_dir, n_out)
-
-    if action_mode == "branch_descriptor":
-        q, ik_ok, reasons = branch_project_multistart(kin, p0, R_tgt, branch_action)
-    else:
-        q_seed = action.clamp(kin.lmt_lo, kin.lmt_up)
-        q, ik_ok, reasons = _batched_ik_project(kin, q_seed, p0, R_tgt,
-                                                branch_action=branch_action)
-
-    lengths = torch.zeros((q.shape[0],), device=device, dtype=torch.long)
-    alive = ik_ok.clone()
-    q_ref = q.clone()
-    max_T = int(T.max().item()) if T.numel() else 0
-    last_force = torch.zeros_like(v_path)
-
-    eye7 = torch.eye(7, device=device, dtype=torch.float32).expand(q.shape[0], 7, 7)
-    dt = float(cfg.DT)
-    theta_max = float(cfg.THETA_MAX)
-    z_tgt = R_tgt[:, :, 2]
-
-    # path target shifted into surface so equilibrium contact = F_target
-    # In v2 (use_dynamics), grip-spring/contact split shifts equilibrium:
-    #   z_eq = K_grip / (K_grip + K_n) · z_kin
-    # so commanded z_kin must be (K_grip+K_n)/K_grip · pen_target to land
-    # at F = K_n · pen_target in steady state.
-    if use_dynamics:
-        z_kin_target = pen_target * (grip_k + k_n) / max(grip_k, 1e-6)
-    else:
-        z_kin_target = pen_target
-    n_offset = z_kin_target * n_out                        # outward-normal × pen
-    # p_ref(step) = p0 + (step·dt·v)·d  -  z_kin_target · n_out
-
-    # ---- v2 dynamics state per task ----
-    if use_dynamics:
-        # tip starts at gripper position projected on surface normal
-        p0_init, _, _, _ = kin.tcp_fk_jac(q)
-        z_kin_init = (-((p0_init - p0) * n_out).sum(dim=-1))   # can be < 0
-        z_dyn = z_kin_init.clamp(min=0.0).clone()              # start above surface = 0
-        z_dot = torch.zeros_like(z_dyn)
-        dt_sub = dt / max(n_substeps, 1)
-        m_inv = 1.0 / max(tip_mass, 1e-6)
-    else:
-        z_dyn = torch.zeros(q.shape[0], device=device, dtype=torch.float32)
-        z_dot = torch.zeros_like(z_dyn)
-
-    for step in range(1, max_T + 1):
-        in_horizon = step <= T
-        step_alive = alive & in_horizon
-        if not step_alive.any():
-            break
-
-        p_ref = p0 + (step * dt) * v_path.unsqueeze(-1) * d_dir - n_offset
-        p_dot_ff = v_path.unsqueeze(-1) * d_dir
-        p_tcp, R_tcp, J, _ = kin.tcp_fk_jac(q)
-        omega_err, _ = _z_axis_error_from_rotmats(R_tcp, R_tgt)
-        x_dot = torch.cat([
-            p_dot_ff + float(cfg.KP_LIN) * (p_ref - p_tcp),
-            float(cfg.KOMEGA) * omega_err,
-        ], dim=-1)
-        Jpinv = _dls_pinv(J, float(cfg.DLS_LAMBDA))
-        q_dot = (Jpinv @ x_dot.unsqueeze(-1)).squeeze(-1)
-        N = eye7 - Jpinv @ J
-        q_dot_secondary = _batched_nullspace_objective_grad(
-            kin, q, d_dir, R_tgt, q_ref)
-        q_dot = q_dot + (N @ q_dot_secondary.unsqueeze(-1)).squeeze(-1)
-        q_dot = q_dot.clamp(-kin.qdot_max, kin.qdot_max)
-        q_new_raw = q + q_dot * dt
-        joint_limit_hit = ((q_new_raw < kin.lmt_lo - 1e-6)
-                           | (q_new_raw > kin.lmt_up + 1e-6)).any(dim=-1)
-        q_new = q_new_raw.clamp(kin.lmt_lo, kin.lmt_up)
-
-        p_new, R_new, _, _ = kin.tcp_fk_jac(q_new)
-        # gripper-side penetration along outward normal (kinematic; can be < 0)
-        z_kin = -((p_new - p0) * n_out).sum(dim=-1)
-        if use_dynamics:
-            # 1-DOF mass-spring: tip lags z_kin via stiff spring + light damping;
-            # surface pushes back on tip when z_dyn > 0. Substep explicit Euler.
-            for _ in range(n_substeps):
-                f_grip = grip_k * (z_kin - z_dyn) - grip_c * z_dot
-                f_surf = -k_n * z_dyn.clamp(min=0.0)
-                z_ddot = (f_grip + f_surf) * m_inv
-                z_dot = z_dot + z_ddot * dt_sub
-                z_dyn = z_dyn + z_dot * dt_sub
-            pen = z_dyn.clamp(min=0.0)
-        else:
-            pen = z_kin.clamp(min=0.0)
-        force = k_n * pen
-        # tangential pos_err only (drop n-direction since spring handles it)
-        delta = (p_ref - p_new)
-        delta_n = (delta * n_out).sum(dim=-1, keepdim=True) * n_out
-        pos_err_tan = (delta - delta_n).norm(dim=-1)
-        orient_err = torch.acos(
-            (R_new[:, :, 2] * z_tgt).sum(dim=-1).clamp(-1.0, 1.0))
-        if sphere_cc is None:
-            self_collision = torch.zeros_like(step_alive)
-        else:
-            self_collision = sphere_cc.is_collided(kin.link_transforms(q_new))
-
-        last_force = torch.where(step_alive, force, last_force)
-        fail_pos = step_alive & (pos_err_tan > eps_p)
-        fail_ori = step_alive & (orient_err > theta_max)
-        fail_lmt = step_alive & joint_limit_hit
-        fail_col = step_alive & self_collision
-        if step > grace_steps:
-            fail_fhi = step_alive & (pen > pen_max)
-            fail_flo = step_alive & (pen < pen_min)
-        else:
-            fail_fhi = torch.zeros_like(step_alive)
-            fail_flo = torch.zeros_like(step_alive)
-        ok = step_alive & ~(fail_pos | fail_ori | fail_lmt | fail_col
-                            | fail_fhi | fail_flo)
-        lengths = torch.where(ok, torch.full_like(lengths, step), lengths)
-        q = torch.where(ok.unsqueeze(-1), q_new, q)
-
-        reasons[fail_pos.detach().cpu().numpy()] = 'pos_err_exceeded'
-        reasons[fail_ori.detach().cpu().numpy()] = 'orient_err_exceeded'
-        reasons[fail_lmt.detach().cpu().numpy()] = 'joint_limit'
-        reasons[fail_col.detach().cpu().numpy()] = 'self_collision'
-        reasons[fail_fhi.detach().cpu().numpy()] = 'force_high'
-        reasons[fail_flo.detach().cpu().numpy()] = 'force_low'
-        alive = alive & in_horizon & ~(fail_pos | fail_ori | fail_lmt | fail_col
-                                       | fail_fhi | fail_flo)
-
-    complete = (ik_ok & (lengths >= T)).detach().cpu().numpy()
-    reasons[complete] = 'max_steps'
-    return {
-        'lengths':     lengths.detach().cpu().numpy().astype(np.int32),
-        'reasons':     reasons.tolist(),
-        'last_force':  last_force.detach().cpu().numpy(),
-    }
-
-
-def phantom_rollout(action_np: np.ndarray,
-                    c_np: np.ndarray,
-                    v_path_np: np.ndarray,
-                    eps_p_np: np.ndarray,
-                    T_np: np.ndarray,
-                    use_collision: bool | None = None) -> dict:
-    """Kinematic phantom rollout: same path-tracking dynamics as the real
-    rollout but **without** the nullspace controller (manipulability gradient,
-    joint-limit attraction, angle attraction, K_NULL pull). Reports the same
-    `lengths` array.
-
-    Purpose: cheap-but-pathwise predictor of geometric failure (joint limit,
-    IK divergence, collision). Skipping the nullspace removes the autograd
-    backward pass that dominates per-step cost in batched_rollout.
-
-    Assumes ACTION_MODE == 'branch_descriptor' (which is our deployed mode).
-    """
-    device = _device_from_cfg()
-    kin = BatchedFR3Kinematics(device=device)
-    if use_collision is None:
-        use_collision = bool(cfg.USE_COLLISION_CHECK and cfg.BATCHED_COLLISION_CHECK)
-    if use_collision:
-        sphere_cls = _load_fr3_sphere_collision_cls()
-        sphere_cc = sphere_cls(device=device,
-                               margin=cfg.BATCHED_COLLISION_MARGIN)
-    else:
-        sphere_cc = None
-
-    action = torch.as_tensor(action_np, device=device, dtype=torch.float32)
-    c = torch.as_tensor(c_np, device=device, dtype=torch.float32)
-    v_path = torch.as_tensor(v_path_np, device=device, dtype=torch.float32)
-    eps_p = torch.as_tensor(eps_p_np, device=device, dtype=torch.float32)
-    T = torch.as_tensor(T_np, device=device, dtype=torch.long)
-
-    p0 = c[:, :3]
-    d_dir = c[:, 3:6]
-    n_dir = c[:, 6:9]
-    branch_action = action
-    R_tgt = build_branch_rotmat_batch(d_dir, n_dir, branch_action)
-    q, ik_ok, _ = branch_project_multistart(kin, p0, R_tgt, branch_action)
-
-    lengths = torch.zeros((q.shape[0],), device=device, dtype=torch.long)
-    alive = ik_ok.clone()
-    max_T = int(T.max().item()) if T.numel() else 0
-    dt = float(cfg.DT)
-    theta_max = float(cfg.THETA_MAX)
-    z_tgt = R_tgt[:, :, 2]
-
-    for step in range(1, max_T + 1):
-        in_horizon = step <= T
-        step_alive = alive & in_horizon
-        if not step_alive.any():
-            break
-
-        p_ref = p0 + (step * dt) * v_path.unsqueeze(-1) * d_dir
-        p_dot_ff = v_path.unsqueeze(-1) * d_dir
-        p_tcp, R_tcp, J, _ = kin.tcp_fk_jac(q)
-        omega_err, _ = _z_axis_error_from_rotmats(R_tcp, R_tgt)
-        x_dot = torch.cat([
-            p_dot_ff + float(cfg.KP_LIN) * (p_ref - p_tcp),
-            float(cfg.KOMEGA) * omega_err,
-        ], dim=-1)
-        Jpinv = _dls_pinv(J, float(cfg.DLS_LAMBDA))
-        q_dot = (Jpinv @ x_dot.unsqueeze(-1)).squeeze(-1)
-        # No nullspace term — that's the speedup vs batched_rollout.
-        q_dot = q_dot.clamp(-kin.qdot_max, kin.qdot_max)
-        q_new_raw = q + q_dot * dt
-        joint_limit_hit = ((q_new_raw < kin.lmt_lo - 1e-6)
-                           | (q_new_raw > kin.lmt_up + 1e-6)).any(dim=-1)
-        q_new = q_new_raw.clamp(kin.lmt_lo, kin.lmt_up)
-        p_new, R_new, _, _ = kin.tcp_fk_jac(q_new)
-        pos_err = (p_ref - p_new).norm(dim=-1)
-        orient_err = torch.acos(
-            (R_new[:, :, 2] * z_tgt).sum(dim=-1).clamp(-1.0, 1.0))
-        if sphere_cc is None:
-            self_collision = torch.zeros_like(step_alive)
-        else:
-            self_collision = sphere_cc.is_collided(kin.link_transforms(q_new))
-        fail_pos = step_alive & (pos_err > eps_p)
-        fail_ori = step_alive & (orient_err > theta_max)
-        fail_lmt = step_alive & joint_limit_hit
-        fail_col = step_alive & self_collision
-        ok = step_alive & ~(fail_pos | fail_ori | fail_lmt | fail_col)
-        lengths = torch.where(ok, torch.full_like(lengths, step), lengths)
-        q = torch.where(ok.unsqueeze(-1), q_new, q)
-        alive = alive & in_horizon & ~(fail_pos | fail_ori | fail_lmt | fail_col)
-
-    return {
-        'lengths': lengths.detach().cpu().numpy().astype(np.int32),
     }

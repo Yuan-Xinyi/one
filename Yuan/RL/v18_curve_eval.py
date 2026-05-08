@@ -85,6 +85,39 @@ def make_s_curve_path(p0, e_axis, e_perp, L, A, n_pts):
     return pts.astype(np.float32)
 
 
+def make_circle_path(p0, e_axis, e_perp, R, n_pts):
+    """Closed circle on plane (e_axis, e_perp). p0 = first point, initial
+    tangent = e_axis, curving toward +e_perp side. Returns n_pts points
+    where pts[-1] ≈ pts[0]."""
+    theta = np.linspace(0.0, 2 * np.pi, n_pts)
+    C = p0 + R * e_perp
+    pts = (C[None, :]
+           + R * (-np.cos(theta)[:, None] * e_perp[None, :]
+                  + np.sin(theta)[:, None] * e_axis[None, :]))
+    return pts.astype(np.float32)
+
+
+def make_ellipse_path(p0, e_axis, e_perp, a, b, n_pts):
+    """Closed ellipse with semi-axes (a along e_axis, b along e_perp).
+    p0 = first point. Returns n_pts points, pts[-1] ≈ pts[0]."""
+    theta = np.linspace(0.0, 2 * np.pi, n_pts)
+    C = p0 + b * e_perp
+    pts = (C[None, :]
+           + a * np.sin(theta)[:, None] * e_axis[None, :]
+           - b * np.cos(theta)[:, None] * e_perp[None, :])
+    return pts.astype(np.float32)
+
+
+def make_figure8_path(p0, e_axis, e_perp, a, b, n_pts):
+    """Lissajous figure-8: x = a·sin(t), y = (b/2)·sin(2t).
+    Crosses itself once at p0 (also pts[-1] ≈ pts[0])."""
+    t = np.linspace(0.0, 2 * np.pi, n_pts)
+    pts = (p0[None, :]
+           + a * np.sin(t)[:, None] * e_axis[None, :]
+           + (b / 2.0) * np.sin(2 * t)[:, None] * e_perp[None, :])
+    return pts.astype(np.float32)
+
+
 def per_step_tangents(path_pts: np.ndarray) -> np.ndarray:
     """Forward differences: t[i] = normalize(p[i+1] - p[i]) for i in [0, N-1]."""
     diffs = path_pts[1:] - path_pts[:-1]
@@ -92,8 +125,110 @@ def per_step_tangents(path_pts: np.ndarray) -> np.ndarray:
     return (diffs / norms).astype(np.float32)
 
 
+def make_sphere_path(C: np.ndarray, R: float,
+                     p0: np.ndarray, tangent0: np.ndarray,
+                     L: float, n_pts: int) -> tuple[np.ndarray, np.ndarray]:
+    """Great-circle arc on a sphere of radius R centered at C.
+    p0 must satisfy ||p0 - C|| ≈ R; tangent0 will be projected onto
+    tangent plane at p0. Returns (path_pts(n_pts,3), n_outward(n_pts,3))
+    where n_outward is the outward surface normal at each point."""
+    e_rad0 = (p0 - C) / np.linalg.norm(p0 - C)
+    e_tan0 = tangent0 - e_rad0 * (tangent0 @ e_rad0)
+    e_tan0 = e_tan0 / max(np.linalg.norm(e_tan0), 1e-12)
+    theta = np.linspace(0.0, L / R, n_pts)
+    pts = (C[None, :]
+           + R * (np.cos(theta)[:, None] * e_rad0[None, :]
+                  + np.sin(theta)[:, None] * e_tan0[None, :]))
+    n_outward = (pts - C[None, :]) / R
+    return pts.astype(np.float32), n_outward.astype(np.float32)
+
+
 def branch_signature(q):
     return (int(np.sign(q[0])), int(np.sign(q[3])), int(np.sign(q[5])))
+
+
+def sample_surface_task(rng, kin, surface_type: str, n_checkpoints: int,
+                        L_range=(0.20, 0.40),
+                        sphere_R_range=(0.6, 1.2),
+                        max_tilt_deg: float = 30.0):
+    """Sample a path on a curved surface. Returns the same dict shape as
+    sample_curve_task, plus 'n_per_step' (per-segment outward surface
+    normal). For surface_type='sphere' the path is a great-circle arc.
+    'sphere' is supported now; extend with cylinder / saddle later."""
+    if surface_type != "sphere":
+        raise ValueError(f"unsupported surface_type: {surface_type}")
+    cos_max = float(np.cos(np.deg2rad(max_tilt_deg)))
+    for _ in range(120):
+        R_sph = float(rng.uniform(*sphere_R_range))
+        # contact point in reachable workspace
+        u = rng.normal(size=3)
+        u = u / (np.linalg.norm(u) + 1e-12)
+        if u[2] < cos_max:
+            continue
+        n_outward = u.astype(np.float32)
+        ok = False
+        for _ in range(15):
+            p0 = rng.uniform(np.array([-0.30, -0.40, 0.10]),
+                             np.array([0.55, 0.40, 0.55])).astype(np.float32)
+            if 0.32 < float(np.linalg.norm(p0)) < 0.72:
+                ok = True
+                break
+        if not ok:
+            continue
+        # sphere center placed behind the contact point along -n_outward
+        C = p0 - R_sph * n_outward
+        # initial tangent: random in tangent plane
+        v = rng.normal(size=3)
+        v = v - n_outward * (v @ n_outward)
+        nv = float(np.linalg.norm(v))
+        if nv < 0.1:
+            continue
+        tangent0 = (v / nv).astype(np.float32)
+        L = float(rng.uniform(*L_range))
+        path_pts, n_at_pts = make_sphere_path(C, R_sph, p0, tangent0, L,
+                                              n_checkpoints + 1)
+        fine_pts, _ = make_sphere_path(C, R_sph, p0, tangent0, L, 120)
+        # reachability sanity
+        norms = np.linalg.norm(path_pts, axis=1)
+        if (norms > 0.85).any() or (norms < 0.20).any():
+            continue
+        if (path_pts[:, 2] < 0.02).any():
+            continue
+        # per-segment normal (segment midpoint, re-normalized) and tangent
+        n_mid = 0.5 * (n_at_pts[:-1] + n_at_pts[1:])
+        n_per_step = (n_mid / np.linalg.norm(n_mid, axis=1, keepdims=True)).astype(np.float32)
+        d_per_step = per_step_tangents(path_pts)
+        # goal R built from final segment's local frame
+        R_goal = _build_R_from_normal_direction(n_at_pts[-1], d_per_step[-1])
+
+        # IK feasibility at goal
+        device = kin.device
+        x_T = torch.as_tensor(path_pts[-1], device=device, dtype=torch.float32)
+        R_T = torch.as_tensor(R_goal,       device=device, dtype=torch.float32)
+        seeds_np = rng.uniform(kin.lmt_lo.cpu().numpy()[None, :],
+                               kin.lmt_up.cpu().numpy()[None, :],
+                               size=(16, 7)).astype(np.float32)
+        q_seed = torch.as_tensor(seeds_np, device=device, dtype=torch.float32)
+        p_rep = x_T.unsqueeze(0).expand(16, 3)
+        R_rep = R_T.unsqueeze(0).expand(16, 3, 3)
+        _, ok_ik, _ = _batched_ik_project(kin, q_seed, p_rep, R_rep, branch_action=None)
+        if not bool(ok_ik.any().item()):
+            continue
+
+        return dict(
+            path_pts=path_pts,
+            fine_path_pts=fine_pts,
+            plane_normal=n_at_pts[0].astype(np.float32),    # back-compat (start normal)
+            direction_axis=d_per_step[0].astype(np.float32),# back-compat (start tangent)
+            d_per_step=d_per_step,
+            n_per_step=n_per_step,
+            R_target_at_goal=R_goal,
+            L=L,
+            curve_type=surface_type,                        # reuse field
+            sphere_C=C,
+            sphere_R=R_sph,
+        )
+    return None
 
 
 # ---------- task sampler ----------
@@ -140,6 +275,29 @@ def sample_curve_task(rng, kin, curve_type: str, n_checkpoints: int,
             A = L * float(rng.uniform(*s_amp_frac_range))
             path_pts = make_s_curve_path(p0, e_axis, e_perp, L, A, n_checkpoints + 1)
             fine_pts = make_s_curve_path(p0, e_axis, e_perp, L, A, 120)
+        elif curve_type == "circle":
+            R = float(rng.uniform(0.08, 0.13))
+            if rng.random() < 0.5:
+                e_perp = -e_perp
+            L = float(2 * np.pi * R)                       # perimeter
+            path_pts = make_circle_path(p0, e_axis, e_perp, R, n_checkpoints + 1)
+            fine_pts = make_circle_path(p0, e_axis, e_perp, R, 120)
+        elif curve_type == "ellipse":
+            a = float(rng.uniform(0.10, 0.14))
+            b = a * float(rng.uniform(0.55, 0.85))
+            if rng.random() < 0.5:
+                e_perp = -e_perp
+            L = float(np.pi * (a + b))                     # Ramanujan-1 approx
+            path_pts = make_ellipse_path(p0, e_axis, e_perp, a, b, n_checkpoints + 1)
+            fine_pts = make_ellipse_path(p0, e_axis, e_perp, a, b, 120)
+        elif curve_type == "figure8":
+            a = float(rng.uniform(0.10, 0.13))
+            b = float(rng.uniform(0.06, 0.09))
+            if rng.random() < 0.5:
+                e_perp = -e_perp
+            L = float(2 * np.pi * np.sqrt(a * a + b * b / 4.0))   # rough
+            path_pts = make_figure8_path(p0, e_axis, e_perp, a, b, n_checkpoints + 1)
+            fine_pts = make_figure8_path(p0, e_axis, e_perp, a, b, 120)
         else:
             raise ValueError(curve_type)
 

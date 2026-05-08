@@ -21,7 +21,9 @@ from Yuan.RL.batched_rollout import batched_rollout_segment
 from Yuan.RL.v18_cfm_model import CFMFlowModel, COND_DIM
 from Yuan.RL.v18_inference import backward_sample
 from Yuan.RL.v18_data_prep import _dense_ik_at, _build_R_from_normal_direction
-from Yuan.RL.v18_curve_eval import sample_curve_task, branch_signature
+from Yuan.RL.v18_curve_eval import (
+    sample_curve_task, sample_surface_task, branch_signature,
+)
 
 
 BRANCH_COLORS = {
@@ -46,7 +48,8 @@ def dls_forward_rollout(kin: BatchedFR3Kinematics,
                         plane_normal: torch.Tensor,
                         v_path: float = 0.10,
                         eps_p: float = 0.05,
-                        verbose: bool = False
+                        verbose: bool = False,
+                        plane_normal_per_step: torch.Tensor | None = None,
                         ) -> tuple[torch.Tensor, bool]:
     """Run DLS Cartesian-tracking controller from q_traj_cfm[0], using
     q_traj_cfm[i+1] as a moving null-space target within segment i.
@@ -67,6 +70,8 @@ def dls_forward_rollout(kin: BatchedFR3Kinematics,
     device = kin.device
     dt = float(cfg.DT)
     plane_n_np = plane_normal.detach().cpu().numpy()
+    n_per_step_np = (plane_normal_per_step.detach().cpu().numpy()
+                      if plane_normal_per_step is not None else None)
     branch_action = torch.tensor([[1.0, 0.0, 1.0, 0.0]],
                                   device=device, dtype=torch.float32)
 
@@ -81,7 +86,8 @@ def dls_forward_rollout(kin: BatchedFR3Kinematics,
         if L_seg < 1e-6:
             continue
         d_dir = (seg_vec / L_seg).unsqueeze(0)
-        R_np = _build_R_from_normal_direction(plane_n_np,
+        n_local_np = (n_per_step_np[i] if n_per_step_np is not None else plane_n_np)
+        R_np = _build_R_from_normal_direction(n_local_np,
                                               d_dir.squeeze(0).cpu().numpy())
         R_seg = torch.as_tensor(R_np, device=device,
                                  dtype=torch.float32).unsqueeze(0)
@@ -136,8 +142,19 @@ def dls_forward_rollout(kin: BatchedFR3Kinematics,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", default="Yuan/RL/checkpoints_v18_multi/best.pt")
+    ap.add_argument("--surface-type", default="flat",
+                    choices=["flat", "sphere"],
+                    help="flat: planar surface (use --curve-type for path "
+                         "shape); sphere: great-circle arc on a sphere "
+                         "(--curve-type is ignored)")
     ap.add_argument("--curve-type", default="line",
-                    choices=["line", "arc", "s_curve"])
+                    choices=["line", "arc", "s_curve",
+                             "circle", "ellipse", "figure8"],
+                    help="open: line / arc / s_curve   closed: circle / "
+                         "ellipse / figure8 (path returns to start)")
+    ap.add_argument("--sphere-R-min", type=float, default=0.6,
+                    help="sphere radius lower bound (m); smaller = more curved")
+    ap.add_argument("--sphere-R-max", type=float, default=1.2)
     ap.add_argument("--n-checkpoints", type=int, default=5)
     ap.add_argument("--ctrl-stride", type=int, default=4,
                     help="subsample DLS rollout this many control steps per "
@@ -200,22 +217,32 @@ def main():
     rng = np.random.default_rng(args.seed)
     task = None
     for _ in range(50):
-        t = sample_curve_task(rng, kin, args.curve_type, args.n_checkpoints)
+        if args.surface_type == "flat":
+            t = sample_curve_task(rng, kin, args.curve_type, args.n_checkpoints)
+        else:
+            t = sample_surface_task(
+                rng, kin, args.surface_type, args.n_checkpoints,
+                sphere_R_range=(args.sphere_R_min, args.sphere_R_max))
         if t is not None:
             task = t
             break
     if task is None:
-        print(f"could not sample {args.curve_type} task — retry with another --seed")
+        kind = args.surface_type if args.surface_type != "flat" else args.curve_type
+        print(f"could not sample {kind} task — retry with another --seed")
         return
 
-    print(f"\ntask: curve={args.curve_type}  L={task['L']:.2f}m  "
-          f"plane_normal_z={task['plane_normal'][2]:.2f}")
+    desc = (f"surface=sphere R={task['sphere_R']:.2f}m" if args.surface_type == "sphere"
+            else f"flat curve={args.curve_type}")
+    print(f"\ntask: {desc}  L={task['L']:.2f}m  "
+          f"start_normal_z={task['plane_normal'][2]:.2f}")
 
     path_pts = torch.as_tensor(task['path_pts'], device=device, dtype=torch.float32)
     fine_pts = task['fine_path_pts']                       # (120, 3) numpy
     plane_normal_t = torch.as_tensor(task['plane_normal'], device=device, dtype=torch.float32)
     direction_axis = torch.as_tensor(task['direction_axis'], device=device, dtype=torch.float32)
     d_per_step = torch.as_tensor(task['d_per_step'], device=device, dtype=torch.float32)
+    n_per_step_t = (torch.as_tensor(task['n_per_step'], device=device, dtype=torch.float32)
+                     if 'n_per_step' in task else None)
     R_T = torch.as_tensor(task['R_target_at_goal'], device=device, dtype=torch.float32)
     x_T = path_pts[-1]
 
@@ -239,6 +266,7 @@ def main():
             model, kin, q_Ts[k], path_pts, plane_normal_t, direction_axis,
             n_ode_steps=args.n_ode_steps, snap_iters=args.snap_iters,
             direction_per_step=d_per_step,
+            plane_normal_per_step=n_per_step_t,
             debug_orient=args.debug_orient)
         p_pred, _ = kin.fk_batch(q_traj)
         snap_err_mm = float(1000.0 * (p_pred - path_pts).norm(dim=-1).max().item())
@@ -248,7 +276,8 @@ def main():
         q_dense_full, ok = dls_forward_rollout(
             kin, q_traj_cfm=q_traj, path_pts=path_pts,
             plane_normal=plane_normal_t, v_path=args.v_path,
-            verbose=args.debug_orient)
+            verbose=args.debug_orient,
+            plane_normal_per_step=n_per_step_t)
         stride = max(1, int(args.ctrl_stride))
         q_dense = q_dense_full[::stride].detach().cpu().numpy()
         with torch.no_grad():
@@ -370,18 +399,30 @@ def main():
     ossop.sphere(pos=tuple(task['path_pts'][-1]), radius=0.020,
                  rgb=(0.85, 0.20, 0.20), alpha=0.95).attach_to(base.scene)
 
-    # plane (translucent disc)
-    plane_center = np.mean(task['path_pts'], axis=0)
-    ossop.plane(pos=tuple(plane_center),
-                normal=tuple(task['plane_normal']),
-                size=(0.6, 0.6),
-                rgb=(0.55, 0.55, 0.6), alpha=0.15).attach_to(base.scene)
-
-    # plane-normal arrow at curve midpoint
-    ossop.arrow(spos=tuple(plane_center),
-                epos=tuple(plane_center + 0.15 * task['plane_normal']),
-                shaft_radius=0.0045, head_radius=0.011, head_length=0.022,
-                rgb=(0.95, 0.20, 0.85), alpha=0.85).attach_to(base.scene)
+    # surface visualization
+    if args.surface_type == "flat":
+        plane_center = np.mean(task['path_pts'], axis=0)
+        ossop.plane(pos=tuple(plane_center),
+                    normal=tuple(task['plane_normal']),
+                    size=(0.6, 0.6),
+                    rgb=(0.55, 0.55, 0.6), alpha=0.15).attach_to(base.scene)
+        ossop.arrow(spos=tuple(plane_center),
+                    epos=tuple(plane_center + 0.15 * task['plane_normal']),
+                    shaft_radius=0.0045, head_radius=0.011, head_length=0.022,
+                    rgb=(0.95, 0.20, 0.85), alpha=0.85).attach_to(base.scene)
+    else:                                                  # sphere
+        # translucent sphere shell
+        ossop.sphere(pos=tuple(task['sphere_C']),
+                     radius=task['sphere_R'],
+                     rgb=(0.55, 0.55, 0.62), alpha=0.07).attach_to(base.scene)
+        # per-checkpoint outward normal as small arrows (porcupine)
+        for j, ckpt_pt in enumerate(task['path_pts']):
+            n_local = task['n_per_step'][min(j, len(task['n_per_step']) - 1)]
+            ossop.arrow(spos=tuple(ckpt_pt),
+                        epos=tuple(ckpt_pt + 0.06 * n_local),
+                        shaft_radius=0.0028, head_radius=0.007,
+                        head_length=0.013,
+                        rgb=(0.95, 0.20, 0.85), alpha=0.80).attach_to(base.scene)
 
     # initial pose
     if args.mode == "serial":

@@ -60,6 +60,7 @@ def backward_sample(model: CFMFlowModel, kin: BatchedFR3Kinematics,
                     cfg_scale: float = 1.0,
                     snap_iters: int = 3,
                     direction_per_step: torch.Tensor | None = None,
+                    plane_normal_per_step: torch.Tensor | None = None,
                     debug_orient: bool = False,
                     ) -> torch.Tensor:
     """One sampled q-trajectory of shape (T, 7).
@@ -82,16 +83,21 @@ def backward_sample(model: CFMFlowModel, kin: BatchedFR3Kinematics,
     q_next = q_goal
 
     if debug_orient:
-        pn_unit = plane_normal / plane_normal.norm().clamp_min(1e-12)
+        # diagnostic uses goal-segment normal as reference (not global)
+        if plane_normal_per_step is not None:
+            pn_ref = plane_normal_per_step[-1]
+        else:
+            pn_ref = plane_normal
+        pn_unit = pn_ref / pn_ref.norm().clamp_min(1e-12)
         diag_rows = []
-        # also record the goal pose as reference
         ang_goal = _z_ang_deg(kin, q_goal, pn_unit)
 
     for i in range(T - 1, 0, -1):
         x_curr = path_pts[i - 1]                      # x_i in dataset terms
         x_next = path_pts[i]
         d_i = direction if direction_per_step is None else direction_per_step[i - 1]
-        cond = torch.cat([q_next, x_curr, x_next, plane_normal, d_i]
+        n_i = plane_normal if plane_normal_per_step is None else plane_normal_per_step[i - 1]
+        cond = torch.cat([q_next, x_curr, x_next, n_i, d_i]
                          ).unsqueeze(0)                # (1, COND_DIM)
         # CFM sample
         q_curr = model.sample(cond, n_steps=n_ode_steps,

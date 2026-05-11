@@ -187,7 +187,7 @@ def sample_surface_task(rng, kin, surface_type: str, n_checkpoints: int,
         L = float(rng.uniform(*L_range))
         path_pts, n_at_pts = make_sphere_path(C, R_sph, p0, tangent0, L,
                                               n_checkpoints + 1)
-        fine_pts, _ = make_sphere_path(C, R_sph, p0, tangent0, L, 120)
+        fine_pts, fine_n = make_sphere_path(C, R_sph, p0, tangent0, L, 120)
         # reachability sanity
         norms = np.linalg.norm(path_pts, axis=1)
         if (norms > 0.85).any() or (norms < 0.20).any():
@@ -218,6 +218,7 @@ def sample_surface_task(rng, kin, surface_type: str, n_checkpoints: int,
         return dict(
             path_pts=path_pts,
             fine_path_pts=fine_pts,
+            fine_path_normals=fine_n.astype(np.float32),    # per-fine-pt outward normal
             plane_normal=n_at_pts[0].astype(np.float32),    # back-compat (start normal)
             direction_axis=d_per_step[0].astype(np.float32),# back-compat (start tangent)
             d_per_step=d_per_step,

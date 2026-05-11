@@ -31,16 +31,25 @@ def damped_pinv_pos(J_pos: torch.Tensor, lam: float = 1e-3) -> torch.Tensor:
 
 def manifold_snap(kin, q: torch.Tensor, x_target: torch.Tensor,
                   n_iters: int = 3, lam: float = 1e-3) -> torch.Tensor:
-    """Pull q so FK(q) ≈ x_target via Newton on 3D position constraint."""
+    """Pull q so FK(q) ≈ x_target via Newton on 3D position constraint.
+
+    Accepts q of shape (7,) [single] or (B, 7) [batched]; x_target either
+    (3,) [shared] or (B, 3) [per-arm]. Returns q with same leading shape.
+    """
+    single = (q.ndim == 1)
+    if single:
+        q = q.unsqueeze(0)                                 # (1, 7)
+    B = q.shape[0]
+    if x_target.ndim == 1:
+        x_target = x_target.unsqueeze(0).expand(B, 3)
     for _ in range(n_iters):
-        q_b = q.unsqueeze(0)
-        p_cur, _, J_full, _ = kin.tcp_fk_jac(q_b)
-        J_pos = J_full.squeeze(0)[:3, :]
-        delta_p = x_target - p_cur.squeeze(0)
-        J_dag = damped_pinv_pos(J_pos.unsqueeze(0), lam=lam).squeeze(0)
-        q = q + J_dag @ delta_p
+        p_cur, _, J_full, _ = kin.tcp_fk_jac(q)            # (B, 3), (B, 3, 7)
+        J_pos = J_full[:, :3, :]                           # (B, 3, 7)
+        delta_p = x_target - p_cur                         # (B, 3)
+        J_dag = damped_pinv_pos(J_pos, lam=lam)            # (B, 7, 3)
+        q = q + (J_dag @ delta_p.unsqueeze(-1)).squeeze(-1)
         q = q.clamp(kin.lmt_lo, kin.lmt_up)
-    return q
+    return q.squeeze(0) if single else q
 
 
 def _z_ang_deg(kin, q, plane_normal_unit):
@@ -63,65 +72,68 @@ def backward_sample(model: CFMFlowModel, kin: BatchedFR3Kinematics,
                     plane_normal_per_step: torch.Tensor | None = None,
                     debug_orient: bool = False,
                     ) -> torch.Tensor:
-    """One sampled q-trajectory of shape (T, 7).
-    q_traj[T-1] = q_goal; q_traj[i-1] sampled by CFM conditioned on q_traj[i].
+    """One (or B) sampled q-trajectory.
 
-    If `direction_per_step` is given (shape (T-1, 3)), it overrides the
-    global `direction` cond on a per-segment basis: at the backward step
-    that emits q_traj[i-1] from q_traj[i], the direction fed into cond is
-    direction_per_step[i-1] (i.e., the local tangent of segment i-1 → i).
-    Used for zero-shot curved-path inference.
+    q_goal accepts (7,) [single] or (B, 7) [batched]. Returns q_traj of
+    shape (T, 7) or (T, B, 7) accordingly. All intermediate work is done
+    in batched form; single-arm is just B=1 with a final squeeze.
 
-    If `debug_orient=True`, prints z-axis angle (TCP-z vs -plane_normal)
-    before and after manifold_snap for every backward step. Cheap; useful
-    to confirm whether snap is breaking orientation alignment.
+    See module docstring for the algorithm. `direction_per_step` and
+    `plane_normal_per_step` (each (T-1, 3) when given) override the
+    global d / n on a per-segment basis. `debug_orient` prints z-axis
+    angle before/after manifold_snap (single-arm only).
     """
     device = q_goal.device
+    single = (q_goal.ndim == 1)
+    if single:
+        q_goal = q_goal.unsqueeze(0)                       # (1, 7)
+    B = q_goal.shape[0]
     T = path_pts.shape[0]
-    q_traj = torch.zeros(T, 7, device=device, dtype=torch.float32)
+    q_traj = torch.zeros(T, B, 7, device=device, dtype=torch.float32)
     q_traj[T - 1] = q_goal
-    q_next = q_goal
+    q_next = q_goal                                         # (B, 7)
 
-    if debug_orient:
-        # diagnostic uses goal-segment normal as reference (not global)
+    if debug_orient and B == 1:
         if plane_normal_per_step is not None:
             pn_ref = plane_normal_per_step[-1]
         else:
             pn_ref = plane_normal
         pn_unit = pn_ref / pn_ref.norm().clamp_min(1e-12)
         diag_rows = []
-        ang_goal = _z_ang_deg(kin, q_goal, pn_unit)
+        ang_goal = _z_ang_deg(kin, q_goal[0], pn_unit)
 
     for i in range(T - 1, 0, -1):
-        x_curr = path_pts[i - 1]                      # x_i in dataset terms
+        x_curr = path_pts[i - 1]                            # (3,)
         x_next = path_pts[i]
         d_i = direction if direction_per_step is None else direction_per_step[i - 1]
         n_i = plane_normal if plane_normal_per_step is None else plane_normal_per_step[i - 1]
-        cond = torch.cat([q_next, x_curr, x_next, n_i, d_i]
-                         ).unsqueeze(0)                # (1, COND_DIM)
-        # CFM sample
+        # broadcast all per-step shared cond pieces to (B, ·)
+        x_curr_b = x_curr.unsqueeze(0).expand(B, 3)
+        x_next_b = x_next.unsqueeze(0).expand(B, 3)
+        d_b = d_i.unsqueeze(0).expand(B, 3)
+        n_b = n_i.unsqueeze(0).expand(B, 3)
+        cond = torch.cat([q_next, x_curr_b, x_next_b, n_b, d_b], dim=-1)  # (B, 19)
         q_curr = model.sample(cond, n_steps=n_ode_steps,
-                              cfg_scale=cfg_scale).squeeze(0)
+                              cfg_scale=cfg_scale)          # (B, 7)
         q_curr = q_curr.clamp(kin.lmt_lo, kin.lmt_up)
-        if debug_orient:
-            ang_pre = _z_ang_deg(kin, q_curr, pn_unit)
-        # snap to manifold
+        if debug_orient and B == 1:
+            ang_pre = _z_ang_deg(kin, q_curr[0], pn_unit)
         if snap_iters > 0:
             q_curr = manifold_snap(kin, q_curr, x_curr, n_iters=snap_iters)
-        if debug_orient:
-            ang_post = _z_ang_deg(kin, q_curr, pn_unit)
+        if debug_orient and B == 1:
+            ang_post = _z_ang_deg(kin, q_curr[0], pn_unit)
             diag_rows.append((i - 1, ang_pre, ang_post))
         q_traj[i - 1] = q_curr
         q_next = q_curr
 
-    if debug_orient:
+    if debug_orient and B == 1:
         print(f"    [orient-diag] z-ang to -plane_normal (deg)  "
               f"goal={ang_goal:5.2f}°  THETA_MAX=5.00°")
         print(f"      ckpt :  pre-snap  →  post-snap")
         for (ci, pre, post) in diag_rows:
             warn = " ⚠ over-tol" if post > 5.0 else ""
             print(f"      {ci:>4d} :  {pre:6.2f}°   →   {post:6.2f}°{warn}")
-    return q_traj
+    return q_traj.squeeze(1) if single else q_traj
 
 
 def main():

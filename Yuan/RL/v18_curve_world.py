@@ -50,93 +50,126 @@ def dls_forward_rollout(kin: BatchedFR3Kinematics,
                         eps_p: float = 0.05,
                         verbose: bool = False,
                         plane_normal_per_step: torch.Tensor | None = None,
+                        fine_path_pts: torch.Tensor | None = None,
+                        fine_path_normals: torch.Tensor | None = None,
+                        track_fine: bool = True,
                         ) -> tuple[torch.Tensor, bool]:
-    """Run DLS Cartesian-tracking controller from q_traj_cfm[0], using
-    q_traj_cfm[i+1] as a moving null-space target within segment i.
+    """Run DLS Cartesian-tracking controller from q_traj_cfm[0].
 
-    Per segment i (between path_pts[i] and path_pts[i+1]):
-      - q_init  := q at segment start (continuous from prior segment)
-      - q_ref(t) := q_traj_cfm[i] + (t/T_seg) * (q_traj_cfm[i+1] - q_traj_cfm[i])
-        i.e., a moving null-space target that linearly walks from q_i to q_{i+1}.
+    q_traj_cfm accepts (T, 7) [single arm] or (T, B, 7) [B arms in parallel].
+    Returns (q_dense, all_ok) with shapes (M, 7) / bool, or (M, B, 7) /
+    (B,) bool. All arms share the same path / cond geometry; only q's are
+    per-arm. Internal calls to batched_rollout_segment use B in batch dim.
 
-    This gives the controller intermediate joint-space waypoints (CFM's
-    reverse-chain output) instead of relying on default null-space attractors
-    alone, while keeping the per-step pull `g_knull · (q_ref(t) - q(t))` small
-    enough to avoid joint-limit pushes. q_0 still determines the starting
-    branch.
+    Two tracking modes:
 
-    Returns (M, 7) joint trajectory at every control step (dt = cfg.DT).
+      track_fine=False (legacy): controller chord-tracks coarse path_pts
+        segments. Within each chord, p_ref moves linearly. Works fine for
+        line; on curves the chord-vs-curve gap (~mm-cm) is the dominant
+        TCP error source.
+
+      track_fine=True + fine_path_pts given (default): controller tracks
+        the FINE curve discretization point-by-point as micro-chords
+        (typically ~3 mm each). Chord-vs-curve gap → sub-mm. q_ref is
+        linearly interpolated between consecutive coarse CFM predictions
+        (q_traj_cfm) by arc-length fraction.
     """
     device = kin.device
     dt = float(cfg.DT)
+    # auto-batch: accept (T, 7) and treat as B=1
+    single = (q_traj_cfm.ndim == 2)
+    if single:
+        q_traj_cfm = q_traj_cfm.unsqueeze(1)                # (T, 1, 7)
+    B = q_traj_cfm.shape[1]
     plane_n_np = plane_normal.detach().cpu().numpy()
     n_per_step_np = (plane_normal_per_step.detach().cpu().numpy()
                       if plane_normal_per_step is not None else None)
-    branch_action = torch.tensor([[1.0, 0.0, 1.0, 0.0]],
-                                  device=device, dtype=torch.float32)
+    branch_action = torch.tensor([1.0, 0.0, 1.0, 0.0],
+                                  device=device, dtype=torch.float32
+                                  ).unsqueeze(0).expand(B, 4)
 
-    q_curr = q_traj_cfm[0].unsqueeze(0).clone()             # (1, 7)
-    chunks = [q_curr.clone().unsqueeze(0)]                  # (1, 1, 7) initial
-    all_segments_ok = True
+    # ----- choose tracking discretization -----
+    use_fine = track_fine and fine_path_pts is not None
+    if use_fine:
+        track_pts = fine_path_pts                           # (n_fine, 3)
+        track_n_np = (fine_path_normals.detach().cpu().numpy()
+                      if fine_path_normals is not None else None)
+        n_track = track_pts.shape[0]
+        n_coarse = q_traj_cfm.shape[0]
+        fracs = torch.linspace(0.0, 1.0, n_track, device=device) * (n_coarse - 1)
+        i_co = fracs.long().clamp(0, n_coarse - 2)
+        local_co = (fracs - i_co.float()).view(-1, 1, 1)    # (n_track, 1, 1)
+        # q_anchor: (n_track, B, 7)
+        q_anchor = ((1.0 - local_co) * q_traj_cfm[i_co]
+                    + local_co * q_traj_cfm[i_co + 1])
+    else:
+        track_pts = path_pts
+        track_n_np = None
+        q_anchor = q_traj_cfm                                # (n_coarse, B, 7)
 
-    for i in range(path_pts.shape[0] - 1):
-        p_a = path_pts[i].unsqueeze(0)
-        seg_vec = path_pts[i + 1] - path_pts[i]
+    q_curr = q_anchor[0].clone()                            # (B, 7)
+    chunks = [q_curr.unsqueeze(0).clone()]                  # (1, B, 7) initial
+    alive = torch.ones((B,), device=device, dtype=torch.bool)
+    all_ok_per_arm = torch.ones((B,), device=device, dtype=torch.bool)
+
+    for i in range(track_pts.shape[0] - 1):
+        seg_vec = track_pts[i + 1] - track_pts[i]
         L_seg = float(seg_vec.norm().item())
-        if L_seg < 1e-6:
+        if L_seg < 1e-8:
             continue
-        d_dir = (seg_vec / L_seg).unsqueeze(0)
-        n_local_np = (n_per_step_np[i] if n_per_step_np is not None else plane_n_np)
+        d_dir_1 = (seg_vec / L_seg)                         # (3,)
+        if track_n_np is not None:
+            n_local_np = track_n_np[i]
+        elif n_per_step_np is not None:
+            ci = min(int(i * (len(n_per_step_np)) / max(track_pts.shape[0] - 1, 1)),
+                     len(n_per_step_np) - 1)
+            n_local_np = n_per_step_np[ci]
+        else:
+            n_local_np = plane_n_np
         R_np = _build_R_from_normal_direction(n_local_np,
-                                              d_dir.squeeze(0).cpu().numpy())
-        R_seg = torch.as_tensor(R_np, device=device,
-                                 dtype=torch.float32).unsqueeze(0)
+                                              d_dir_1.cpu().numpy())
+        R_seg_1 = torch.as_tensor(R_np, device=device, dtype=torch.float32)
         T_seg = max(1, int(round(L_seg / (v_path * dt))))
-        # moving q_ref: linear interp from CFM-predicted q_i to q_{i+1}
-        # over T_seg + 1 control steps (0..T_seg). At t=0 it equals
-        # q_traj_cfm[i] which equals q_curr at segment start (continuous).
+        # broadcast per-segment shared tensors to (B, ·)
+        p_a = track_pts[i].unsqueeze(0).expand(B, 3)
+        d_dir = d_dir_1.unsqueeze(0).expand(B, 3)
+        R_seg = R_seg_1.unsqueeze(0).expand(B, 3, 3)
+        # per-arm moving q_ref: (T+1, B, 7) interp anchor[i] → anchor[i+1]
         alphas = torch.linspace(0.0, 1.0, T_seg + 1,
                                  device=device).view(-1, 1, 1)
-        q_ref_traj = ((1.0 - alphas) * q_traj_cfm[i].view(1, 1, 7)
-                      + alphas * q_traj_cfm[i + 1].view(1, 1, 7))   # (T+1, 1, 7)
+        q_ref_traj = ((1.0 - alphas) * q_anchor[i].unsqueeze(0)
+                      + alphas * q_anchor[i + 1].unsqueeze(0))   # (T+1, B, 7)
         out = batched_rollout_segment(
             q_init=q_curr,
             R_tgt=R_seg,
             branch_action=branch_action,
             p0=p_a,
             d_dir=d_dir,
-            v_path=torch.full((1,), v_path, device=device, dtype=torch.float32),
-            eps_p=torch.full((1,), eps_p, device=device, dtype=torch.float32),
-            T_total=torch.full((1,), T_seg, device=device, dtype=torch.long),
+            v_path=torch.full((B,), v_path, device=device, dtype=torch.float32),
+            eps_p=torch.full((B,), eps_p, device=device, dtype=torch.float32),
+            T_total=torch.full((B,), T_seg, device=device, dtype=torch.long),
             start_step=0,
             end_step=T_seg,
             kin=kin,
             q_ref=q_ref_traj,
+            alive_mask=alive,
             record_traj=True,
         )
-        q_curr = out['q_final']
-        chunks.append(out['q_record'][1:])                  # skip dup of seg-start q
-        seg_alive = bool(out['alive_out'].item())
-        if not seg_alive:
-            all_segments_ok = False
+        q_curr = out['q_final']                             # (B, 7)
+        chunks.append(out['q_record'][1:])                  # (T_seg, B, 7)
+        seg_alive = out['alive_out']                        # (B,) bool
+        all_ok_per_arm = all_ok_per_arm & seg_alive
+        alive = seg_alive
 
-        if verbose:
-            T_reached = int(out['lengths'].item())
-            pos_e_mm = float(out['last_pos_err'].item()) * 1000.0
-            ori_e_deg = float(out['last_orient_err'].item()) * 180.0 / 3.14159265
-            if seg_alive:
-                tag = "ok"
-            elif pos_e_mm > eps_p * 1000.0:
-                tag = "fail_pos"
-            elif ori_e_deg > 5.0:
-                tag = "fail_ori"
-            else:
-                tag = "fail_lmt|other"
-            print(f"      seg {i}->{i+1}:  T={T_reached:>3d}/{T_seg:<3d}  "
-                  f"pos_err={pos_e_mm:6.2f}mm  ori_err={ori_e_deg:6.2f}°  "
-                  f"[{tag}]")
+        if verbose and (not seg_alive.all()):
+            n_died = int((~seg_alive).sum().item())
+            mode = "fine" if use_fine else "coarse"
+            print(f"      [{mode}] seg {i}->{i+1}: {n_died}/{B} arms died this segment")
 
-    return torch.cat(chunks, dim=0).squeeze(1), all_segments_ok
+    q_traj_full = torch.cat(chunks, dim=0)                  # (M, B, 7)
+    if single:
+        return q_traj_full.squeeze(1), bool(all_ok_per_arm.item())
+    return q_traj_full, all_ok_per_arm
 
 
 def main():
@@ -190,7 +223,25 @@ def main():
     ap.add_argument("--show-failed", action="store_true",
                     help="include arms whose DLS rollout failed mid-trajectory "
                          "in the viewer (default: only show fully-completed)")
+    ap.add_argument("--no-track-fine", action="store_true",
+                    help="legacy: chord-track coarse path_pts (cm-scale TCP "
+                         "deviation on curves). Default ON: track fine "
+                         "discretization for sub-mm TCP precision")
+    ap.add_argument("--strict-track", action="store_true",
+                    help="enforce <5mm TCP deviation: snap_iters→30 (squeeze "
+                         "CFM-snap residual) + eps_p→5mm (strict failure "
+                         "threshold). Surviving arms are guaranteed in-band; "
+                         "may need larger --K-pool to keep enough OK arms")
     args = ap.parse_args()
+
+    # strict-track: tighter snap + stricter pos tolerance
+    if args.strict_track:
+        snap_iters_eff = max(args.snap_iters, 30)
+        eps_p_eff = 0.005                                  # 5mm
+        print(f"  [strict-track] snap_iters={snap_iters_eff}  eps_p={eps_p_eff*1000:.0f}mm")
+    else:
+        snap_iters_eff = args.snap_iters
+        eps_p_eff = 0.05                                   # 5cm (legacy)
 
     # determinism only if --seed given; otherwise let everything draw fresh
     if args.seed is not None:
@@ -243,6 +294,9 @@ def main():
     d_per_step = torch.as_tensor(task['d_per_step'], device=device, dtype=torch.float32)
     n_per_step_t = (torch.as_tensor(task['n_per_step'], device=device, dtype=torch.float32)
                      if 'n_per_step' in task else None)
+    fine_pts_t = torch.as_tensor(task['fine_path_pts'], device=device, dtype=torch.float32)
+    fine_normals_t = (torch.as_tensor(task['fine_path_normals'], device=device, dtype=torch.float32)
+                       if 'fine_path_normals' in task else None)
     R_T = torch.as_tensor(task['R_target_at_goal'], device=device, dtype=torch.float32)
     x_T = path_pts[-1]
 
@@ -256,41 +310,58 @@ def main():
         q_Ts = q_Ts[idx]
     print(f"  pool: {q_Ts.shape[0]} candidate q_T's at goal\n")
 
-    q_trajs_dense = []
-    sigs = []
-    success_flags = []
-    for k in range(q_Ts.shape[0]):
-        if args.debug_orient:
-            print(f"  --- arm {k} CFM reverse chain ---")
-        q_traj = backward_sample(
-            model, kin, q_Ts[k], path_pts, plane_normal_t, direction_axis,
-            n_ode_steps=args.n_ode_steps, snap_iters=args.snap_iters,
-            direction_per_step=d_per_step,
-            plane_normal_per_step=n_per_step_t,
-            debug_orient=args.debug_orient)
-        p_pred, _ = kin.fk_batch(q_traj)
-        snap_err_mm = float(1000.0 * (p_pred - path_pts).norm(dim=-1).max().item())
-        sig = branch_signature(q_traj[0].detach().cpu().numpy())
-        if args.debug_orient:
-            print(f"  --- arm {k} DLS forward rollout ---")
-        q_dense_full, ok = dls_forward_rollout(
-            kin, q_traj_cfm=q_traj, path_pts=path_pts,
-            plane_normal=plane_normal_t, v_path=args.v_path,
-            verbose=args.debug_orient,
-            plane_normal_per_step=n_per_step_t)
-        stride = max(1, int(args.ctrl_stride))
-        q_dense = q_dense_full[::stride].detach().cpu().numpy()
-        with torch.no_grad():
-            p_dense, _ = kin.fk_batch(q_dense_full)
-            d_to_ckpt = (p_dense.unsqueeze(1) - path_pts.unsqueeze(0)).norm(dim=-1)
-            ctrl_err_mm = float(1000.0 * d_to_ckpt.min(dim=-1).values.max().item())
-        q_trajs_dense.append(q_dense)
-        sigs.append(sig)
-        success_flags.append(ok)
-        tag = "OK" if ok else "FAILED"
-        print(f"  arm {k}: branch={sig}  CFM-snap max err={snap_err_mm:.2f}mm  "
-              f"DLS frames={q_dense.shape[0]}  ctrl-trace max-to-ckpt={ctrl_err_mm:.1f}mm  "
-              f"[{tag}]")
+    # ----- batched CFM reverse chain across K_pool arms -----
+    K_actual = q_Ts.shape[0]
+    import time
+    t0 = time.perf_counter()
+    q_traj_all = backward_sample(                            # (T, K, 7)
+        model, kin, q_Ts, path_pts, plane_normal_t, direction_axis,
+        n_ode_steps=args.n_ode_steps, snap_iters=snap_iters_eff,
+        direction_per_step=d_per_step,
+        plane_normal_per_step=n_per_step_t,
+        debug_orient=False)
+    t_cfm = time.perf_counter() - t0
+    # snap-fit per-arm: max FK err across ckpts
+    p_pred_all, _ = kin.fk_batch(q_traj_all.reshape(-1, 7))
+    p_pred_all = p_pred_all.view(q_traj_all.shape[0], K_actual, 3)
+    snap_err_mm_all = (1000.0 * (p_pred_all - path_pts.unsqueeze(1)).norm(dim=-1)
+                        .max(dim=0).values).detach().cpu().numpy()
+    # branch sigs per arm
+    sigs = [branch_signature(q_traj_all[0, k].detach().cpu().numpy())
+            for k in range(K_actual)]
+
+    # ----- batched DLS forward rollout across K arms -----
+    t0 = time.perf_counter()
+    q_dense_full_all, ok_all = dls_forward_rollout(           # (M, K, 7), (K,)
+        kin, q_traj_cfm=q_traj_all, path_pts=path_pts,
+        plane_normal=plane_normal_t, v_path=args.v_path,
+        eps_p=eps_p_eff,
+        verbose=args.debug_orient,
+        plane_normal_per_step=n_per_step_t,
+        fine_path_pts=fine_pts_t,
+        fine_path_normals=fine_normals_t,
+        track_fine=not args.no_track_fine)
+    t_dls = time.perf_counter() - t0
+    print(f"  batched: CFM {t_cfm:.2f}s + DLS {t_dls:.2f}s for K={K_actual} arms")
+
+    # subsample + per-arm reporting
+    stride = max(1, int(args.ctrl_stride))
+    q_dense_subs = q_dense_full_all[::stride].detach().cpu().numpy()  # (M', K, 7)
+    with torch.no_grad():
+        p_dense_all, _ = kin.fk_batch(q_dense_full_all.reshape(-1, 7))
+        p_dense_all = p_dense_all.view(q_dense_full_all.shape[0], K_actual, 3)
+        d_to_ckpt = (p_dense_all.unsqueeze(2) - path_pts.unsqueeze(0).unsqueeze(0)
+                      ).norm(dim=-1)                          # (M, K, T_ckpt)
+        ctrl_err_mm_all = (1000.0 * d_to_ckpt.min(dim=-1).values
+                            .max(dim=0).values).detach().cpu().numpy()
+    success_flags = [bool(ok_all[k].item()) for k in range(K_actual)]
+    q_trajs_dense = [q_dense_subs[:, k, :] for k in range(K_actual)]
+
+    for k in range(K_actual):
+        tag = "OK" if success_flags[k] else "FAILED"
+        print(f"  arm {k}: branch={sigs[k]}  CFM-snap max err={snap_err_mm_all[k]:.2f}mm  "
+              f"DLS frames={q_trajs_dense[k].shape[0]}  "
+              f"ctrl-trace max-to-ckpt={ctrl_err_mm_all[k]:.1f}mm  [{tag}]")
 
     # filter to successes (unless --show-failed)
     n_total = len(q_trajs_dense)
@@ -369,34 +440,33 @@ def main():
     # base coord frame
     ossop.frame(length_scale=0.20, radius_scale=0.8).attach_to(base.scene)
 
-    # in serial mode, render K colored TCP traces statically so the user
-    # always sees all branch outcomes while the gray arm sweeps one at a time
+    # desired curve as a faint reference line (continuous polyline)
+    fine_segs = np.stack([fine_pts[:-1], fine_pts[1:]], axis=1)   # (n_fine-1, 2, 3)
+    ossop.linsegs(segs=fine_segs, radius=0.0009,
+                  srgbs=np.array([0.55, 0.55, 0.58]),
+                  alpha=0.55).attach_to(base.scene)
+
+    # in serial mode, render K colored TCP traces as small dots
     if args.mode == "serial":
         for k in range(K):
             rgb = branch_color(sigs[k])
             tcps_k = kin.fk_batch(
                 torch.as_tensor(q_trajs_dense[k], device=device,
                                 dtype=torch.float32))[0].detach().cpu().numpy()
-            stride = max(1, len(tcps_k) // 35)
+            stride = max(1, len(tcps_k) // 40)
             for j in range(0, len(tcps_k), stride):
-                ossop.sphere(pos=tuple(tcps_k[j]), radius=0.0048,
-                             rgb=rgb, alpha=0.75).attach_to(base.scene)
+                ossop.sphere(pos=tuple(tcps_k[j]), radius=0.0028,
+                             rgb=rgb, alpha=0.85).attach_to(base.scene)
 
-    # desired curve as a chain of small black spheres
-    step = max(1, len(fine_pts) // 60)                     # ~60 markers along curve
-    for ci in range(0, len(fine_pts), step):
-        ossop.sphere(pos=tuple(fine_pts[ci]), radius=0.004,
-                     rgb=(0.05, 0.05, 0.05), alpha=0.95).attach_to(base.scene)
-
-    # checkpoints as larger spheres (where CFM operates)
+    # checkpoints as small markers (where CFM operates)
     for ckpt_pt in task['path_pts']:
-        ossop.sphere(pos=tuple(ckpt_pt), radius=0.012,
+        ossop.sphere(pos=tuple(ckpt_pt), radius=0.006,
                      rgb=(0.10, 0.10, 0.10), alpha=0.95).attach_to(base.scene)
 
-    # start / goal markers
-    ossop.sphere(pos=tuple(task['path_pts'][0]), radius=0.018,
+    # start / goal markers (still distinct but smaller)
+    ossop.sphere(pos=tuple(task['path_pts'][0]), radius=0.011,
                  rgb=(0.10, 0.65, 0.25), alpha=0.95).attach_to(base.scene)
-    ossop.sphere(pos=tuple(task['path_pts'][-1]), radius=0.020,
+    ossop.sphere(pos=tuple(task['path_pts'][-1]), radius=0.013,
                  rgb=(0.85, 0.20, 0.20), alpha=0.95).attach_to(base.scene)
 
     # surface visualization
@@ -407,9 +477,9 @@ def main():
                     size=(0.6, 0.6),
                     rgb=(0.55, 0.55, 0.6), alpha=0.15).attach_to(base.scene)
         ossop.arrow(spos=tuple(plane_center),
-                    epos=tuple(plane_center + 0.15 * task['plane_normal']),
-                    shaft_radius=0.0045, head_radius=0.011, head_length=0.022,
-                    rgb=(0.95, 0.20, 0.85), alpha=0.85).attach_to(base.scene)
+                    epos=tuple(plane_center + 0.12 * task['plane_normal']),
+                    shaft_radius=0.0028, head_radius=0.0075, head_length=0.015,
+                    rgb=(0.95, 0.20, 0.85), alpha=0.80).attach_to(base.scene)
     else:                                                  # sphere
         # translucent sphere shell
         ossop.sphere(pos=tuple(task['sphere_C']),
@@ -419,10 +489,10 @@ def main():
         for j, ckpt_pt in enumerate(task['path_pts']):
             n_local = task['n_per_step'][min(j, len(task['n_per_step']) - 1)]
             ossop.arrow(spos=tuple(ckpt_pt),
-                        epos=tuple(ckpt_pt + 0.06 * n_local),
-                        shaft_radius=0.0028, head_radius=0.007,
-                        head_length=0.013,
-                        rgb=(0.95, 0.20, 0.85), alpha=0.80).attach_to(base.scene)
+                        epos=tuple(ckpt_pt + 0.045 * n_local),
+                        shaft_radius=0.0018, head_radius=0.0048,
+                        head_length=0.009,
+                        rgb=(0.95, 0.20, 0.85), alpha=0.75).attach_to(base.scene)
 
     # initial pose
     if args.mode == "serial":

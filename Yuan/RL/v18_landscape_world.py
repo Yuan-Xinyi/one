@@ -56,10 +56,12 @@ def build_viewer_nullspace_grid(q_a: torch.Tensor, v1: np.ndarray, v2: np.ndarra
 def project_to_same_start_pose(kin: BatchedFR3Kinematics,
                                q_seed: torch.Tensor,
                                p_start: torch.Tensor,
-                               R_start: torch.Tensor) -> tuple[torch.Tensor, np.ndarray]:
+                               R_start: torch.Tensor,
+                               preserve_seed: bool = False) -> tuple[torch.Tensor, np.ndarray]:
     p_rep = p_start.unsqueeze(0).expand(q_seed.shape[0], 3)
     R_rep = R_start.unsqueeze(0).expand(q_seed.shape[0], 3, 3)
-    q_proj, ok, _ = _batched_ik_project(kin, q_seed, p_rep, R_rep, branch_action=None)
+    q_proj, ok, _ = _batched_ik_project(kin, q_seed, p_rep, R_rep,
+                                        branch_action=None, preserve_seed=preserve_seed)
 
     p_tcp, R_tcp, _, _ = kin.tcp_fk_jac(q_proj)
     pos_err = (p_tcp - p_rep).norm(dim=-1)
@@ -289,7 +291,8 @@ def main():
     v2 = basis[1] / (np.linalg.norm(basis[1]) + 1e-12)
     q_seed_grid = build_viewer_nullspace_grid(q_a, v1, v2, device)
     R_start = start_rotation(task, track_pts, device)
-    q_grid, valid = project_to_same_start_pose(kin, q_seed_grid, track_pts[0], R_start)
+    q_grid, valid = project_to_same_start_pose(kin, q_seed_grid, track_pts[0], R_start,
+                                               preserve_seed=True)
     L_norm = rollout_lengths(kin, q_grid, track_pts, plane_normal) / L_max
 
     blue_qs, red_qs, blue_L, red_L = pick_examples(q_grid, L_norm, valid)

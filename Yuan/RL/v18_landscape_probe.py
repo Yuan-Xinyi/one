@@ -18,6 +18,7 @@ This script produces two fixed "money figure" probes:
 """
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -46,17 +47,19 @@ EPS_P = 0.05
 CHUNK_SIZE = 1024
 
 OUT_DIR = Path('/home/lqin/one/Yuan/RL/data')
-OUT_NULLSPACE = OUT_DIR / 'v18_L_nullspace_slice'
-OUT_BRANCH = OUT_DIR / 'v18_L_branch_switch_slice'
 
 
 def as_tensor(x, device):
     return torch.as_tensor(x, device=device, dtype=torch.float32)
 
 
-def sample_line_task(rng: np.random.Generator, kin: BatchedFR3Kinematics) -> dict:
+def sample_line_task(rng: np.random.Generator, kin: BatchedFR3Kinematics,
+                     l_range: tuple[float, float] | None = None) -> dict:
     for _ in range(100):
-        task = sample_curve_task(rng, kin, 'line', N_CHECKPOINTS)
+        if l_range is None:
+            task = sample_curve_task(rng, kin, 'line', N_CHECKPOINTS)
+        else:
+            task = sample_curve_task(rng, kin, 'line', N_CHECKPOINTS, L_range=l_range)
         if task is not None:
             return task
     raise RuntimeError('failed to sample a feasible straight-line task')
@@ -76,18 +79,27 @@ def start_rotation(task: dict, track_pts: torch.Tensor, device):
 def rollout_lengths(kin: BatchedFR3Kinematics,
                     q_batch: torch.Tensor,
                     track_pts: torch.Tensor,
-                    plane_normal: torch.Tensor) -> np.ndarray:
+                    plane_normal: torch.Tensor,
+                    theta_max_rad: float | None = None,
+                    enforce_init_pose: bool = False,
+                    pos_priority: bool = False) -> np.ndarray:
     lengths = np.zeros(q_batch.shape[0], dtype=np.float32)
     for start in range(0, q_batch.shape[0], CHUNK_SIZE):
         end = min(start + CHUNK_SIZE, q_batch.shape[0])
-        lengths[start:end] = rollout_chunk(kin, q_batch[start:end], track_pts, plane_normal)
+        lengths[start:end] = rollout_chunk(kin, q_batch[start:end], track_pts, plane_normal,
+                                           theta_max_rad=theta_max_rad,
+                                           enforce_init_pose=enforce_init_pose,
+                                           pos_priority=pos_priority)
     return lengths
 
 
 def rollout_chunk(kin: BatchedFR3Kinematics,
                   q_init: torch.Tensor,
                   track_pts: torch.Tensor,
-                  plane_normal: torch.Tensor) -> np.ndarray:
+                  plane_normal: torch.Tensor,
+                  theta_max_rad: float | None = None,
+                  enforce_init_pose: bool = False,
+                  pos_priority: bool = False) -> np.ndarray:
     device = kin.device
     batch_size = q_init.shape[0]
     q = q_init.clone()
@@ -126,6 +138,9 @@ def rollout_chunk(kin: BatchedFR3Kinematics,
             end_step=n_steps,
             kin=kin,
             alive_mask=alive,
+            theta_max_rad=theta_max_rad,
+            enforce_init_pose=enforce_init_pose,
+            pos_priority=pos_priority,
         )
 
         completed = out['lengths'].float() / float(n_steps) * seg_len
@@ -185,7 +200,8 @@ def project_to_same_start_pose(kin: BatchedFR3Kinematics,
                                R_start: torch.Tensor) -> tuple[torch.Tensor, np.ndarray]:
     p_rep = p_start.unsqueeze(0).expand(q_seed.shape[0], 3)
     R_rep = R_start.unsqueeze(0).expand(q_seed.shape[0], 3, 3)
-    q_proj, ok, _ = _batched_ik_project(kin, q_seed, p_rep, R_rep, branch_action=None)
+    q_proj, ok, _ = _batched_ik_project(kin, q_seed, p_rep, R_rep,
+                                        branch_action=None, preserve_seed=True)
 
     p_tcp, R_tcp, _, _ = kin.tcp_fk_jac(q_proj)
     pos_err = (p_tcp - p_rep).norm(dim=-1)
@@ -204,10 +220,21 @@ def project_to_same_start_pose(kin: BatchedFR3Kinematics,
 
 
 def nullspace_basis(kin: BatchedFR3Kinematics, q: torch.Tensor) -> np.ndarray:
-    _, _, jac, _ = kin.tcp_fk_jac(q.unsqueeze(0))
+    # 5-DOF task Jacobian: TCP position (3) + z-axis direction (rank-2 from 3 rows).
+    # Pen spin around z is free, so the true task nullspace is 7 - 5 = 2D.
+    _, R, jac, _ = kin.tcp_fk_jac(q.unsqueeze(0))
     j_pos = jac[0, :3, :]
-    _, _, vh = torch.linalg.svd(j_pos, full_matrices=True)
-    basis = vh[3:, :].detach().cpu().numpy()
+    j_ang = jac[0, 3:, :]
+    z = R[0, :, 2]
+    z_skew = torch.stack([
+        torch.stack([torch.zeros_like(z[0]), -z[2], z[1]]),
+        torch.stack([z[2], torch.zeros_like(z[0]), -z[0]]),
+        torch.stack([-z[1], z[0], torch.zeros_like(z[0])]),
+    ])
+    j_z = -z_skew @ j_ang
+    j_task = torch.cat([j_pos, j_z], dim=0)
+    _, _, vh = torch.linalg.svd(j_task, full_matrices=True)
+    basis = vh[5:, :].detach().cpu().numpy()
     return basis.astype(np.float32)
 
 
@@ -329,7 +356,8 @@ def print_grid_stats(name: str, z: np.ndarray):
         print(f'  edge jump p99: {np.percentile(jumps, 99):.3f}')
 
 
-def save_npz(q_a: torch.Tensor,
+def save_npz(npz_path: Path,
+             q_a: torch.Tensor,
              q_b: torch.Tensor,
              basis: np.ndarray,
              null_axes: tuple[np.ndarray, np.ndarray],
@@ -339,7 +367,7 @@ def save_npz(q_a: torch.Tensor,
              task_path: np.ndarray,
              L_max: float):
     np.savez_compressed(
-        OUT_DIR / 'v18_L_2d_slices.npz',
+        npz_path,
         q_a=q_a.detach().cpu().numpy().astype(np.float32),
         q_b=q_b.detach().cpu().numpy().astype(np.float32),
         nullspace_basis=basis.astype(np.float32),
@@ -360,9 +388,19 @@ def save_npz(q_a: torch.Tensor,
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=SEED)
+    args = parser.parse_args()
+    seed = int(args.seed)
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    rng = np.random.default_rng(SEED)
-    torch.manual_seed(SEED)
+    rng = np.random.default_rng(seed)
+    torch.manual_seed(seed)
+
+    out_null = OUT_DIR / f'v18_L_nullspace_slice_seed{seed}'
+    out_branch = OUT_DIR / f'v18_L_branch_switch_slice_seed{seed}'
+    out_npz = OUT_DIR / f'v18_L_2d_slices_seed{seed}.npz'
+    print(f'seed={seed}')
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     kin = BatchedFR3Kinematics(device=device)
@@ -387,17 +425,29 @@ def main():
     basis = nullspace_basis(kin, q_a)
     v1 = basis[0] / (np.linalg.norm(basis[0]) + 1e-12)
     v2 = basis[1] / (np.linalg.norm(basis[1]) + 1e-12)
+
+    # Anchor the "same TCP start" target to q_A's own FK pose, not the
+    # path-defined target. _dense_ik_at only converges to 5mm/5deg, so q_A
+    # itself may be 2-5mm off the path start; using it as anchor makes (0, 0)
+    # of the heatmap definitionally valid and removes the spurious gray near
+    # the center.
+    p_anchor_t, R_anchor_t, _, _ = kin.tcp_fk_jac(q_a.unsqueeze(0))
+    p_anchor = p_anchor_t[0]
+    R_anchor = R_anchor_t[0]
+    p_path_start = track_pts[0]
     R_start = start_rotation(task, track_pts, device)
+    print(f'q_A pos offset from path start: {float((p_anchor - p_path_start).norm().item()) * 1000:.2f} mm')
+    print(f'q_A z-axis offset from path R: {float(torch.rad2deg(torch.acos((R_anchor[:, 2] * R_start[:, 2]).sum().clamp(-1.0, 1.0))).item()):.2f} deg')
 
     a_vals, b_vals, q_null_seed = build_nullspace_grid(q_a, v1, v2, NULLSPACE_SPAN, device)
-    q_null, valid_null = project_to_same_start_pose(kin, q_null_seed, track_pts[0], R_start)
+    q_null, valid_null = project_to_same_start_pose(kin, q_null_seed, p_anchor, R_anchor)
     L_null = evaluate_grid(kin, q_null, valid_null, track_pts, plane_normal, L_max)
     save_heatmap(
-        OUT_NULLSPACE.with_suffix('.png'),
+        out_null.with_suffix('.png'),
         a_vals,
         b_vals,
         L_null,
-        'Nullspace slice: same TCP start, different internal posture',
+        f'Nullspace slice (seed={seed}): same TCP start, different internal posture',
         'alpha along nullspace direction v1 [rad]',
         'beta along nullspace direction v2 [rad]',
         markers=[(0.0, 0.0, 'q_A')],
@@ -405,14 +455,14 @@ def main():
     print_grid_stats('Nullspace slice', L_null)
 
     alpha_vals, beta_vals, q_branch_seed = build_branch_grid(q_a, q_b, v1, BRANCH_BETA_SPAN, device)
-    q_branch, valid_branch = project_to_same_start_pose(kin, q_branch_seed, track_pts[0], R_start)
+    q_branch, valid_branch = project_to_same_start_pose(kin, q_branch_seed, p_anchor, R_anchor)
     L_branch = evaluate_grid(kin, q_branch, valid_branch, track_pts, plane_normal, L_max)
     save_heatmap(
-        OUT_BRANCH.with_suffix('.png'),
+        out_branch.with_suffix('.png'),
         alpha_vals,
         beta_vals,
         L_branch,
-        'IK branch switching slice: q_A to q_B plus nullspace offset',
+        f'IK branch switching slice (seed={seed}): q_A to q_B plus nullspace offset',
         'alpha: linear interpolation q_A -> q_B',
         'beta along q_A nullspace direction v1 [rad]',
         markers=[(0.0, 0.0, 'q_A'), (1.0, 0.0, 'q_B')],
@@ -420,6 +470,7 @@ def main():
     print_grid_stats('Branch switching slice', L_branch)
 
     save_npz(
+        out_npz,
         q_a,
         q_b,
         basis,
@@ -431,9 +482,9 @@ def main():
         L_max,
     )
 
-    print(f'\nsaved: {OUT_NULLSPACE.with_suffix(".png")}')
-    print(f'saved: {OUT_BRANCH.with_suffix(".png")}')
-    print(f'saved: {OUT_DIR / "v18_L_2d_slices.npz"}')
+    print(f'\nsaved: {out_null.with_suffix(".png")}')
+    print(f'saved: {out_branch.with_suffix(".png")}')
+    print(f'saved: {out_npz}')
 
 
 if __name__ == '__main__':

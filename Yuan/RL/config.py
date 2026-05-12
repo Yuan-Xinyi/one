@@ -17,6 +17,7 @@ BRANCH_IK_NUM_STARTS = 16           # deterministic IK start postures
 KP_LIN       = 5.0                  # position-error feedback gain [1/s]
 KOMEGA       = 5.0                  # orientation-error feedback gain [1/s]
 DLS_LAMBDA   = 0.05                 # DLS damping
+POS_PRIORITY_ORIENT_MARGIN_RATIO = 0.5   # dead-zone ramp start at this * theta_max
 K_NULL       = 0.5                  # null-space pull toward q_ref
 NULL_USE_MANIPULABILITY = True
 NULL_MANIP_GAIN         = 0.6

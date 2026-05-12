@@ -287,7 +287,8 @@ def _batched_ik_project(kin: BatchedFR3Kinematics,
                         q_seed: torch.Tensor,
                         p0: torch.Tensor,
                         R_tgt: torch.Tensor,
-                        branch_action: torch.Tensor | None = None):
+                        branch_action: torch.Tensor | None = None,
+                        preserve_seed: bool = False):
     q = q_seed.clamp(kin.lmt_lo, kin.lmt_up)
     active = torch.ones((q.shape[0],), device=q.device, dtype=torch.bool)
     converged = torch.zeros_like(active)
@@ -325,19 +326,23 @@ def _batched_ik_project(kin: BatchedFR3Kinematics,
 
         Jpinv = _dls_pinv(J, cfg.BATCHED_IK_DAMPING)
         delta_q = (Jpinv @ delta_x.unsqueeze(-1)).squeeze(-1)
-        N = torch.eye(7, device=q.device, dtype=q.dtype).expand(q.shape[0], 7, 7)
-        N = N - Jpinv @ J
-        if branch_action is None:
-            delta_q_secondary = 0.2 * (kin.q_mid - q)
-        else:
-            grad_cost = _swivel_grad_fd(kin, q, p0, branch_action)
-            branch_gain = torch.where(
-                (pos_err < 0.05) & (rot_err < 0.30),
-                torch.full_like(pos_err, float(cfg.BRANCH_SWIVEL_GAIN)),
-                torch.zeros_like(pos_err),
-            )
-            delta_q_secondary = -branch_gain.unsqueeze(-1) * grad_cost
-        delta_q = delta_q + (N @ delta_q_secondary.unsqueeze(-1)).squeeze(-1)
+        if not preserve_seed:
+            # Nullspace pull toward q_mid (or swivel target). Disabled when the
+            # caller wants the seed's null-direction offsets preserved, e.g.
+            # for 2D landscape slices in the task nullspace.
+            N = torch.eye(7, device=q.device, dtype=q.dtype).expand(q.shape[0], 7, 7)
+            N = N - Jpinv @ J
+            if branch_action is None:
+                delta_q_secondary = 0.2 * (kin.q_mid - q)
+            else:
+                grad_cost = _swivel_grad_fd(kin, q, p0, branch_action)
+                branch_gain = torch.where(
+                    (pos_err < 0.05) & (rot_err < 0.30),
+                    torch.full_like(pos_err, float(cfg.BRANCH_SWIVEL_GAIN)),
+                    torch.zeros_like(pos_err),
+                )
+                delta_q_secondary = -branch_gain.unsqueeze(-1) * grad_cost
+            delta_q = delta_q + (N @ delta_q_secondary.unsqueeze(-1)).squeeze(-1)
         q_next = (q + delta_q).clamp(kin.lmt_lo, kin.lmt_up)
         q = torch.where(active.unsqueeze(-1), q_next, q)
 
@@ -375,7 +380,10 @@ def batched_rollout_segment(q_init: torch.Tensor,
                             kin: BatchedFR3Kinematics | None = None,
                             is_phantom: bool = False,
                             q_ref: torch.Tensor | None = None,
-                            record_traj: bool = False) -> dict:
+                            record_traj: bool = False,
+                            theta_max_rad: float | None = None,
+                            enforce_init_pose: bool = False,
+                            pos_priority: bool = False) -> dict:
     """Run controller from step `start_step` (exclusive) to `end_step` (inclusive)
     on a (B, 7) joint state. Caller supplies pre-built R_tgt, p0, d_dir.
 
@@ -407,7 +415,7 @@ def batched_rollout_segment(q_init: torch.Tensor,
         kin = BatchedFR3Kinematics(device=device)
     eye7 = torch.eye(7, device=device, dtype=torch.float32).expand(B, 7, 7)
     dt = float(cfg.DT)
-    theta_max = float(cfg.THETA_MAX)
+    theta_max = float(cfg.THETA_MAX) if theta_max_rad is None else float(theta_max_rad)
     z_tgt = R_tgt[:, :, 2]
 
     if alive_mask is None:
@@ -431,6 +439,19 @@ def batched_rollout_segment(q_init: torch.Tensor,
     in_horizon_global = torch.ones_like(alive)
     q_record_buf = [q.clone()] if record_traj else None
 
+    if enforce_init_pose:
+        # Kill any row whose q_init already violates tolerance, before the
+        # controller gets a chance to correct. Used for landscape probes
+        # where we want the threshold to apply to the starting pose itself.
+        p_init, R_init, _, _ = kin.tcp_fk_jac(q)
+        init_pos_err = (p0 - p_init).norm(dim=-1)
+        init_omega, _ = _z_axis_error_from_rotmats(R_init, R_tgt)
+        init_orient_err = init_omega.norm(dim=-1)
+        init_fail = (init_pos_err > eps_p) | (init_orient_err > theta_max)
+        alive = alive & ~init_fail
+        last_pos_err = torch.where(init_fail, init_pos_err, last_pos_err)
+        last_orient_err = torch.where(init_fail, init_orient_err, last_orient_err)
+
     for step in range(start_step + 1, end_step + 1):
         in_horizon = step <= T_total
         step_alive = alive & in_horizon
@@ -441,13 +462,41 @@ def batched_rollout_segment(q_init: torch.Tensor,
         p_dot_ff = v_path.unsqueeze(-1) * d_dir
         p_tcp, R_tcp, J, _ = kin.tcp_fk_jac(q)
         omega_err, _ = _z_axis_error_from_rotmats(R_tcp, R_tgt)
-        x_dot = torch.cat([
-            p_dot_ff + float(cfg.KP_LIN) * (p_ref - p_tcp),
-            float(cfg.KOMEGA) * omega_err,
-        ], dim=-1)
-        Jpinv = _dls_pinv(J, float(cfg.DLS_LAMBDA))
-        q_dot = (Jpinv @ x_dot.unsqueeze(-1)).squeeze(-1)
-        if not is_phantom:
+        x_dot_pos = p_dot_ff + float(cfg.KP_LIN) * (p_ref - p_tcp)
+        x_dot_ori = float(cfg.KOMEGA) * omega_err
+        x_dot = torch.cat([x_dot_pos, x_dot_ori], dim=-1)
+
+        if pos_priority:
+            # Task-priority: position is primary (DLS pinv of J_pos). Orientation
+            # uses a soft dead-zone with linear ramp: gain = 0 when orient_err
+            # below MARGIN_RATIO * theta_max, linearly rises to full KOMEGA at
+            # theta_max, and stays at full beyond. Within the inner dead zone,
+            # secondary task only compensates induced drift; near the boundary,
+            # it gradually starts pulling z back toward z_tgt.
+            eye3 = torch.eye(3, device=device, dtype=torch.float32).expand(B, 3, 3)
+            J_pos = J[:, :3, :]
+            J_ang = J[:, 3:, :]
+            damp_sq = float(cfg.DLS_LAMBDA) ** 2
+            A_pos = J_pos @ J_pos.transpose(-1, -2) + damp_sq * eye3
+            Jpos_pinv = J_pos.transpose(-1, -2) @ torch.linalg.inv(A_pos)
+            q_dot_primary = (Jpos_pinv @ x_dot_pos.unsqueeze(-1)).squeeze(-1)
+
+            orient_err_mag = omega_err.norm(dim=-1)
+            margin_start = float(cfg.POS_PRIORITY_ORIENT_MARGIN_RATIO) * theta_max
+            ramp = ((orient_err_mag - margin_start)
+                    / max(theta_max - margin_start, 1e-9)).clamp(0.0, 1.0)
+            x_dot_ori_target = ramp.unsqueeze(-1) * x_dot_ori
+            N_pos = eye7 - Jpos_pinv @ J_pos
+            J_ang_null = J_ang @ N_pos
+            ori_residual = x_dot_ori_target - (J_ang @ q_dot_primary.unsqueeze(-1)).squeeze(-1)
+            A_ang = J_ang_null @ J_ang_null.transpose(-1, -2) + damp_sq * eye3
+            Jang_null_pinv = J_ang_null.transpose(-1, -2) @ torch.linalg.inv(A_ang)
+            q_dot_ori = (Jang_null_pinv @ ori_residual.unsqueeze(-1)).squeeze(-1)
+            q_dot = q_dot_primary + q_dot_ori
+        else:
+            Jpinv = _dls_pinv(J, float(cfg.DLS_LAMBDA))
+            q_dot = (Jpinv @ x_dot.unsqueeze(-1)).squeeze(-1)
+        if (not is_phantom) and (not pos_priority):
             N = eye7 - Jpinv @ J
             if q_ref_traj is not None:
                 rel = step - start_step                     # in [1, T]

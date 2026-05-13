@@ -78,3 +78,4 @@ scene_free.xml
 *.png
 *.jpg
 *.pdf
+*.jsonl

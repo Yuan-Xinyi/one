@@ -492,7 +492,22 @@ def batched_rollout_segment(q_init: torch.Tensor,
             A_ang = J_ang_null @ J_ang_null.transpose(-1, -2) + damp_sq * eye3
             Jang_null_pinv = J_ang_null.transpose(-1, -2) @ torch.linalg.inv(A_ang)
             q_dot_ori = (Jang_null_pinv @ ori_residual.unsqueeze(-1)).squeeze(-1)
-            q_dot = q_dot_primary + q_dot_ori
+
+            # Joint-limit avoidance, projected into the pos nullspace so it
+            # never interferes with position tracking. Repulsion activates
+            # only inside JLIMIT_MARGIN of either limit; magnitude grows
+            # linearly toward the limit so behavior near the boundary is
+            # like a soft barrier rather than a constant push.
+            jlimit_margin = float(cfg.POS_PRIORITY_JLIMIT_MARGIN)
+            jlimit_gain = float(cfg.POS_PRIORITY_JLIMIT_GAIN)
+            dist_lo = q - kin.lmt_lo
+            dist_hi = kin.lmt_up - q
+            danger_lo = (jlimit_margin - dist_lo).clamp(min=0.0)
+            danger_hi = (jlimit_margin - dist_hi).clamp(min=0.0)
+            q_dot_jlimit_raw = jlimit_gain * (danger_lo - danger_hi)
+            q_dot_jlimit = (N_pos @ q_dot_jlimit_raw.unsqueeze(-1)).squeeze(-1)
+
+            q_dot = q_dot_primary + q_dot_ori + q_dot_jlimit
         else:
             Jpinv = _dls_pinv(J, float(cfg.DLS_LAMBDA))
             q_dot = (Jpinv @ x_dot.unsqueeze(-1)).squeeze(-1)

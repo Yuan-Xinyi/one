@@ -71,3 +71,8 @@ Thumbs.db
 scene.xml
 scene_free.xml
 *.pt
+*.npy
+*.jsonl
+*.pkl
+*.pdf
+*.png

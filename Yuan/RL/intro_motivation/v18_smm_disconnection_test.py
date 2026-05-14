@@ -30,12 +30,11 @@ import matplotlib.pyplot as plt
 
 from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
 from Yuan.RL.batched_rollout import _branch_seed_bank
-from Yuan.RL.intro_motivation.v18_motivation_core import (
-    LINE_L_RANGE, TARGET_PATH_M, extend_task_path, sample_line_task,
-)
-from Yuan.RL.intro_motivation.v18_smm_enumerate import (
+from Yuan.RL.intro_motivation.v18_smm_core import (
     DEDUP_RAD, DEFAULT_H, JOINT_MARGIN,
-    enumerate_branches, project_and_filter, walk_branch,
+    LINE_L_RANGE, TARGET_PATH_M,
+    enumerate_branches, extend_task_path, project_and_filter,
+    sample_line_task, walk_branch,
 )
 from Yuan.RL.v18_data_prep import _build_R_from_normal_direction, _dense_ik_at
 

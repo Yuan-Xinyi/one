@@ -1,0 +1,49 @@
+env:
+  n_envs: 128
+  dt: 0.01
+  v: 0.05            # m/s linear EE speed along u_hat
+  a_max: 0.5         # rad/s nullspace action scale
+  lambda_0: 0.05     # DLS damping baseline
+  sigma_thr: 0.05    # adaptive damping threshold
+  cone_deg: 30.0     # rotation cone half-angle (hard terminate)
+  max_steps: 10000   # 100 s physical time at dt=0.01
+  w_alive: 1.0       # per-step alive reward
+  r_collision: 0.0   # P1-2: terminal penalties unified to 0 — pure alive task
+  r_cone: 0.0
+  r_jl: 0.0
+  tcp_offset: 0.0    # bare flange — matches scalar FR3()
+
+ppo:
+  total_timesteps: 1000000
+  learning_rate: 3.0e-4
+  n_steps: 32
+  anneal_lr: true
+  gamma: 0.99
+  gae_lambda: 0.95
+  n_minibatches: 32
+  update_epochs: 10
+  norm_adv: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: null
+  hidden_dim: 256
+  init_log_std: -0.5
+
+line_distribution:
+  n_pool: 100000
+  n_target_noise_deg: 5.0
+  train_seed: 0
+
+baseline:
+  k_jl: 1.0
+
+eval:
+  n_holdout: 200
+  holdout_seed: 42
+
+train:
+  eval_every: 10000
+  ckpt_every_n_updates: 10

@@ -1,0 +1,134 @@
+"""PPO training entry point.
+
+Usage:
+    python -m Yuan.RL_controller.train --config Yuan/RL_controller/config.yaml \\
+        [--ckpt path/to/agent.pt] [--device cuda|cpu]
+"""
+from __future__ import annotations
+
+# Self-relaunch with $CONDA_PREFIX/lib on LD_LIBRARY_PATH so matplotlib (pulled
+# in by `one/__init__.py`) finds the conda libstdc++. Must run before any
+# import that triggers `one`. See Known Issues #8.
+import os, sys
+_conda_lib = os.path.join(sys.prefix, "lib")
+if _conda_lib not in os.environ.get("LD_LIBRARY_PATH", ""):
+    new_env = dict(os.environ)
+    new_env["LD_LIBRARY_PATH"] = _conda_lib + ":" + new_env.get("LD_LIBRARY_PATH", "")
+    # Preserve `python -m <module>` invocation; fall back to script mode.
+    if __spec__ is not None and __spec__.name != "__main__":
+        argv = [sys.executable, "-m", __spec__.name] + sys.argv[1:]
+    else:
+        argv = [sys.executable] + sys.argv
+    os.execvpe(sys.executable, argv, new_env)
+
+import argparse
+import time
+from pathlib import Path
+
+import torch
+import yaml
+
+from Yuan.RL_controller.env.env import NSRLBatchedEnv, EnvConfig
+from Yuan.RL_controller.env.line_distribution import LineDistribution
+from Yuan.RL_controller.ppo import PPOConfig, train as ppo_train, Agent
+
+
+def _resolve_log_path(out_dir: Path) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir / "train.log"
+
+
+def _make_eval_fn(eval_env: NSRLBatchedEnv):
+    # Import lazily to avoid circular dependency between env/__init__ and eval helpers
+    from Yuan.RL_controller.env.baseline_controller import rollout_first_episode
+
+    @torch.no_grad()
+    def _policy_action(env: NSRLBatchedEnv, agent: Agent) -> torch.Tensor:
+        mean = agent.actor_mean(env.current_obs())
+        return mean.clamp(-1.0, 1.0)
+
+    @torch.no_grad()
+    def _eval(agent: Agent) -> dict:
+        def action_fn(env):
+            return _policy_action(env, agent)
+        stats = rollout_first_episode(eval_env, action_fn)
+        ep_len = stats["episode_len"].float()
+        return {
+            "eval_mean_len": float(ep_len.mean().item()),
+            "eval_median_len": float(ep_len.median().item()),
+        }
+
+    return _eval
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--device", default=None,
+                        help="cuda or cpu; default auto-detect")
+    parser.add_argument("--ckpt", default=None)
+    parser.add_argument("--out-dir", default="Yuan/RL_controller/runs")
+    args = parser.parse_args()
+
+    with open(args.config, "r") as f:
+        cfg_yaml = yaml.safe_load(f)
+
+    if args.device is not None:
+        device = torch.device(args.device)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    out_dir = Path(args.out_dir)
+    log_path = _resolve_log_path(out_dir)
+    ckpt_path = args.ckpt or str(out_dir / "agent.pt")
+
+    env_cfg = EnvConfig(**cfg_yaml["env"])
+    ppo_cfg = PPOConfig(**cfg_yaml["ppo"])
+    line_cfg = cfg_yaml["line_distribution"]
+    eval_cfg = cfg_yaml["eval"]
+    train_cfg = cfg_yaml["train"]
+
+    print(f"[train] device={device}; building train env (n_envs={env_cfg.n_envs})")
+    train_env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
+    train_line_dist = LineDistribution(
+        kin=train_env.kin, collision=train_env.collision,
+        n_pool=line_cfg["n_pool"],
+        n_target_noise_deg=line_cfg["n_target_noise_deg"],
+        seed=line_cfg.get("train_seed", None),
+    )
+    train_env.line_dist = train_line_dist
+
+    eval_env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": eval_cfg["n_holdout"]})
+    print(f"[train] building eval env (n_envs={eval_env_cfg.n_envs})")
+    eval_env = NSRLBatchedEnv(eval_env_cfg, line_dist=None, device=device)
+    eval_line_dist = LineDistribution(
+        kin=eval_env.kin, collision=eval_env.collision,
+        n_pool=line_cfg["n_pool"],
+        n_target_noise_deg=line_cfg["n_target_noise_deg"],
+        seed=eval_cfg["holdout_seed"],
+    )
+    eval_env.line_dist = eval_line_dist
+
+    log_file = open(log_path, "w")
+    t0 = time.time()
+
+    def log_fn(d: dict):
+        d_with_time = {"wall_s": time.time() - t0, **d}
+        log_file.write(repr(d_with_time) + "\n")
+        log_file.flush()
+        print({k: round(v, 4) if isinstance(v, float) else v for k, v in d_with_time.items()})
+
+    eval_fn = _make_eval_fn(eval_env)
+    n_updates = ppo_cfg.total_timesteps // (ppo_cfg.n_steps * env_cfg.n_envs)
+    print(f"[train] starting PPO: total={ppo_cfg.total_timesteps}, updates={n_updates}")
+    agent = ppo_train(ppo_cfg, train_env, device=device,
+                      eval_fn=eval_fn,
+                      eval_every=train_cfg["eval_every"],
+                      log_fn=log_fn,
+                      ckpt_path=ckpt_path,
+                      ckpt_every_n_updates=train_cfg.get("ckpt_every_n_updates", 10))
+    log_file.close()
+    print(f"[train] done, ckpt → {ckpt_path}")
+
+
+if __name__ == "__main__":
+    main()

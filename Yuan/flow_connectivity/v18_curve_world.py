@@ -7,7 +7,7 @@ through the path. Pen tip leaves no automatic trail (use trace markers
 in the scene below).
 
 Run:
-    python -m Yuan.RL.v18_curve_world --curve-type arc --K-arms 4
+    python -m Yuan.flow_connectivity.v18_curve_world --curve-type arc --K-arms 4
 """
 from __future__ import annotations
 import argparse
@@ -15,13 +15,13 @@ import builtins
 import numpy as np
 import torch
 
-import Yuan.RL.config as cfg
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import batched_rollout_segment
-from Yuan.RL.v18_cfm_model import CFMFlowModel, COND_DIM
-from Yuan.RL.v18_inference import backward_sample
-from Yuan.RL.v18_data_prep import _dense_ik_at, _build_R_from_normal_direction
-from Yuan.RL.v18_curve_eval import (
+import Yuan.flow_connectivity.config as cfg
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import batched_rollout_segment
+from Yuan.flow_connectivity.v18_cfm_model import CFMFlowModel, COND_DIM
+from Yuan.flow_connectivity.v18_inference import backward_sample
+from Yuan.flow_connectivity.v18_data_prep import _dense_ik_at, _build_R_from_normal_direction
+from Yuan.flow_connectivity.v18_curve_eval import (
     sample_curve_task, sample_surface_task, branch_signature,
 )
 
@@ -174,7 +174,7 @@ def dls_forward_rollout(kin: BatchedFR3Kinematics,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default="Yuan/RL/checkpoints_v18_multi/best.pt")
+    ap.add_argument("--ckpt", default="Yuan/flow_connectivity/checkpoints_v18_multi/best.pt")
     ap.add_argument("--surface-type", default="flat",
                     choices=["flat", "sphere"],
                     help="flat: planar surface (use --curve-type for path "
@@ -408,7 +408,7 @@ def main():
     # ----- build the world scene -----
     import one.viewer.world as ovw
     import one.scene.scene_object_primitive as ossop
-    from Yuan.RL.fr3_with_pen import make_fr3_with_pen, attach_pen_visual
+    from Yuan.flow_connectivity.fr3_with_pen import make_fr3_with_pen, attach_pen_visual
 
     cam_lookat = list(np.mean(fine_pts, axis=0))
     base = ovw.World(cam_pos=(1.4, 1.0, 0.9),

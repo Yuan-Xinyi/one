@@ -14,13 +14,13 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from Yuan.RL.v18_cfm_model import CFMFlowModel, COND_DIM
+from Yuan.flow_connectivity.v18_cfm_model import CFMFlowModel, COND_DIM
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data",     default="Yuan/RL/data/v18_train.npz")
-    ap.add_argument("--ckpt-dir", default="Yuan/RL/checkpoints_v18")
+    ap.add_argument("--data",     default="Yuan/flow_connectivity/data/v18_train.npz")
+    ap.add_argument("--ckpt-dir", default="Yuan/flow_connectivity/checkpoints_v18")
     ap.add_argument("--epochs",   type=int, default=50)
     ap.add_argument("--batch-size", type=int, default=4096)
     ap.add_argument("--lr",       type=float, default=3e-4)

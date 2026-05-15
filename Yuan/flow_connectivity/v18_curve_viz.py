@@ -18,11 +18,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D                    # noqa: F401
 
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.v18_cfm_model import CFMFlowModel, COND_DIM
-from Yuan.RL.v18_inference import backward_sample
-from Yuan.RL.v18_data_prep import _dense_ik_at
-from Yuan.RL.v18_curve_eval import sample_curve_task
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.v18_cfm_model import CFMFlowModel, COND_DIM
+from Yuan.flow_connectivity.v18_inference import backward_sample
+from Yuan.flow_connectivity.v18_data_prep import _dense_ik_at
+from Yuan.flow_connectivity.v18_curve_eval import sample_curve_task
 
 
 def fk_at(kin, q_traj):
@@ -62,13 +62,13 @@ def _equal_aspect_3d(ax, all_pts):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default="Yuan/RL/checkpoints_v18_multi/best.pt")
+    ap.add_argument("--ckpt", default="Yuan/flow_connectivity/checkpoints_v18_multi/best.pt")
     ap.add_argument("--n-checkpoints", type=int, default=5)
     ap.add_argument("--K-samples", type=int, default=4)
     ap.add_argument("--n-ode-steps", type=int, default=16)
     ap.add_argument("--snap-iters", type=int, default=8)
     ap.add_argument("--seed", type=int, default=2026)
-    ap.add_argument("--out", default="Yuan/RL/data/v18_curve_viz.png")
+    ap.add_argument("--out", default="Yuan/flow_connectivity/data/v18_curve_viz.png")
     ap.add_argument("--curve-types", nargs="+",
                     default=["line", "arc", "s_curve"])
     args = ap.parse_args()

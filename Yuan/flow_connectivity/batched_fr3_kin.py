@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import torch
 
-import Yuan.RL.config as cfg
+import Yuan.flow_connectivity.config as cfg
 from one.robots.manipulators.franka.fr3_pen.batched_fr3_kin import (
     BatchedFR3Kinematics as _BatchedFR3Kinematics,
 )

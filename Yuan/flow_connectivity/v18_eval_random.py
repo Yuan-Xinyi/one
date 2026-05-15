@@ -9,11 +9,11 @@ import argparse, time
 import numpy as np
 import torch
 
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import _batched_ik_project
-from Yuan.RL.v18_cfm_model import CFMFlowModel, COND_DIM
-from Yuan.RL.v18_inference import backward_sample
-from Yuan.RL.v18_data_prep import (
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import _batched_ik_project
+from Yuan.flow_connectivity.v18_cfm_model import CFMFlowModel, COND_DIM
+from Yuan.flow_connectivity.v18_inference import backward_sample
+from Yuan.flow_connectivity.v18_data_prep import (
     _sample_random_task, _build_R_from_normal_direction,
     _check_transitions_geometric, _dense_ik_at,
 )
@@ -34,7 +34,7 @@ def enumerate_ik_at_goal(kin, goal_pos, R_target, M_oversample=64,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default="Yuan/RL/checkpoints_v18_multi/best.pt")
+    ap.add_argument("--ckpt", default="Yuan/flow_connectivity/checkpoints_v18_multi/best.pt")
     ap.add_argument("--n-tasks", type=int, default=50)
     ap.add_argument("--K-goal", type=int, default=8,
                     help="number of IK branches sampled at each goal")

@@ -12,9 +12,9 @@ Rollout and SMM enumeration share the same constraint (6-DOF locked pose),
 so branches are tested on the exact 1D manifold they were enumerated on.
 
 Usage:
-    python -m Yuan.RL.intro_motivation.v18_smm_task --seed 118
-    python -m Yuan.RL.intro_motivation.v18_smm_task --seed 42 --free-task
-    python -m Yuan.RL.intro_motivation.v18_smm_task --seed 118 --no-viewer
+    python -m Yuan.flow_connectivity.intro_motivation.v18_smm_task --seed 118
+    python -m Yuan.flow_connectivity.intro_motivation.v18_smm_task --seed 42 --free-task
+    python -m Yuan.flow_connectivity.intro_motivation.v18_smm_task --seed 118 --no-viewer
 """
 from __future__ import annotations
 
@@ -30,18 +30,18 @@ import torch
 
 import one.scene.scene_object_primitive as ossop
 import one.viewer.world as ovw
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import _branch_seed_bank
-from Yuan.RL.fr3_with_pen import attach_pen_visual, make_fr3_with_pen
-from Yuan.RL.intro_motivation.v18_smm_core import (
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import _branch_seed_bank
+from Yuan.flow_connectivity.fr3_with_pen import attach_pen_visual, make_fr3_with_pen
+from Yuan.flow_connectivity.intro_motivation.v18_smm_core import (
     DEDUP_RAD, DEFAULT_H, JOINT_MARGIN,
     as_tensor, enumerate_branches, get_task_target_pose, path_length,
     project_and_filter,
 )
-from Yuan.RL.intro_motivation.v18_smm_rollout_6dof import (
+from Yuan.flow_connectivity.intro_motivation.v18_smm_rollout_6dof import (
     record_rollout_6dof, rollout_lengths_6dof,
 )
-from Yuan.RL.v18_data_prep import _dense_ik_at
+from Yuan.flow_connectivity.v18_data_prep import _dense_ik_at
 
 
 PLAYBACK_DT = 0.04
@@ -366,7 +366,7 @@ def main():
                         default='best',
                         help='which q0 per branch the viewer animates')
     parser.add_argument('--out-dir', type=str,
-                        default='Yuan/RL/intro_motivation/data')
+                        default='Yuan/flow_connectivity/intro_motivation/data')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

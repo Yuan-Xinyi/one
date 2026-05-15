@@ -24,10 +24,10 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-import Yuan.RL.config as cfg
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import _dls_pinv, _rotvec_between
-from Yuan.RL.v18_data_prep import _build_R_from_normal_direction
+import Yuan.flow_connectivity.config as cfg
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import _dls_pinv, _rotvec_between
+from Yuan.flow_connectivity.v18_data_prep import _build_R_from_normal_direction
 
 
 V_PATH = 0.10

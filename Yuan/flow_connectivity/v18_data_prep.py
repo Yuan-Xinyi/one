@@ -21,9 +21,9 @@ import argparse, os, time
 import numpy as np
 import torch
 
-import Yuan.RL.config as cfg
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import (
+import Yuan.flow_connectivity.config as cfg
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import (
     batched_rollout_segment, _batched_ik_project,
     _device_from_cfg, _load_fr3_sphere_collision_cls,
 )
@@ -366,7 +366,7 @@ def process_one_task(kin, sphere_cc, task_meta, M_oversample, N_segments,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hdf5", default="Yuan/fr3_dit/data/pen_fr3_plane_trajectories_50k.hdf5")
-    ap.add_argument("--out",  default="Yuan/RL/data/v18_train.npz")
+    ap.add_argument("--out",  default="Yuan/flow_connectivity/data/v18_train.npz")
     ap.add_argument("--n-tasks", type=int, default=500)
     ap.add_argument("--M-oversample", type=int, default=32)
     ap.add_argument("--n-segments", type=int, default=5)

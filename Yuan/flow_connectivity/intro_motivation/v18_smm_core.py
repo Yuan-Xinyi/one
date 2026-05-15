@@ -23,10 +23,10 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import _batched_ik_project
-from Yuan.RL.v18_curve_eval import sample_curve_task
-from Yuan.RL.v18_data_prep import _build_R_from_normal_direction
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import _batched_ik_project
+from Yuan.flow_connectivity.v18_curve_eval import sample_curve_task
+from Yuan.flow_connectivity.v18_data_prep import _build_R_from_normal_direction
 
 
 # ---- task knobs (line task built at a v18 seed) ----

@@ -13,8 +13,8 @@ import torch
 import importlib.util
 from pathlib import Path
 
-import Yuan.RL.config as cfg
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
+import Yuan.flow_connectivity.config as cfg
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
 
 
 def _load_fr3_sphere_collision_cls():

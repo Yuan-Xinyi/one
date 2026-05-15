@@ -7,7 +7,7 @@ so existing call sites keep their config-driven behavior.
 """
 from __future__ import annotations
 
-import Yuan.RL.config as cfg
+import Yuan.flow_connectivity.config as cfg
 from one.robots.manipulators.franka.fr3_pen.fr3_with_pen import (
     attach_pen_visual as _attach_pen_visual,
 )

@@ -10,9 +10,9 @@ For each seed:
   5. Flag whether the best branch beats the worst on either metric.
 
 Usage:
-    python -m Yuan.RL.intro_motivation.v18_smm_branch_analysis
-    python -m Yuan.RL.intro_motivation.v18_smm_branch_analysis --seeds 42,100,999
-    python -m Yuan.RL.intro_motivation.v18_smm_branch_analysis --free-task
+    python -m Yuan.flow_connectivity.intro_motivation.v18_smm_branch_analysis
+    python -m Yuan.flow_connectivity.intro_motivation.v18_smm_branch_analysis --seeds 42,100,999
+    python -m Yuan.flow_connectivity.intro_motivation.v18_smm_branch_analysis --free-task
 """
 from __future__ import annotations
 
@@ -21,16 +21,16 @@ import argparse
 import numpy as np
 import torch
 
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import _branch_seed_bank
-from Yuan.RL.intro_motivation.v18_smm_core import (
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import _branch_seed_bank
+from Yuan.flow_connectivity.intro_motivation.v18_smm_core import (
     DEDUP_RAD, DEFAULT_H, JOINT_MARGIN,
     as_tensor, enumerate_branches, get_task_target_pose, path_length,
     project_and_filter,
 )
-from Yuan.RL.intro_motivation.v18_smm_rollout_6dof import record_rollout_6dof
-from Yuan.RL.intro_motivation.v18_smm_task import pick_representative_q0
-from Yuan.RL.v18_data_prep import _dense_ik_at
+from Yuan.flow_connectivity.intro_motivation.v18_smm_rollout_6dof import record_rollout_6dof
+from Yuan.flow_connectivity.intro_motivation.v18_smm_task import pick_representative_q0
+from Yuan.flow_connectivity.v18_data_prep import _dense_ik_at
 
 
 def traj_metrics(kin, q_traj_b, fail_step):

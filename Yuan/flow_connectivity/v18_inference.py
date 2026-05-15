@@ -17,8 +17,8 @@ import argparse, time
 import numpy as np
 import torch
 
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.v18_cfm_model import CFMFlowModel, COND_DIM
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.v18_cfm_model import CFMFlowModel, COND_DIM
 
 
 def damped_pinv_pos(J_pos: torch.Tensor, lam: float = 1e-3) -> torch.Tensor:
@@ -138,7 +138,7 @@ def backward_sample(model: CFMFlowModel, kin: BatchedFR3Kinematics,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt",  default="Yuan/RL/checkpoints_v18/best.pt")
+    ap.add_argument("--ckpt",  default="Yuan/flow_connectivity/checkpoints_v18/best.pt")
     ap.add_argument("--hdf5",  default="Yuan/fr3_dit/data/pen_fr3_plane_trajectories_50k.hdf5")
     ap.add_argument("--traj-idx", type=int, default=17)
     ap.add_argument("--n-samples", type=int, default=8,

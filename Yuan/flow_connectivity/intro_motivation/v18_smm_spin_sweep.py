@@ -20,8 +20,8 @@ Output:
   * `task_seed{S}_spin_sweep.jsonl`: per-spin per-branch stats.
 
 Usage:
-    python -m Yuan.RL.intro_motivation.v18_smm_spin_sweep --seed 118
-    python -m Yuan.RL.intro_motivation.v18_smm_spin_sweep --seed 42 --free-task --n-spins 24
+    python -m Yuan.flow_connectivity.intro_motivation.v18_smm_spin_sweep --seed 118
+    python -m Yuan.flow_connectivity.intro_motivation.v18_smm_spin_sweep --seed 42 --free-task --n-spins 24
 """
 from __future__ import annotations
 
@@ -35,19 +35,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-import Yuan.RL.config as cfg
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import _branch_seed_bank
-from Yuan.RL.intro_motivation.v18_smm_core import (
+import Yuan.flow_connectivity.config as cfg
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import _branch_seed_bank
+from Yuan.flow_connectivity.intro_motivation.v18_smm_core import (
     DEDUP_RAD, DEFAULT_H, JOINT_MARGIN,
     as_tensor, enumerate_branches, get_task_target_pose, path_length,
     project_and_filter,
 )
-from Yuan.RL.intro_motivation.v18_smm_rollout_6dof import (
+from Yuan.flow_connectivity.intro_motivation.v18_smm_rollout_6dof import (
     EPS_ORI_6DOF, EPS_POS_6DOF, V_PATH, _batched_segment_6dof,
 )
-from Yuan.RL.intro_motivation.v18_smm_task import sample_branch_q0s
-from Yuan.RL.v18_data_prep import _dense_ik_at
+from Yuan.flow_connectivity.intro_motivation.v18_smm_task import sample_branch_q0s
+from Yuan.flow_connectivity.v18_data_prep import _dense_ik_at
 
 
 def rotz(theta: float) -> np.ndarray:
@@ -216,7 +216,7 @@ def main():
     parser.add_argument('--h', type=float, default=DEFAULT_H)
     parser.add_argument('--free-task', action='store_true')
     parser.add_argument('--out-dir', type=str,
-                        default='Yuan/RL/intro_motivation/data')
+                        default='Yuan/flow_connectivity/intro_motivation/data')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

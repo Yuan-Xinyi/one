@@ -14,7 +14,7 @@ Output:
   * Verdict per pair: SAME loop (JL artifact) vs DIFFERENT (topology).
 
 Usage:
-    python -m Yuan.RL.intro_motivation.v18_smm_disconnection_test --seed 118
+    python -m Yuan.flow_connectivity.intro_motivation.v18_smm_disconnection_test --seed 118
 """
 from __future__ import annotations
 
@@ -28,15 +28,15 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import _branch_seed_bank
-from Yuan.RL.intro_motivation.v18_smm_core import (
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import _branch_seed_bank
+from Yuan.flow_connectivity.intro_motivation.v18_smm_core import (
     DEDUP_RAD, DEFAULT_H, JOINT_MARGIN,
     LINE_L_RANGE, TARGET_PATH_M,
     enumerate_branches, extend_task_path, project_and_filter,
     sample_line_task, walk_branch,
 )
-from Yuan.RL.v18_data_prep import _build_R_from_normal_direction, _dense_ik_at
+from Yuan.flow_connectivity.v18_data_prep import _build_R_from_normal_direction, _dense_ik_at
 
 
 def main():
@@ -47,7 +47,7 @@ def main():
     parser.add_argument('--big-limit-mult', type=float, default=5.0,
                         help='no-JL test uses ±this * pi as fake limits')
     parser.add_argument('--out-png', type=str,
-                        default='Yuan/RL/intro_motivation/data/smm_disconnection.png')
+                        default='Yuan/flow_connectivity/intro_motivation/data/smm_disconnection.png')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

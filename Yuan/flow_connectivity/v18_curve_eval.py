@@ -34,11 +34,11 @@ import time
 import numpy as np
 import torch
 
-from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import _batched_ik_project
-from Yuan.RL.v18_cfm_model import CFMFlowModel, COND_DIM
-from Yuan.RL.v18_inference import backward_sample
-from Yuan.RL.v18_data_prep import _build_R_from_normal_direction, _dense_ik_at
+from Yuan.flow_connectivity.batched_fr3_kin import BatchedFR3Kinematics
+from Yuan.flow_connectivity.batched_rollout import _batched_ik_project
+from Yuan.flow_connectivity.v18_cfm_model import CFMFlowModel, COND_DIM
+from Yuan.flow_connectivity.v18_inference import backward_sample
+from Yuan.flow_connectivity.v18_data_prep import _build_R_from_normal_direction, _dense_ik_at
 
 
 # ---------- in-plane geometry ----------
@@ -395,7 +395,7 @@ def _print_curve_block(name: str, all_errs: np.ndarray, per_task_succ: np.ndarra
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default="Yuan/RL/checkpoints_v18_multi/best.pt")
+    ap.add_argument("--ckpt", default="Yuan/flow_connectivity/checkpoints_v18_multi/best.pt")
     ap.add_argument("--n-tasks", type=int, default=30)
     ap.add_argument("--n-checkpoints", type=int, default=5)
     ap.add_argument("--K-branches", type=int, default=8)

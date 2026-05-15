@@ -1,16 +1,19 @@
-"""End-to-end SMM workflow for one task seed.
+"""End-to-end SMM workflow for one task seed (6-DOF strict throughout).
 
-  1. Re-derive v18 line task path from --seed.
+  1. Re-derive line task path from --seed (--free-task for permissive sampler).
   2. Enumerate SMM branches at the 6-DOF task start pose.
      Print branch count + per-branch stats.
-  3. Sample q0 per branch, run path-following rollout (mode = --task-dof).
-     Save a 2-panel summary PNG: SMM PCA scatter + per-branch L violin.
+  3. Sample q0 per branch, run 6-DOF strict rollout. Save summary PNG and
+     SMM joint-trajectory PNG.
   4. Unless --no-viewer: pick a representative q0 per branch, record
      rollout, launch ONE viewer animating each branch sequentially.
 
+Rollout and SMM enumeration share the same constraint (6-DOF locked pose),
+so branches are tested on the exact 1D manifold they were enumerated on.
+
 Usage:
     python -m Yuan.RL.intro_motivation.v18_smm_task --seed 118
-    python -m Yuan.RL.intro_motivation.v18_smm_task --seed 118 --task-dof 6
+    python -m Yuan.RL.intro_motivation.v18_smm_task --seed 42 --free-task
     python -m Yuan.RL.intro_motivation.v18_smm_task --seed 118 --no-viewer
 """
 from __future__ import annotations
@@ -25,23 +28,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-import Yuan.RL.config as cfg
 import one.scene.scene_object_primitive as ossop
 import one.viewer.world as ovw
 from Yuan.RL.batched_fr3_kin import BatchedFR3Kinematics
-from Yuan.RL.batched_rollout import _branch_seed_bank, batched_rollout_segment
+from Yuan.RL.batched_rollout import _branch_seed_bank
 from Yuan.RL.fr3_with_pen import attach_pen_visual, make_fr3_with_pen
 from Yuan.RL.intro_motivation.v18_smm_core import (
     DEDUP_RAD, DEFAULT_H, JOINT_MARGIN,
     as_tensor, enumerate_branches, get_task_target_pose, path_length,
     project_and_filter,
 )
-from Yuan.RL.intro_motivation.v18_smm_rollout_5dof_strict import (
-    EPS_ORI_5DOF_STRICT, EPS_POS_5DOF_STRICT,
-    record_rollout_5dof_strict, rollout_lengths_5dof_strict,
-)
 from Yuan.RL.intro_motivation.v18_smm_rollout_6dof import (
-    EPS_ORI_6DOF, EPS_POS_6DOF, V_PATH,
     record_rollout_6dof, rollout_lengths_6dof,
 )
 from Yuan.RL.v18_data_prep import _dense_ik_at
@@ -49,72 +46,9 @@ from Yuan.RL.v18_data_prep import _dense_ik_at
 
 PLAYBACK_DT = 0.04
 HOLD_AT_END_SEC = 1.5
-ROLLOUT_THETA_MAX = np.deg2rad(30.0)
-V_PATH_5DOF = 0.10
-EPS_P_5DOF = 0.05
-CHUNK_SIZE = 1024
-_BRANCH_ACTION = (1.0, 0.0, 1.0, 0.0)
-
-
-def _rollout_chunk_pos_priority(kin, q_init, track_pts, plane_normal_t,
-                                 theta_max_rad=ROLLOUT_THETA_MAX,
-                                 enforce_init_pose=True):
-    """5-DOF pos_priority rollout via batched_rollout_segment. Mirrors the
-    behavior used in the original v18 motivation experiments."""
-    from Yuan.RL.v18_data_prep import _build_R_from_normal_direction
-    device = kin.device
-    B = q_init.shape[0]
-    q = q_init.clone()
-    alive = torch.ones(B, device=device, dtype=torch.bool)
-    lengths = torch.zeros(B, device=device, dtype=torch.float32)
-    branch_action = torch.tensor(_BRANCH_ACTION, device=device,
-                                  dtype=torch.float32).unsqueeze(0).expand(B, 4)
-    for idx in range(track_pts.shape[0] - 1):
-        if not bool(alive.any().item()):
-            break
-        p0 = track_pts[idx]
-        seg_vec = track_pts[idx + 1] - p0
-        seg_len = float(seg_vec.norm().item())
-        if seg_len < 1e-8:
-            continue
-        direction = seg_vec / seg_vec.norm().clamp_min(1e-12)
-        rot_np = _build_R_from_normal_direction(
-            plane_normal_t.detach().cpu().numpy(),
-            direction.detach().cpu().numpy())
-        n_steps = max(1, int(round(seg_len / (V_PATH_5DOF * float(cfg.DT)))))
-        out = batched_rollout_segment(
-            q_init=q,
-            R_tgt=as_tensor(rot_np, device).unsqueeze(0).expand(B, 3, 3),
-            branch_action=branch_action,
-            p0=p0.unsqueeze(0).expand(B, 3),
-            d_dir=direction.unsqueeze(0).expand(B, 3),
-            v_path=torch.full((B,), V_PATH_5DOF, device=device, dtype=torch.float32),
-            eps_p=torch.full((B,), EPS_P_5DOF, device=device, dtype=torch.float32),
-            T_total=torch.full((B,), n_steps, device=device, dtype=torch.long),
-            start_step=0, end_step=n_steps, kin=kin, alive_mask=alive,
-            theta_max_rad=theta_max_rad,
-            enforce_init_pose=enforce_init_pose,
-            pos_priority=True,
-        )
-        completed = out['lengths'].float() / float(n_steps) * seg_len
-        lengths = torch.where(alive, lengths + completed, lengths)
-        q = out['q_final']
-        alive = out['alive_out']
-    return lengths.detach().cpu().numpy()
-
-
-def rollout_lengths_pos_priority(kin, q_batch, track_pts, plane_normal_t,
-                                  theta_max_rad=ROLLOUT_THETA_MAX,
-                                  enforce_init_pose=True):
-    """Chunked 5-DOF pos_priority rollout. Returns per-q meters travelled."""
-    lengths = np.zeros(q_batch.shape[0], dtype=np.float32)
-    for start in range(0, q_batch.shape[0], CHUNK_SIZE):
-        end = min(start + CHUNK_SIZE, q_batch.shape[0])
-        lengths[start:end] = _rollout_chunk_pos_priority(
-            kin, q_batch[start:end], track_pts, plane_normal_t,
-            theta_max_rad=theta_max_rad,
-            enforce_init_pose=enforce_init_pose)
-    return lengths
+GHOST_ALPHA = 0.20
+ACTIVE_ALPHA = 0.95
+HIDDEN_ALPHA = 0.0
 
 
 def add_task_path(base, task_path: np.ndarray,
@@ -143,25 +77,6 @@ def add_task_path(base, task_path: np.ndarray,
                   rgb=(0.85, 0.10, 0.10), alpha=0.95).attach_to(base.scene)
 
 
-def get_rollout_fns(task_dof: str):
-    """Returns (rollout_lengths_fn, record_rollout_fn, label).
-    record_rollout falls back to 6-DOF for the pos_priority '5' mode
-    because the viewer needs the (q_traj, fail_infos) shape produced
-    by the strict rollouts."""
-    if task_dof == '6':
-        def _rl(kin, q, tp, pn):
-            return rollout_lengths_6dof(kin, q, tp, pn)
-        return _rl, record_rollout_6dof, '6-DOF strict (1D null)'
-    if task_dof == '5strict':
-        def _rl(kin, q, tp, pn):
-            return rollout_lengths_5dof_strict(kin, q, tp, pn)
-        return _rl, record_rollout_5dof_strict, '5-DOF strict, spin free (2D null)'
-    # '5' = v18 pos_priority (5-DOF + 30° dead zone). Viewer uses 6-DOF for replay.
-    def _rl(kin, q, tp, pn):
-        return rollout_lengths_pos_priority(kin, q, tp, pn)
-    return _rl, record_rollout_6dof, '5-DOF pos_priority (viewer uses 6-DOF replay)'
-
-
 def sample_branch_q0s(branches, n_per_branch: int):
     """For each branch, evenly sample n_per_branch q0 along its arc.
     Returns (all_q (N,7), all_bid (N,), all_arc (N,) normalized 0..1)."""
@@ -180,7 +95,7 @@ def sample_branch_q0s(branches, n_per_branch: int):
 
 
 def pick_representative_q0(branches, kin, track_pts, plane_normal_t,
-                            rollout_fn, L_max, mode: str = 'best'):
+                            L_max, mode: str = 'best'):
     """For each branch, sample 15 q0 along its arc and pick one:
        'best'   = highest L_self  (branch potential, default for viewer)
        'median' = closest to median L (typical branch behavior)
@@ -191,7 +106,7 @@ def pick_representative_q0(branches, kin, track_pts, plane_normal_t,
         n = min(15, traj.shape[0])
         idxs = np.linspace(0, traj.shape[0] - 1, n).astype(int)
         q_samp = torch.as_tensor(traj[idxs], device=kin.device, dtype=torch.float32)
-        L = rollout_fn(kin, q_samp, track_pts, plane_normal_t)
+        L = rollout_lengths_6dof(kin, q_samp, track_pts, plane_normal_t)
         if mode == 'best':
             pick = int(np.argmax(L))
         elif mode == 'worst':
@@ -207,9 +122,64 @@ def pick_representative_q0(branches, kin, track_pts, plane_normal_t,
     return rep
 
 
-def save_summary_plot(out_png: Path, seed: int, task_dof: str, mode_label: str,
+def save_smm_joint_curves(out_png: Path, seed: int, kin, branches):
+    """7 subplots, one per joint: q_j(arc length along SMM) overlaid per branch,
+    with FR3 joint limits as dashed red lines and branch endpoints starred."""
+    lo = kin.lmt_lo.detach().cpu().numpy()
+    hi = kin.lmt_up.detach().cpu().numpy()
+    cmap = plt.get_cmap('tab10')
+    fig, axes = plt.subplots(2, 4, figsize=(15, 7))
+    axes = axes.flatten()
+    for j in range(7):
+        ax = axes[j]
+        ax.axhspan(lo[j] - 1, lo[j], color='red', alpha=0.10)
+        ax.axhspan(hi[j], hi[j] + 1, color='red', alpha=0.10)
+        ax.axhline(lo[j], color='red', linestyle='--', linewidth=0.8, alpha=0.7)
+        ax.axhline(hi[j], color='red', linestyle='--', linewidth=0.8, alpha=0.7)
+        for bid, b in enumerate(branches):
+            traj = b['traj']
+            diffs = np.linalg.norm(np.diff(traj, axis=0), axis=1)
+            x = np.concatenate([[0.0], np.cumsum(diffs)])
+            ax.plot(x, traj[:, j], '-', color=cmap(bid % 10), alpha=0.85,
+                     linewidth=1.6,
+                     label=f'br{bid} ({"closed" if b["closed"] else "open"})')
+            ax.scatter([x[0], x[-1]], [traj[0, j], traj[-1, j]],
+                        s=40, c=[cmap(bid % 10)],
+                        edgecolors='black', linewidths=0.5, zorder=5)
+        ax.set_title(f'j{j}  limits [{lo[j]:.2f}, {hi[j]:.2f}]', fontsize=10)
+        ax.set_xlabel('arc length along SMM (rad)', fontsize=8)
+        ax.set_ylabel('q [rad]', fontsize=8)
+        ax.grid(alpha=0.3)
+        ax.tick_params(labelsize=8)
+        all_y = np.concatenate([b['traj'][:, j] for b in branches])
+        ymin = min(lo[j], float(all_y.min())) - 0.2
+        ymax = max(hi[j], float(all_y.max())) + 0.2
+        ax.set_ylim(ymin, ymax)
+        if j == 0:
+            ax.legend(fontsize=8)
+    ax_info = axes[7]
+    ax_info.axis('off')
+    info = [f'seed={seed}', f'{len(branches)} SMM branches', '']
+    for bid, b in enumerate(branches):
+        arc = float(np.sum(np.linalg.norm(np.diff(b['traj'], axis=0), axis=1)))
+        info.append(f'  br{bid}: T={b["traj"].shape[0]}, arc={arc:.2f} rad, '
+                     f'{"closed" if b["closed"] else "open"}')
+    info += ['', 'dashed red = FR3 joint limits',
+              'star = SMM arc endpoint']
+    ax_info.text(0.0, 1.0, '\n'.join(info), fontsize=9,
+                  family='monospace', verticalalignment='top')
+    fig.suptitle(f'SMM joint trajectories (seed={seed})',
+                  fontsize=12, y=1.005)
+    fig.tight_layout()
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=200, bbox_inches='tight')
+    plt.close(fig)
+
+
+def save_summary_plot(out_png: Path, seed: int,
                        branches, Q, assigned,
                        all_bid, all_arc, L_rel):
+    """3-panel summary: SMM PCA scatter + per-branch L violin + intra-branch L vs arc."""
     cmap = plt.get_cmap('tab10')
     fig, axes = plt.subplots(1, 3, figsize=(18, 5.5))
 
@@ -263,7 +233,7 @@ def save_summary_plot(out_png: Path, seed: int, task_dof: str, mode_label: str,
                    edgecolors='black', linewidths=0.3, zorder=3)
     ax.set_xticks(pos); ax.set_xticklabels(lbls)
     ax.set_ylabel('L_self / L_max')
-    ax.set_title(f'path-following per branch  [{mode_label}]')
+    ax.set_title('path-following per branch  [6-DOF strict]')
     ax.set_ylim(-0.02, max(float(L_rel.max()) * 1.15, 0.15))
     ax.grid(alpha=0.3, axis='y')
 
@@ -282,17 +252,13 @@ def save_summary_plot(out_png: Path, seed: int, task_dof: str, mode_label: str,
     ax.legend(fontsize=9); ax.grid(alpha=0.3)
     ax.set_ylim(-0.02, max(float(L_rel.max()) * 1.15, 0.15))
 
-    fig.suptitle(f'task seed={seed},  rollout={mode_label}',
+    fig.suptitle(f'task seed={seed},  6-DOF strict rollout '
+                 f'(rollout constraint = SMM enumeration constraint)',
                  fontsize=12, y=1.02)
     fig.tight_layout()
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=200, bbox_inches='tight')
     plt.close(fig)
-
-
-GHOST_ALPHA = 0.20
-ACTIVE_ALPHA = 0.95
-HIDDEN_ALPHA = 0.0
 
 
 def launch_viewer(seed: int, kin, branches, rep, q_traj_np, fail_infos,
@@ -356,8 +322,6 @@ def launch_viewer(seed: int, kin, branches, rep, q_traj_np, fail_infos,
         bid = state['active_bid']
         death = death_step[bid]
 
-        # On branch switch: swap alpha (arm + pen primitives), place active
-        # arm at start, reset time.
         if state['just_switched']:
             for i, arm in enumerate(actives):
                 target = ACTIVE_ALPHA if i == bid else HIDDEN_ALPHA
@@ -368,9 +332,6 @@ def launch_viewer(seed: int, kin, branches, rep, q_traj_np, fail_infos,
                   f'(death step {death}, {fail_infos[bid]["reason"]})')
             state['just_switched'] = False
 
-        # Hold phase: keep the just-died branch frozen at its death pose.
-        # Advance bid only once the hold has fully elapsed (so the *next*
-        # frame, via just_switched, swaps the visible arm cleanly).
         if state['hold'] > 0.0:
             state['hold'] -= PLAYBACK_DT
             actives[bid].fk(q_traj_np[death, bid])
@@ -394,9 +355,7 @@ def launch_viewer(seed: int, kin, branches, rep, q_traj_np, fail_infos,
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=118)
-    parser.add_argument('--task-dof', type=str, choices=['5', '5strict', '6'],
-                        default='5')
-    parser.add_argument('--n-per-branch', type=int, default=30)
+    parser.add_argument('--n-per-branch', type=int, default=100)
     parser.add_argument('--n-ik-seeds', type=int, default=256)
     parser.add_argument('--h', type=float, default=DEFAULT_H)
     parser.add_argument('--no-viewer', action='store_true')
@@ -415,8 +374,6 @@ def main():
     rng = np.random.default_rng(args.seed)
     torch.manual_seed(args.seed)
 
-    rollout_fn, record_fn, mode_label = get_rollout_fns(args.task_dof)
-
     # --- task pose ---
     p_tgt, R_tgt, task = get_task_target_pose(args.seed, kin, rng,
                                                 free=args.free_task)
@@ -427,8 +384,7 @@ def main():
     track_pts = as_tensor(task_path, device)
     plane_normal_np = task['plane_normal']
     plane_normal_t = as_tensor(plane_normal_np, device)
-    print(f'seed={args.seed}, task L_max={L_max:.3f}m, '
-          f'p_tgt={p_tgt}')
+    print(f'seed={args.seed}, task L_max={L_max:.3f}m, p_tgt={p_tgt}')
 
     # --- enumerate SMM branches at task start ---
     p_t = torch.as_tensor(p_tgt, device=device, dtype=torch.float32)
@@ -453,11 +409,11 @@ def main():
         print(f'  br{bid}: T={b["traj"].shape[0]}, arc={arc:.2f} rad, '
               f'{"closed" if b["closed"] else "open"}, members={n_m}')
 
-    # --- path-following stats ---
+    # --- path-following stats (6-DOF strict) ---
     all_q, all_bid, all_arc = sample_branch_q0s(branches, args.n_per_branch)
     q_batch = torch.as_tensor(all_q, device=device, dtype=torch.float32)
-    print(f'\n  rollout: {q_batch.shape[0]} q0 samples, mode={mode_label}')
-    L_abs = rollout_fn(kin, q_batch, track_pts, plane_normal_t)
+    print(f'\n  6-DOF strict rollout: {q_batch.shape[0]} q0 samples')
+    L_abs = rollout_lengths_6dof(kin, q_batch, track_pts, plane_normal_t)
     L_rel = L_abs / L_max
 
     print('\n  per-branch L_self / L_max:')
@@ -467,12 +423,15 @@ def main():
         print(f'    br{bid}: n={len(L)}, mean={L.mean():.3f}, '
               f'std={L.std():.3f}, range=[{L.min():.3f}, {L.max():.3f}]')
 
-    # --- save summary PNG ---
+    # --- save PNGs ---
     out_dir = Path(args.out_dir)
-    out_png = out_dir / f'task_seed{args.seed}_dof{args.task_dof}_summary.png'
-    save_summary_plot(out_png, args.seed, args.task_dof, mode_label,
-                       branches, Q, assigned, all_bid, all_arc, L_rel)
+    out_png = out_dir / f'task_seed{args.seed}_summary.png'
+    save_summary_plot(out_png, args.seed, branches, Q, assigned,
+                       all_bid, all_arc, L_rel)
     print(f'\nsaved: {out_png}')
+    joints_png = out_dir / f'task_seed{args.seed}_smm_joints.png'
+    save_smm_joint_curves(joints_png, args.seed, kin, branches)
+    print(f'saved: {joints_png}')
 
     if args.no_viewer:
         return
@@ -480,13 +439,13 @@ def main():
     # --- launch ONE viewer with rollout animation ---
     print(f'\n  preparing viewer (q0 selection: {args.rep_mode})...')
     rep = pick_representative_q0(branches, kin, track_pts, plane_normal_t,
-                                  rollout_fn, L_max, mode=args.rep_mode)
+                                  L_max, mode=args.rep_mode)
     for bid, r in enumerate(rep):
         print(f'    br{bid}: representative L_self={r["L_self_norm"]:.3f}, '
               f'arc_pos={r["arc_pos"]:.2f}')
     q_init = torch.as_tensor(np.array([r['q0'] for r in rep]),
                               device=device, dtype=torch.float32)
-    q_traj, fail_infos = record_fn(kin, q_init, track_pts, plane_normal_np)
+    q_traj, fail_infos = record_rollout_6dof(kin, q_init, track_pts, plane_normal_np)
     q_traj_np = q_traj.detach().cpu().numpy()
     print(f'  recorded {q_traj_np.shape[0]} steps; per-branch death:')
     for bid in range(len(branches)):

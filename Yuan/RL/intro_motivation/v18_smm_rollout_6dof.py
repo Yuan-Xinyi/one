@@ -171,7 +171,8 @@ def rollout_chunk_6dof(kin: BatchedFR3Kinematics,
             alive_mask=alive,
             enforce_init_pose=(enforce_init_pose and idx == 0),
         )
-        completed = lengths_step.float() / float(n_steps) * seg_len
+        # Step-based: each successful step advances p_ref by V_PATH*DT.
+        completed = lengths_step.float() * (V_PATH * float(cfg.DT))
         lengths_m = torch.where(alive_entering, lengths_m + completed, lengths_m)
 
     return lengths_m.detach().cpu().numpy()

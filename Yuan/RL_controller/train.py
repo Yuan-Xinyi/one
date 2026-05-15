@@ -2,7 +2,8 @@
 
 Usage:
     python -m Yuan.RL_controller.train --config Yuan/RL_controller/config.yaml \\
-        [--ckpt path/to/agent.pt] [--device cuda|cpu]
+        [--ckpt path/to/agent.pt] [--device cuda|cpu] \\
+        [--wandb] [--wandb-project NSRL-FR3] [--wandb-run-name runs4]
 """
 from __future__ import annotations
 
@@ -38,8 +39,10 @@ def _resolve_log_path(out_dir: Path) -> Path:
     return out_dir / "train.log"
 
 
+_TERM_NAMES = {0: "alive", 2: "collision", 3: "cone", 4: "jl", 5: "truncated"}
+
+
 def _make_eval_fn(eval_env: NSRLBatchedEnv):
-    # Import lazily to avoid circular dependency between env/__init__ and eval helpers
     from Yuan.RL_controller.env.baseline_controller import rollout_first_episode
 
     @torch.no_grad()
@@ -53,9 +56,17 @@ def _make_eval_fn(eval_env: NSRLBatchedEnv):
             return _policy_action(env, agent)
         stats = rollout_first_episode(eval_env, action_fn)
         ep_len = stats["episode_len"].float()
+        term = stats["term_reason"].cpu().numpy()
+        n = term.shape[0]
+        # term_reason fractions for trend tracking
+        frac = {f"eval_term/{name}": float((term == code).sum()) / n
+                for code, name in _TERM_NAMES.items()}
         return {
             "eval_mean_len": float(ep_len.mean().item()),
             "eval_median_len": float(ep_len.median().item()),
+            "eval_min_len": float(ep_len.min().item()),
+            "eval_max_len": float(ep_len.max().item()),
+            **frac,
         }
 
     return _eval
@@ -68,6 +79,11 @@ def main():
                         help="cuda or cpu; default auto-detect")
     parser.add_argument("--ckpt", default=None)
     parser.add_argument("--out-dir", default="Yuan/RL_controller/runs")
+    parser.add_argument("--wandb", action="store_true",
+                        help="enable wandb logging")
+    parser.add_argument("--wandb-project", default="NSRL-FR3")
+    parser.add_argument("--wandb-run-name", default=None,
+                        help="defaults to basename of --out-dir")
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
@@ -111,11 +127,41 @@ def main():
     log_file = open(log_path, "w")
     t0 = time.time()
 
+    wandb_run = None
+    if args.wandb:
+        import wandb
+        run_name = args.wandb_run_name or out_dir.name
+        wandb_run = wandb.init(
+            project=args.wandb_project,
+            name=run_name,
+            dir=str(out_dir),
+            config={
+                "env": cfg_yaml["env"],
+                "ppo": cfg_yaml["ppo"],
+                "line_distribution": cfg_yaml["line_distribution"],
+                "baseline": cfg_yaml.get("baseline", {}),
+                "eval": cfg_yaml["eval"],
+                "train": cfg_yaml["train"],
+            },
+            save_code=False,
+        )
+        # Group eval & term_reason under their own panels by using "/" naming
+        wandb.define_metric("global_step")
+        wandb.define_metric("*", step_metric="global_step")
+
     def log_fn(d: dict):
         d_with_time = {"wall_s": time.time() - t0, **d}
         log_file.write(repr(d_with_time) + "\n")
         log_file.flush()
         print({k: round(v, 4) if isinstance(v, float) else v for k, v in d_with_time.items()})
+        if wandb_run is not None:
+            # Map both per-update and eval logs onto global_step axis
+            step = d.get("global_step", d.get("eval_at_step"))
+            payload = {k: v for k, v in d_with_time.items() if k != "global_step"}
+            if step is not None:
+                wandb_run.log({"global_step": step, **payload})
+            else:
+                wandb_run.log(payload)
 
     eval_fn = _make_eval_fn(eval_env)
     n_updates = ppo_cfg.total_timesteps // (ppo_cfg.n_steps * env_cfg.n_envs)
@@ -127,6 +173,8 @@ def main():
                       ckpt_path=ckpt_path,
                       ckpt_every_n_updates=train_cfg.get("ckpt_every_n_updates", 10))
     log_file.close()
+    if wandb_run is not None:
+        wandb_run.finish()
     print(f"[train] done, ckpt → {ckpt_path}")
 
 

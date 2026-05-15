@@ -141,10 +141,12 @@ saves `info["terminal_obs"]` before auto-reset; the PPO GAE loop pulls
    for that single step. With `max_steps = 10000` and typical episode length
    « 10000, truncations are rare; magnitude is negligible.
 
-5. **`tcp_offset = 0.0`** matches the scalar `FR3()` class's identity TCP
-   (bare flange). Switching to a pen tip requires also setting the
-   corresponding `_loc_tcp_tf` on the scalar FR3 instance, otherwise
-   `ik_init.py` and the batched env will disagree on TCP position.
+5. **`tcp_offset = 0.2034`** (pen tip) is the env's EE. The position task
+   drives the pen tip along `v · u_hat`. Visualization (`visualize.py`) uses
+   `make_fr3_with_pen(use_pen_tcp=True)` so scalar `FR3`'s `_loc_tcp_tf` is
+   also at the pen tip; `gl_tcp_tf` then matches the env's EE 1:1. Switching
+   to bare flange would require setting `tcp_offset=0.0` here AND
+   `use_pen_tcp=False` in `visualize.py`.
 
 6. **No obs / reward normalization**. PPO often benefits from these.
    Skipped per spec ("先把上述跑通"). Add later if learning is unstable.

@@ -38,6 +38,55 @@ class PPOConfig:
     target_kl: float | None = None
     hidden_dim: int = 256
     init_log_std: float = -0.5
+    normalize_returns: bool = True
+
+
+class _RunningMeanStd:
+    """Welford's online scalar mean/var, torch."""
+    def __init__(self, device, epsilon: float = 1e-4):
+        self.mean = torch.zeros(1, device=device)
+        self.var = torch.ones(1, device=device)
+        self.count = epsilon
+
+    @torch.no_grad()
+    def update(self, x: torch.Tensor) -> None:
+        batch_mean = x.mean()
+        batch_var = x.var(unbiased=False)
+        batch_count = x.numel()
+        delta = batch_mean - self.mean
+        tot = self.count + batch_count
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        M2 = m_a + m_b + delta * delta * self.count * batch_count / tot
+        self.mean = self.mean + delta * batch_count / tot
+        self.var = M2 / tot
+        self.count = tot
+
+
+class RewardScaler:
+    """Divide rewards by running std of discounted returns.
+
+    Mirrors sb3 VecNormalize / OpenAI baselines NormalizeReward. The V function
+    then learns in scaled (z-score-magnitude) space, sidestepping the MLP-with-
+    standard-init-doesn't-like-targets-of-magnitude-1000 problem.
+    """
+    def __init__(self, n_envs: int, gamma: float, device, epsilon: float = 1e-4):
+        self.rms = _RunningMeanStd(device, epsilon)
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.return_acc = torch.zeros(n_envs, device=device)
+
+    @torch.no_grad()
+    def step(self, rewards: torch.Tensor, dones: torch.Tensor) -> torch.Tensor:
+        self.return_acc = self.return_acc * self.gamma + rewards
+        self.rms.update(self.return_acc)
+        # Reset return accumulator on done (so next-step return starts fresh)
+        self.return_acc = self.return_acc * (1.0 - dones.to(self.return_acc.dtype))
+        return rewards / torch.sqrt(self.rms.var + self.epsilon)
+
+    @property
+    def scale(self) -> float:
+        return float(torch.sqrt(self.rms.var + self.epsilon).item())
 
 
 def _layer_init(layer: nn.Linear, std: float = np.sqrt(2.0), bias_const: float = 0.0):
@@ -113,6 +162,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
     values_buf = torch.zeros((cfg.n_steps, n_envs), device=device)
     terminal_obs_buf = torch.zeros((cfg.n_steps, n_envs, obs_dim), device=device)
 
+    reward_scaler = (RewardScaler(n_envs, cfg.gamma, device)
+                     if cfg.normalize_returns else None)
+
     next_obs = env.reset()
     next_done = torch.zeros(n_envs, device=device)
     global_step = 0
@@ -134,11 +186,15 @@ def train(cfg: PPOConfig, env, device: torch.device,
             values_buf[step] = value
 
             next_obs, reward, term, trunc, info = env.step(action)
-            rewards_buf[step] = reward.to(device)
+            done_now = (term | trunc).to(device)
+            r_dev = reward.to(device)
+            if reward_scaler is not None:
+                r_dev = reward_scaler.step(r_dev, done_now)
+            rewards_buf[step] = r_dev
             terminated_buf[step] = term.float()
             truncated_buf[step] = trunc.float()
             terminal_obs_buf[step] = info["terminal_obs"]
-            next_done = (term | trunc).float()
+            next_done = done_now.float()
 
         # Bootstrap: V(next_obs) for ongoing envs; V(terminal_obs) for truncated;
         # 0 for terminated. We compute V(next_obs) for the boundary and
@@ -235,6 +291,8 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 "approx_kl": float(approx_kl_value),
                 "clipfrac": float(np.mean(clipfracs)) if clipfracs else 0.0,
                 "lr": optimizer.param_groups[0]["lr"],
+                "reward_scale": (reward_scaler.scale
+                                 if reward_scaler is not None else 1.0),
             })
 
         if eval_fn is not None and global_step >= next_eval:

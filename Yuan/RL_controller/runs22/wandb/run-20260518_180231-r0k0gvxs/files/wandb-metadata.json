@@ -1,25 +1,25 @@
 {
   "os":  "Linux-5.15.0-174-generic-x86_64-with-glibc2.35",
   "python":  "CPython 3.12.12",
-  "startedAt":  "2026-05-18T06:05:56.435849Z",
+  "startedAt":  "2026-05-18T09:02:31.714749Z",
   "args":  [
     "--config",
     "Yuan/RL_controller/config.yaml",
     "--out-dir",
-    "Yuan/RL_controller/runs15",
+    "Yuan/RL_controller/runs22",
     "--wandb",
     "--wandb-project",
     "NSRL-FR3",
     "--wandb-run-name",
-    "runs15-delta-anneal-ent-cached"
+    "runs22-progress-dominant-reward"
   ],
   "program":  "-m Yuan.RL_controller.train",
   "git":  {
     "remote":  "https://github.com/Yuan-Xinyi/one.git",
-    "commit":  "2ed9312140dd098b44e3150f0696fc352e837a22"
+    "commit":  "a2bd54b387b0dc54512130bfcf1594a0d3cdde24"
   },
   "email":  "xyuan749@connect.hkust-gz.edu.cn",
-  "root":  "Yuan/RL_controller/runs15",
+  "root":  "Yuan/RL_controller/runs22",
   "host":  "wrs",
   "executable":  "/home/lqin/miniconda3/envs/one/bin/python",
   "cpu_count":  16,
@@ -29,7 +29,7 @@
   "disk":  {
     "/":  {
       "total":  "1967315451904",
-      "used":  "1666737950720"
+      "used":  "1666789851136"
     }
   },
   "memory":  {
@@ -45,5 +45,5 @@
     }
   ],
   "cudaVersion":  "13.0",
-  "writerId":  "n5u5e88lbqpsvf7n1cwd21csrw864p14"
+  "writerId":  "f9o06e5b3o9nuj2hw8nnlqde6hkrkxeg"
 }

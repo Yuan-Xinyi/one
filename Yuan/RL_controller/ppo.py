@@ -106,9 +106,8 @@ class Agent(nn.Module):
       - log_prob includes Jacobian correction: log π(a) = log N(z) - Σ log(1 - tanh²(z))
 
     Without the squash, PPO would push μ unbounded (because clip-then-step
-    gives biased gradient): we observed μ growing to 3.5+ on runs7/10, which
-    produced perpetually-saturated actions and explained why deterministic
-    eval matched random-Gaussian baseline.
+    gives biased gradient), producing perpetually-saturated actions whose
+    deterministic eval matches the random-Gaussian baseline.
     """
     LOG_STD_MIN = -5.0
     LOG_STD_MAX = 0.0  # σ ≤ 1.0 (was 7.4); state-dep log_std grew unboundedly otherwise

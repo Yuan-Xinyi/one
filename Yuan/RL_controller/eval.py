@@ -45,9 +45,6 @@ from Yuan.RL_controller.ppo import Agent
 
 TERM_NAMES = {0: "alive", 2: "collision", 3: "cone", 4: "jl", 5: "truncated"}
 
-# Backwards-compat alias for any external caller (the class lives in env/line_distribution.py now)
-_ScriptedLineDistribution = ScriptedLineDistribution
-
 
 def _rl_action_fn(agent: Agent):
     @torch.no_grad()
@@ -94,7 +91,7 @@ def main():
 
     # RL rollout
     rl_env = proxy_env
-    rl_env.line_dist = _ScriptedLineDistribution(
+    rl_env.line_dist = ScriptedLineDistribution(
         {k: v.clone() for k, v in holdout.items()})
     agent = Agent(rl_env.obs_dim, rl_env.act_dim,
                   hidden_dim=cfg_yaml["ppo"]["hidden_dim"],
@@ -106,7 +103,7 @@ def main():
 
     # Baseline rollout — fresh env to reset internal state
     base_env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
-    base_env.line_dist = _ScriptedLineDistribution(
+    base_env.line_dist = ScriptedLineDistribution(
         {k: v.clone() for k, v in holdout.items()})
     base_ctrl = GPMBaselineController(base_env.kin,
                                       k_jl=cfg_yaml["baseline"]["k_jl"])

@@ -55,18 +55,13 @@ def _make_eval_fn(eval_env: NSRLBatchedEnv):
         def action_fn(env):
             return _policy_action(env, agent)
         stats = rollout_first_episode(eval_env, action_fn)
-        ep_len = stats["episode_len"].float()
         term = stats["term_reason"].cpu().numpy()
         n = term.shape[0]
-        # term_reason fractions for trend tracking
+        # term_reason fractions for trend tracking (failure-mode panel)
         frac = {f"eval_term/{name}": float((term == code).sum()) / n
                 for code, name in _TERM_NAMES.items()}
         ep_progress = stats["episode_progress"].float()
         return {
-            "eval/mean_len": float(ep_len.mean().item()),
-            "eval/median_len": float(ep_len.median().item()),
-            "eval/min_len": float(ep_len.min().item()),
-            "eval/max_len": float(ep_len.max().item()),
             "eval/mean_progress_m": float(ep_progress.mean().item()),
             "eval/median_progress_m": float(ep_progress.median().item()),
             "eval/max_progress_m": float(ep_progress.max().item()),
@@ -178,8 +173,7 @@ def main():
         elif "eval_at_step" in d:
             print(
                 f"  eval @ {d['eval_at_step']:>9}  "
-                f"progress(mean {d.get('eval/mean_progress_m', 0):.3f}m  med {d.get('eval/median_progress_m', 0):.3f}m  max {d.get('eval/max_progress_m', 0):.3f}m)  "
-                f"len(mean {d.get('eval/mean_len', 0):.1f}  max {d.get('eval/max_len', 0):.0f})",
+                f"progress(mean {d.get('eval/mean_progress_m', 0):.3f}m  med {d.get('eval/median_progress_m', 0):.3f}m  max {d.get('eval/max_progress_m', 0):.3f}m)",
                 flush=True)
         if wandb_run is not None:
             # Map both per-update and eval logs onto global_step axis

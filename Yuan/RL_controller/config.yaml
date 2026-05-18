@@ -13,13 +13,13 @@ env:
   r_cone: 0.0
   r_jl: 0.0
   # Length-based shaping reward. Weights normalized to sum=1 at runtime.
-  # w_progress replaces the old constant alive term: per-step reward is
-  # w_progress · clip(Δp·u_hat/(v·dt), 0, 1) — full speed = w_progress,
-  # stuck = 0. Defeats the "撑步数 in place near singular" failure mode.
-  w_progress: 0.1
-  w_jl: 0.3
-  w_cone: 0.3
-  w_dm: 0.3
+  # w_progress dominates: in runs21 dm dominated PG (5x prog per step) and
+  # the policy chased manipulability without moving the EE. Now progress is
+  # the primary signal; jl/dm/cone are minor shaping terms.
+  w_progress: 0.6
+  w_jl: 0.2
+  w_cone: 0.1
+  w_dm: 0.1
   delta_scale: 100.0
   manip_damping: 1.0e-3
 

@@ -125,32 +125,24 @@ def test_telescoping_property():
 
 
 def test_reset_clears_prev_caches():
-    """After auto-reset of an env, prev caches are NaN, next step delta = 0 for that env."""
+    """After auto-reset of an env, history ring buffers are NaN, next step delta = 0 for that env."""
     env = _build_env(w_progress=0.0, w_jl=1.0, w_cone=1.0, w_dm=1.0, max_steps=3)
     a = torch.zeros(env.n_envs, env.act_dim)
     for _ in range(3):
         _, _, _, _, info = env.step(a, auto_reset=True)
         if info["episode_done"].any():
             break
-    # After auto-reset (e.g., truncation), caches should be NaN
-    assert torch.any(torch.isnan(env.q_norm_sq_prev)) or \
-           torch.any(torch.isnan(env.cos_angle_prev)) or \
-           torch.any(torch.isnan(env.w_u_prev)), \
-        f"some prev caches should be NaN after reset"
+    # After auto-reset (e.g., truncation), ring-buffer history should be NaN
+    assert torch.any(torch.isnan(env.q_norm_sq_hist)) or \
+           torch.any(torch.isnan(env.cos_angle_hist)) or \
+           torch.any(torch.isnan(env.w_u_hist)), \
+        f"some history buffers should be NaN after reset"
     # Next step's reward should be 0 (no delta contribution because of NaN sentinel)
     _, rew, _, _, _ = env.step(a, auto_reset=True)
     expected = torch.zeros_like(rew)
     assert torch.allclose(rew, expected, atol=1e-4), \
         f"first-step-after-reset reward should be 0 (alive=0, deltas=0); got {rew}"
     print(f"[ok] reset clears caches; first post-reset step delta = 0")
-
-
-def test_delta_jl_sign():
-    """JL delta sign: cumulative jl reward over a rollout should equal
-    K · w_jl · (q_norm_sq[t=1] − q_norm_sq[final]) — sign matches "improvement
-    means away from center". Covered indirectly by test_telescoping_property,
-    skipped here (manual q overwrite caused spurious cone termination)."""
-    print(f"[skip] delta_jl_sign: covered by test_telescoping_property")
 
 
 def test_baseline_k_dm_actually_adds_term():
@@ -176,6 +168,5 @@ if __name__ == "__main__":
     test_progress_only_full_speed()
     test_telescoping_property()
     test_reset_clears_prev_caches()
-    test_delta_jl_sign()
     test_baseline_k_dm_actually_adds_term()
     print("\n=== all tests passed ===")

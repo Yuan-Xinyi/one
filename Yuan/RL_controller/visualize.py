@@ -4,7 +4,7 @@ Usage:
     # RL policy
     python -m Yuan.RL_controller.visualize \\
         --config Yuan/RL_controller/config.yaml \\
-        --controller rl --ckpt Yuan/RL_controller/runs11/agent.pt
+        --controller rl --ckpt path/to/agent.pt
 
     # Classical 4-term nullspace controller (hand-tuned strong baseline)
     python -m Yuan.RL_controller.visualize \\
@@ -65,9 +65,6 @@ parser.add_argument("--controller", choices=["rl", "classical", "gpm"], default=
                     help="rl=trained policy (needs --ckpt); classical=4-term hand-tuned NS; gpm=weak GPM-JL")
 parser.add_argument("--ckpt", default=None,
                     help="agent state_dict path; required when --controller rl")
-# Back-compat shim: --baseline was the old flag for GPM-only
-parser.add_argument("--baseline", action="store_true",
-                    help="(deprecated) alias for --controller gpm")
 parser.add_argument("--device", default="cpu")
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--steps-per-tick", type=int, default=1,
@@ -78,8 +75,6 @@ with open(args.config, "r") as f:
     cfg_yaml = yaml.safe_load(f)
 
 # Resolve which controller to run
-if args.baseline and args.controller is None:
-    args.controller = "gpm"
 if args.controller is None:
     args.controller = "rl" if args.ckpt is not None else None
 if args.controller is None:

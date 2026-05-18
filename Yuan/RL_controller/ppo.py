@@ -33,6 +33,7 @@ class PPOConfig:
     clip_coef: float = 0.2
     clip_vloss: bool = True
     ent_coef: float = 0.0
+    anneal_ent_coef: bool = False  # linearly decay ent_coef from initial to 0
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     target_kl: float | None = None
@@ -96,7 +97,23 @@ def _layer_init(layer: nn.Linear, std: float = np.sqrt(2.0), bias_const: float =
 
 
 class Agent(nn.Module):
-    def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 256,
+    """Actor-critic with tanh-squashed Gaussian policy.
+
+    Action representation:
+      - actor outputs (μ(s), log σ(s)) ∈ ℝ⁴, state-dependent log σ
+      - pre-squash z ~ Normal(μ, σ) is the "action" stored in PPO buffer
+      - env receives tanh(z) ∈ (-1, 1)⁴ (bounded, no clipping bias)
+      - log_prob includes Jacobian correction: log π(a) = log N(z) - Σ log(1 - tanh²(z))
+
+    Without the squash, PPO would push μ unbounded (because clip-then-step
+    gives biased gradient): we observed μ growing to 3.5+ on runs7/10, which
+    produced perpetually-saturated actions and explained why deterministic
+    eval matched random-Gaussian baseline.
+    """
+    LOG_STD_MIN = -5.0
+    LOG_STD_MAX = 0.0  # σ ≤ 1.0 (was 7.4); state-dep log_std grew unboundedly otherwise
+
+    def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 512,
                  init_log_std: float = -0.5):
         super().__init__()
         self.critic = nn.Sequential(
@@ -105,26 +122,46 @@ class Agent(nn.Module):
             _layer_init(nn.Linear(hidden_dim, hidden_dim)), nn.ReLU(),
             _layer_init(nn.Linear(hidden_dim, 1), std=1.0),
         )
-        self.actor_mean = nn.Sequential(
+        self._actor_trunk = nn.Sequential(
             _layer_init(nn.Linear(obs_dim, hidden_dim)), nn.ReLU(),
             _layer_init(nn.Linear(hidden_dim, hidden_dim)), nn.ReLU(),
             _layer_init(nn.Linear(hidden_dim, hidden_dim)), nn.ReLU(),
-            _layer_init(nn.Linear(hidden_dim, act_dim), std=0.01),
         )
-        self.actor_logstd = nn.Parameter(torch.ones(1, act_dim) * init_log_std)
+        self._mean_head = _layer_init(nn.Linear(hidden_dim, act_dim), std=0.01)
+        self._logstd_head = _layer_init(nn.Linear(hidden_dim, act_dim), std=0.01)
+        with torch.no_grad():
+            self._logstd_head.bias.fill_(init_log_std)
+
+    def actor_mean(self, x: torch.Tensor) -> torch.Tensor:
+        """Deterministic action: tanh(μ(s)) ∈ (-1, 1). Used by eval / viz."""
+        return torch.tanh(self._mean_head(self._actor_trunk(x)))
 
     def get_value(self, x: torch.Tensor) -> torch.Tensor:
         return self.critic(x).squeeze(-1)
 
-    def get_action_and_value(self, x: torch.Tensor, action: torch.Tensor | None = None):
-        mean = self.actor_mean(x)
-        log_std = self.actor_logstd.expand_as(mean)
-        std = log_std.exp()
-        dist = Normal(mean, std)
+    def _actor_dist(self, x: torch.Tensor) -> Normal:
+        h = self._actor_trunk(x)
+        mean = self._mean_head(h)
+        log_std = self._logstd_head(h).clamp(self.LOG_STD_MIN, self.LOG_STD_MAX)
+        return Normal(mean, log_std.exp())
+
+    def get_action_and_value(self, x: torch.Tensor,
+                             action: torch.Tensor | None = None):
+        """Action representation is PRE-SQUASH z. Caller is responsible for
+        `torch.tanh(action)` before sending to env.
+
+        Returns (z, log_prob, entropy_of_underlying_Normal, value).
+        """
+        dist = self._actor_dist(x)
         if action is None:
-            action = dist.sample()
-        log_prob = dist.log_prob(action).sum(-1)
-        entropy = dist.entropy().sum(-1)
+            action = dist.sample()  # z ~ Normal(μ, σ)
+        z = action
+        log_prob_normal = dist.log_prob(z).sum(-1)
+        squashed = torch.tanh(z)
+        # Tanh Jacobian correction: log|∂a/∂z| = Σ log(1 - tanh²(z))
+        log_prob = log_prob_normal - torch.log(
+            (1.0 - squashed.pow(2)).clamp(min=1e-6)).sum(-1)
+        entropy = dist.entropy().sum(-1)  # underlying Normal entropy (proxy)
         return action, log_prob, entropy, self.critic(x).squeeze(-1)
 
 
@@ -169,13 +206,24 @@ def train(cfg: PPOConfig, env, device: torch.device,
     next_done = torch.zeros(n_envs, device=device)
     global_step = 0
     next_eval = eval_every
+    # Per-term reward accumulators (averaged per update)
+    _reward_term_keys = ("r_progress_mean", "r_jl_mean", "r_cone_mean", "r_dm_mean",
+                         "w_u_mean")
+    # Episode-finish aggregates (weighted by n_episodes_done across the rollout)
+    _episode_keys = ("ep_reward_mean", "ep_len_mean", "r_terminal_mean",
+                     "ep_progress_mean")
 
     for update in range(1, n_updates + 1):
+        frac = 1.0 - (update - 1.0) / n_updates  # 1 → 0 over training
         if cfg.anneal_lr:
-            frac = 1.0 - (update - 1.0) / n_updates
             for pg in optimizer.param_groups:
                 pg["lr"] = frac * cfg.learning_rate
+        ent_coef_now = cfg.ent_coef * frac if cfg.anneal_ent_coef else cfg.ent_coef
 
+        rollout_term_accum = {k: 0.0 for k in _reward_term_keys}
+        rollout_term_n = 0
+        ep_accum = {k: 0.0 for k in _episode_keys}
+        ep_total_finished = 0
         for step in range(cfg.n_steps):
             global_step += n_envs
             obs_buf[step] = next_obs
@@ -185,7 +233,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
             logprobs_buf[step] = logprob
             values_buf[step] = value
 
-            next_obs, reward, term, trunc, info = env.step(action)
+            # Squash the unsquashed z before sending to env (env expects (-1, 1)^4)
+            squashed_action = torch.tanh(action)
+            next_obs, reward, term, trunc, info = env.step(squashed_action)
             done_now = (term | trunc).to(device)
             r_dev = reward.to(device)
             if reward_scaler is not None:
@@ -195,6 +245,17 @@ def train(cfg: PPOConfig, env, device: torch.device,
             truncated_buf[step] = trunc.float()
             terminal_obs_buf[step] = info["terminal_obs"]
             next_done = done_now.float()
+            for k in _reward_term_keys:
+                if k in info:
+                    rollout_term_accum[k] += info[k]
+            rollout_term_n += 1
+            n_done = int(info.get("n_episodes_done", 0))
+            if n_done > 0:
+                for k in _episode_keys:
+                    v = info.get(k, float("nan"))
+                    if v == v:  # not NaN
+                        ep_accum[k] += float(v) * n_done
+                ep_total_finished += n_done
 
         # Bootstrap: V(next_obs) for ongoing envs; V(terminal_obs) for truncated;
         # 0 for terminated. We compute V(next_obs) for the boundary and
@@ -271,7 +332,7 @@ def train(cfg: PPOConfig, env, device: torch.device,
                     v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                 ent_loss = entropy.mean()
-                loss = pg_loss - cfg.ent_coef * ent_loss + cfg.vf_coef * v_loss
+                loss = pg_loss - ent_coef_now * ent_loss + cfg.vf_coef * v_loss
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -282,18 +343,31 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 break
 
         if log_fn is not None:
-            log_fn({
+            log_dict = {
                 "update": update,
                 "global_step": global_step,
-                "pg_loss": float(pg_loss.item()),
-                "v_loss": float(v_loss.item()),
-                "entropy": float(ent_loss.item()),
-                "approx_kl": float(approx_kl_value),
-                "clipfrac": float(np.mean(clipfracs)) if clipfracs else 0.0,
-                "lr": optimizer.param_groups[0]["lr"],
-                "reward_scale": (reward_scaler.scale
-                                 if reward_scaler is not None else 1.0),
-            })
+                "train/pg_loss": float(pg_loss.item()),
+                "train/v_loss": float(v_loss.item()),
+                "train/entropy": float(ent_loss.item()),
+                "train/approx_kl": float(approx_kl_value),
+                "train/clipfrac": float(np.mean(clipfracs)) if clipfracs else 0.0,
+                "train/lr": optimizer.param_groups[0]["lr"],
+                "train/ent_coef": ent_coef_now,
+                "train/reward_scale": (reward_scaler.scale
+                                       if reward_scaler is not None else 1.0),
+            }
+            for k in _reward_term_keys:
+                short = k.replace("_mean", "").replace("r_", "")  # progress, jl, cone, dm, w_u
+                log_dict[f"reward/{short}"] = (rollout_term_accum[k] / rollout_term_n
+                                                if rollout_term_n > 0 else 0.0)
+            # Episode-finish stats (only emit if any episodes finished in this rollout)
+            if ep_total_finished > 0:
+                log_dict["episode/reward_mean"] = ep_accum["ep_reward_mean"] / ep_total_finished
+                log_dict["episode/length_mean"] = ep_accum["ep_len_mean"] / ep_total_finished
+                log_dict["episode/progress_mean_m"] = ep_accum["ep_progress_mean"] / ep_total_finished
+                log_dict["episode/terminal_bonus_mean"] = ep_accum["r_terminal_mean"] / ep_total_finished
+                log_dict["episode/n_finished"] = ep_total_finished
+            log_fn(log_dict)
 
         if eval_fn is not None and global_step >= next_eval:
             eval_stats = eval_fn(agent)

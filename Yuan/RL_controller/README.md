@@ -97,6 +97,44 @@ saves `info["terminal_obs"]` before auto-reset; the PPO GAE loop pulls
 - Typical untrained-policy episode is tens to a few hundred steps (cone /
   JL terminate fast).
 
+## Why directional manipulability
+
+The reward includes a directional-manipulability term in **log form**:
+`r_dm = w_dm · log(w_u(q))` where
+
+$$w_{\hat u}(q) = \frac{1}{\sqrt{\hat u^T (J_p J_p^T + \lambda^2 I)^{-1} \hat u}}$$
+
+**Versus scalar (Yoshikawa) manipulability $\sqrt{\det(J_p J_p^T)}$**: scalar
+manipulability measures overall isotropy of the position Jacobian. Our task
+only moves along $\hat u$, so what matters is how easily the arm can move
+*in that direction*. $w_{\hat u}$ measures exactly that — the inverse of the
+length of the velocity ellipsoid's projection onto $\hat u$. Choosing scalar
+manipulability would let the agent pursue "high overall reach" configurations
+that happen to be bad for $\hat u$ specifically.
+
+**Why log form, not raw value**: at large $w_u$ the log derivative is small
+(diminishing returns — don't reward parking in obviously-good configs); at
+small $w_u$ (approaching singularity) the gradient grows like $1/w_u$, giving
+strong "escape" signal exactly where it matters. The earlier telescoping
+variant `Δw_u(q)` had similar anti-farming intent but was harder to interpret
+and required NaN-on-reset bookkeeping.
+
+**All four terms always-on, no gating**: alive + JL center attractor + cone
+alignment + log-manipulability. Each is action-discriminating at every step,
+mirroring the per-step gradient of the classical nullspace controller's
+implicit objective. No gated penalties (those were a safety-net design with
+limited learning signal away from the cone/JL boundaries).
+
+**Strong vs weak baseline**: `baseline.k_dm` upgrades the GPM controller to
+also include $k_{dm} \cdot B^T \nabla w_{\hat u}(q)$ in its nullspace command.
+- `k_dm = 0` (weak): pure GPM-JL (q-mid pull only); ≈ 23% of init random.
+- `k_dm > 0` (strong): GPM-JL + directional manipulability ascent; uses the
+  same signal the RL agent gets.
+
+The strong baseline is the fair upper-bound on what hand-tuned reward shaping
+can give. If RL doesn't exceed it, we've shown PPO can't find anything beyond
+what the gradient of the same scalar provides.
+
 ## Open Questions
 1. **MC pool size 10⁵**: gives roughly 10⁵ valid `(q, z)` samples (after
    self-collision filter). If reachability coverage looks holey in eval
@@ -116,6 +154,22 @@ saves `info["terminal_obs"]` before auto-reset; the PPO GAE loop pulls
    baseline collapses uniformly in < 50 steps, the ratio is uninformative.
    A stronger reference (GPM-JL + Frobenius posture term) would tighten the
    comparison.
+6. **`w_dirmanip = 1.0`** is same order as alive. If too large it might dominate
+   reward, pushing actor to ignore other terminations. If too small, the
+   dirmanip signal is drowned out by alive constant. Sweep range: 0.1–5.0.
+7. **Log-transform vs delta vs raw `w_u`** — three formulations of the same
+   underlying scalar. Worth an ablation: raw value alone causes farming;
+   delta should fix that; log-transform would emphasize relative changes
+   over absolute. Not done here.
+8. **Strong baseline lifetime**: if `baseline.k_dm = 1.0` pushes GPM-JL above
+   693 (current classical_nullspace mean), the paper story changes — the
+   `693` number is not a hard ceiling for "what hand-tuning can achieve",
+   and we should report the strong baseline as the upper-bound RL needs to
+   beat.
+9. **Multi-step lookahead $\tilde w_{\hat u}(q, N)$**: instead of single-step
+   $w_u$, evaluate $w_u$ averaged over the next N steps of the predicted
+   task trajectory. ~10× more compute per step, but gives actor a longer
+   horizon for the same signal. Not implemented.
 
 ## Known Issues / 待验证
 

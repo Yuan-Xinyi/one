@@ -4,12 +4,17 @@ Usage:
     # RL policy
     python -m Yuan.RL_controller.visualize \\
         --config Yuan/RL_controller/config.yaml \\
-        --ckpt   Yuan/RL_controller/runs/agent.pt
+        --controller rl --ckpt Yuan/RL_controller/runs11/agent.pt
 
-    # GPM baseline
+    # Classical 4-term nullspace controller (hand-tuned strong baseline)
     python -m Yuan.RL_controller.visualize \\
         --config Yuan/RL_controller/config.yaml \\
-        --baseline
+        --controller classical
+
+    # GPM-JL only (weak baseline)
+    python -m Yuan.RL_controller.visualize \\
+        --config Yuan/RL_controller/config.yaml \\
+        --controller gpm
 
 Hot keys (one's default):
     drag/scroll to orbit / zoom; ESC quits.
@@ -46,6 +51,9 @@ from Yuan.RL_controller.env.line_distribution import LineDistribution
 from Yuan.RL_controller.env.baseline_controller import (
     GPMBaselineController, baseline_action_fn,
 )
+from Yuan.RL_controller.env.classical_nullspace import (
+    ClassicalNullspaceController, cn_action_fn,
+)
 from Yuan.RL_controller.ppo import Agent
 
 
@@ -53,10 +61,13 @@ from Yuan.RL_controller.ppo import Agent
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", required=True)
+parser.add_argument("--controller", choices=["rl", "classical", "gpm"], default=None,
+                    help="rl=trained policy (needs --ckpt); classical=4-term hand-tuned NS; gpm=weak GPM-JL")
 parser.add_argument("--ckpt", default=None,
-                    help="agent state_dict path; required unless --baseline")
+                    help="agent state_dict path; required when --controller rl")
+# Back-compat shim: --baseline was the old flag for GPM-only
 parser.add_argument("--baseline", action="store_true",
-                    help="use GPM baseline instead of trained policy")
+                    help="(deprecated) alias for --controller gpm")
 parser.add_argument("--device", default="cpu")
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--steps-per-tick", type=int, default=1,
@@ -66,8 +77,15 @@ args = parser.parse_args()
 with open(args.config, "r") as f:
     cfg_yaml = yaml.safe_load(f)
 
-if not args.baseline and args.ckpt is None:
-    parser.error("--ckpt required unless --baseline")
+# Resolve which controller to run
+if args.baseline and args.controller is None:
+    args.controller = "gpm"
+if args.controller is None:
+    args.controller = "rl" if args.ckpt is not None else None
+if args.controller is None:
+    parser.error("specify --controller {rl, classical, gpm} (or --ckpt for rl)")
+if args.controller == "rl" and args.ckpt is None:
+    parser.error("--controller rl requires --ckpt")
 
 device = torch.device(args.device)
 
@@ -76,22 +94,36 @@ device = torch.device(args.device)
 
 env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": 1})
 env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
+# Viz only needs a handful of valid lines (one per episode); 500 is plenty
+# and keeps the optional feasibility filter fast (~5s instead of ~130s).
 env.line_dist = LineDistribution(
     kin=env.kin, collision=env.collision,
-    n_pool=cfg_yaml["line_distribution"]["n_pool"],
+    n_pool=500,
     n_target_noise_deg=cfg_yaml["line_distribution"]["n_target_noise_deg"],
     seed=args.seed if args.seed is not None
          else cfg_yaml["line_distribution"]["train_seed"],
 )
+if cfg_yaml["line_distribution"].get("feasibility_filter", False):
+    env.line_dist.filter_by_classical_controller(
+        env_cfg, threshold_m=float(cfg_yaml["line_distribution"]["feasibility_threshold_m"]),
+        verbose=False)
 
 
 # Action source ----------------------------------------------------------------
 
-if args.baseline:
-    ctrl = GPMBaselineController(env.kin, k_jl=cfg_yaml["baseline"]["k_jl"])
+if args.controller == "gpm":
+    ctrl = GPMBaselineController(env.kin,
+                                 k_jl=cfg_yaml["baseline"]["k_jl"],
+                                 k_dm=float(cfg_yaml["baseline"].get("k_dm", 0.0)),
+                                 manip_damping=float(cfg_yaml["baseline"].get("manip_damping", 1e-3)))
     action_fn = baseline_action_fn(ctrl)
-    print("[viz] using GPM baseline controller")
-else:
+    print(f"[viz] using GPM baseline (k_jl={ctrl.k_jl}, k_dm={ctrl.k_dm})")
+elif args.controller == "classical":
+    ctrl = ClassicalNullspaceController(env.kin)
+    action_fn = cn_action_fn(ctrl)
+    print("[viz] using classical 4-term nullspace controller "
+          "(manip + JL center + cone gradient + q_ref attract)")
+else:  # "rl"
     agent = Agent(env.obs_dim, env.act_dim,
                   hidden_dim=cfg_yaml["ppo"]["hidden_dim"],
                   init_log_std=cfg_yaml["ppo"]["init_log_std"]).to(device)
@@ -102,7 +134,7 @@ else:
     def action_fn(env_: NSRLBatchedEnv) -> torch.Tensor:
         mean = agent.actor_mean(env_.current_obs())
         return mean.clamp(-1.0, 1.0)
-    print(f"[viz] loaded policy from {args.ckpt}")
+    print(f"[viz] loaded RL policy from {args.ckpt}")
 
 
 # Viewer ----------------------------------------------------------------------

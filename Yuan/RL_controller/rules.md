@@ -62,24 +62,37 @@ $$
 $$
 \dot{x}_{task} = v \hat{u} \in \mathbb{R}^3
 $$
-- $\hat u$：任务方向（无限射线）；$v$：恒定线速度（超参，默认 $v = 0.05$ m/s）
+- $\hat u$：任务方向（无限射线）；$v$：恒定线速度（超参，默认 $v = 0.2$ m/s）
 - 无角速度任务项——姿态完全交给 reward + nullspace action + 30° 锥终止
 
 ### 离散时间
-- $dt = 0.01$ s（即每步 EE 期望推进 $v \cdot dt = 0.5$ mm）
+- $dt = 0.05$ s（20 Hz 控制；每步 EE 期望推进 $v \cdot dt = 10$ mm = 1 cm）
 - $q_{t+1} = q_t + \dot q_t \cdot dt$（前向欧拉）
 
 ---
 
 ## 奖励（每步）
 
-设计原则：position-only 任务下 EE 位置由 $J_p^+ \dot x_{task}$ 闭式决定，与 $a$ 无关。RL 唯一的优化目标是最大化 episode 时长，单项 alive reward 即可表达。
+设计原则：alive reward 提供"活久就好"的总目标；其他三项是 **telescoping delta**——只有 metric 改善才给正 reward，维持不变给 0，恶化给负。这样 reward 只奖励"行为有效性"，不奖励"已经处在好状态"，避免 always-on 形式下的"待在 saturated 区域刷分"问题。
 
-| 项 | 公式 |
-|---|---|
-| 存活 | $r_{alive} = w_{alive}$（per-step 常量，默认 1.0） |
+| 项 | 公式 | 默认权重 |
+|---|---|---|
+| 存活 | $r_{alive} = w_{alive}$ | 0.25 |
+| JL Δ | $r_{jl} = w_{jl} \cdot K \cdot (\overline{q_{norm}^2}\big|_{prev} - \overline{q_{norm}^2}\big|_{now})$ | 0.25 |
+| Cone Δ | $r_{cone} = w_{cone} \cdot K \cdot (\cos\angle(z_t, n_{target})\big|_{now} - \cdot\big|_{prev})$ | 0.25 |
+| Dirmanip Δ | $r_{dm} = w_{dm} \cdot K \cdot (w_{\hat u}(q)\big|_{now} - \cdot\big|_{prev})$，$w_{\hat u}(q) = 1/\sqrt{\hat u^T (J_p J_p^T + \lambda^2 I)^{-1} \hat u}$ | 0.25 |
+
+**权重归一化**：runtime 自动除以 $\sum w_i$ 让 $w_{alive} + w_{jl} + w_{cone} + w_{dm} = 1$，每项是"对总信号的贡献比例"。
+
+**delta_scale $K = 100$**：把每步 delta（典型 ~0.01）放大到 ~1 magnitude，让每项 contribution per step 与 $w_i$ 同阶。
+
+**Reset 处理**：每个 prev 缓存（`q_norm_sq_prev`, `cos_angle_prev`, `w_u_prev`）episode 起始置 NaN 哨兵，第一步 delta 强制为 0，避免 reset 跳变污染信号。
+
+**Episode-sum telescoping**：每项 episode 总和 = $w_i K (\text{final} - \text{initial})$。agent 无法靠"维持高 metric"刷分，只有沿 trajectory 累计改善才贡献。
 
 终止条件见 §终止条件，惩罚一律 0（V function 与 episode 长度对齐，无需区分死法）。
+
+**alive-only ablation**：把三个 $w$ 都置 0 即可退回 pure-alive reward（runs1–5 设定）。runs1–5 证明 alive-only PPO 无法显著超过初始随机 policy，故引入 dense penalty。
 
 权重写进 `config.yaml`。README 给出 $r_{alive}$ 在典型 rollout 中累积量级的估计。
 
@@ -96,7 +109,7 @@ $$
 
 - $n_{target}$ 是 line spec 提供的目标法向（episode 内恒定）。agent 需用 4-DOF nullspace 让 $z_t$ 不超出 30° 锥
 - **无 success 终止**——任务定义是"沿 $\hat u$ 方向活到底"，没有"走完"的概念
-- `max_steps` 默认 **10000**（= 100 秒物理时间）。设置目标是让绝大多数 episode 因 terminated（JL / 锥 / 碰撞）自然结束，truncated 是少见兜底情况。若实际训练中 truncated 频率 > 5%，提示 agent 学会了某种"永久存活策略"，需要调大 max_steps 或重新审视终止条件
+- `max_steps` 默认 **500**（= 25 秒物理时间 @ dt=0.05）。几何天花板约 100 步（1 m EE 推进）。设置目标是让绝大多数 episode 因 terminated（JL / 锥 / 碰撞）自然结束，truncated 是少见兜底情况。若 truncated 频率 > 5%，需调大 max_steps
 
 **Gymnasium 语义**：`terminated` / `truncated` 严格区分。**PPO 下 truncated 必须 bootstrap**（$V(s_T)$ 加入 advantage 计算）；terminated 不 bootstrap。
 
@@ -125,23 +138,27 @@ SVD 右奇异向量有符号和顺序歧义 → naive 实现导致 $B(q_t) \left
 - 重试上限 **10 次**（IK seed 在 JL 内均匀采样）；全部失败则跳过该 line（采样新 line 重试）
 - 不考虑 SMM 分支选择，IK 给哪个用哪个
 
-### 3. 观测空间（20 维）
+### 3. 观测空间（31 维）
 ```
 obs = concat(
     q_normalized,               # 7,  (q - q_mid) / q_half_range ∈ [-1,1]^7
+    q_normalized**2,            # 7,  element-wise; 直接暴露 |q_i_norm| 接近 1 的二次信号
     u_hat,                      # 3,  任务方向单位向量,episode 内恒定
     z_tool,                     # 3,  当前工具轴单位向量
     n_target,                   # 3,  目标法向（旋转锥参考）,episode 内恒定
+    cos_angle,                  # 1,  z_tool · n_target; cone-relevant 标量
+    z_cross_n,                  # 3,  z_tool × n_target; 对齐误差的旋转轴方向
     a_prev,                     # 4,  上一步策略输出 ∈ [-1,1]^4
-)  # total = 20
+)  # total = 31
 ```
 
 设计说明：
 - **不含 line 长度 / progress / remaining_distance 任何信息**：任务定义里 line 是无限射线，没有"走完"的概念。把"还剩多远"塞进 obs 会让 policy 学到与训练 setup 耦合的伪策略（"接近终点时改变行为"），损害泛化
-- 移除 `sin(q), cos(q)`：FR3 所有 JL 远离 ±π，无需周期性编码；`q_normalized` 已覆盖 JL 距离信息
-- 移除 `sigma_min_normalized`：原是 soft 信号，reward 中已不使用，policy 必要时可从 $q$ 隐式建模
-- 移除独立 `jl_distances`：等价于 `|q_normalized|`，冗余
-- 保留 `a_prev`：对 MLP policy 学短时一致性有微弱帮助，几乎无害
+- **显式 cone-relevant 特征**（`cos_angle`, `z_cross_n`）：ReLU MLP 难以从原始 `(z_tool, n_target)` 学到 dot/cross 这种乘性交互；显式给出避免 actor 浪费 capacity 重学
+- **`q_normalized**2`**：JL soft penalty 是 `max(0, |q_i_norm| - 0.8)²`，actor 通过 `q_norm` + 隐式 abs() 学起来低效；平方项直接给出二次接近信号
+- 移除 `sin(q), cos(q)`：FR3 所有 JL 远离 ±π，无需周期性编码
+- 移除 `sigma_min_normalized`：原是 soft 信号，reward 中已不使用
+- 保留 `a_prev`：对 MLP policy 学短时一致性有微弱帮助
 
 ### 4. 动作尺度
 $a \in [-1, 1]^4$ 是 policy 输出，乘 $a_{\max}$（rad/s）得 $\dot q_{null}$ 幅值。默认 $a_{\max} = 0.5$ rad/s；扫参建议范围 `a_max ≈ 0.5–1.0 · v / L_{臂}` 量级。
@@ -177,7 +194,9 @@ baseline 不优化姿态——只靠"远离 JL 中心"作为副产物维持姿�
 - mini-batch：`n_minibatches = 32` → `batch_size = 128`，`n_epochs = 10`
 - 学习率：actor + critic 共用 3e-4（可加 linear schedule）
 - `ent_coef = 0.0`；`vf_coef = 0.5`；`max_grad_norm = 0.5`
-- 网络：三层 MLP `[256, 256, 256]`，ReLU；actor 输出 $\mu$，$\log\sigma$ 作 state-independent 可学参数（cleanrl 默认）
+- 网络：三层 MLP `[512, 512, 512]`，ReLU；actor 共享 trunk，分两个 head 输出 $\mu(s)$ 和 $\log\sigma(s)$（state-dependent log_std；clamp 到 [-5, 2]）。critic 独立同结构
+- **Tanh-squashed action**: $a = \tanh(z)$，$z \sim \mathcal N(\mu(s), \sigma(s))$；log_prob 含 Jacobian 修正 $\log\pi(a) = \log \mathcal N(z) - \sum_i \log(1 - \tanh^2(z_i))$。PPO buffer 存 $z$（unsquashed），env 见 $a$。**不加 squash → actor μ 会被 clip 后的有偏梯度推到无界**（runs7/10 观察到 μ 涨到 3.5+，deterministic action 永远饱和 ±1，behavior ≈ random Gaussian baseline）
+- state-dependent log_std 是 "σ 爆炸覆盖 state-dependent best mean" 这个失败模式的修复手段
 - device：`cuda`（torch-batched env 要求）
 
 ### 并行环境形态
@@ -191,9 +210,10 @@ baseline 不优化姿态——只靠"远离 JL 中心"作为副产物维持姿�
 ### 训练 line 采样
 "Line" 在本规约中表示无限方向射线 $(p_0, \hat u, n_{target})$，无长度。
 - 起点 $p_0$：Monte-Carlo reachability 采样——预先 sample 一大组 q ∈ JL（建议 $10^5$ 个），FK 得 reachable point cloud；运行时从中 rejection sample
-- 方向 $\hat u$：单位球均匀
-- 目标法向 $n_{target}$：与 $\hat u$ 垂直 + 噪声（line spec 的一部分，episode 内恒定）
-- 单独写 `LineDistribution` 类（命名沿用历史，语义为"任务方向 + 起点采样器"），方便替换分布
+- 方向 $\hat u$：单位球均匀（采样时 $\perp n_{target}$）
+- 目标法向 $n_{target}$：$z_{tool}(q_0)$ + 小角度噪声（line spec 的一部分，episode 内恒定）
+- `LineDistribution` 在 init 时把每条 spec 全部预生成（q0, line_dir, n_target 各自 deterministic per-index），`sample(n)` 只是从池里 index——这让"按 spec 过滤"成为可能
+- **Feasibility 过滤**（`feasibility_filter: true`）：init 时对池里每条 line 跑一次 `ClassicalNullspaceController`，丢弃寿命 < `feasibility_threshold_m` (默认 10 cm) 对应步数的 line。意图：classical 都活不过 10 cm 的 line **几何上注定失败**（line 方向把 EE 推出可达空间或直奔 JL），RL 在这种 line 上的梯度是纯噪声，**训练带毒**。过滤后只在"可学的" line 上训练 / 评估
 
 ---
 

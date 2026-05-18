@@ -36,7 +36,7 @@ import torch
 import yaml
 
 from Yuan.RL_controller.env.env import NSRLBatchedEnv, EnvConfig
-from Yuan.RL_controller.env.line_distribution import LineDistribution
+from Yuan.RL_controller.env.line_distribution import LineDistribution, ScriptedLineDistribution
 from Yuan.RL_controller.env.baseline_controller import (
     GPMBaselineController, rollout_first_episode, baseline_action_fn,
 )
@@ -45,27 +45,8 @@ from Yuan.RL_controller.ppo import Agent
 
 TERM_NAMES = {0: "alive", 2: "collision", 3: "cone", 4: "jl", 5: "truncated"}
 
-
-class _ScriptedLineDistribution:
-    """Replays a fixed list of line specs in order.
-
-    Only safe with `env.step(..., auto_reset=False)` — there is no cursor reset.
-    """
-
-    def __init__(self, specs: dict[str, torch.Tensor]):
-        self._specs = specs
-        self._cursor = 0
-        self._total = specs["q0"].shape[0]
-
-    def sample(self, n: int, generator=None) -> dict[str, torch.Tensor]:
-        if self._cursor + n > self._total:
-            raise RuntimeError(
-                f"Scripted dist exhausted: need {n}, have {self._total - self._cursor}. "
-                "Run eval rollout with auto_reset=False to avoid this."
-            )
-        out = {k: v[self._cursor:self._cursor + n] for k, v in self._specs.items()}
-        self._cursor += n
-        return out
+# Backwards-compat alias for any external caller (the class lives in env/line_distribution.py now)
+_ScriptedLineDistribution = ScriptedLineDistribution
 
 
 def _rl_action_fn(agent: Agent):
@@ -99,11 +80,15 @@ def main():
 
     # Build proxy env just to instantiate kin/collision and draw deterministic specs.
     proxy_env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
-    sampler = LineDistribution(
+    threshold_m = (float(line_cfg["feasibility_threshold_m"])
+                   if line_cfg.get("feasibility_filter", False) else None)
+    sampler = LineDistribution.load_or_build(
         kin=proxy_env.kin, collision=proxy_env.collision,
         n_pool=line_cfg["n_pool"],
         n_target_noise_deg=line_cfg["n_target_noise_deg"],
         seed=eval_cfg["holdout_seed"],
+        env_cfg=env_cfg,
+        feasibility_threshold_m=threshold_m,
     )
     holdout = sampler.sample(n_holdout)
 

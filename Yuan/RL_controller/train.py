@@ -61,11 +61,15 @@ def _make_eval_fn(eval_env: NSRLBatchedEnv):
         # term_reason fractions for trend tracking
         frac = {f"eval_term/{name}": float((term == code).sum()) / n
                 for code, name in _TERM_NAMES.items()}
+        ep_progress = stats["episode_progress"].float()
         return {
-            "eval_mean_len": float(ep_len.mean().item()),
-            "eval_median_len": float(ep_len.median().item()),
-            "eval_min_len": float(ep_len.min().item()),
-            "eval_max_len": float(ep_len.max().item()),
+            "eval/mean_len": float(ep_len.mean().item()),
+            "eval/median_len": float(ep_len.median().item()),
+            "eval/min_len": float(ep_len.min().item()),
+            "eval/max_len": float(ep_len.max().item()),
+            "eval/mean_progress_m": float(ep_progress.mean().item()),
+            "eval/median_progress_m": float(ep_progress.median().item()),
+            "eval/max_progress_m": float(ep_progress.max().item()),
             **frac,
         }
 
@@ -103,26 +107,31 @@ def main():
     eval_cfg = cfg_yaml["eval"]
     train_cfg = cfg_yaml["train"]
 
+    threshold_m = (float(line_cfg["feasibility_threshold_m"])
+                   if line_cfg.get("feasibility_filter", False) else None)
+
     print(f"[train] device={device}; building train env (n_envs={env_cfg.n_envs})")
     train_env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
-    train_line_dist = LineDistribution(
+    train_env.line_dist = LineDistribution.load_or_build(
         kin=train_env.kin, collision=train_env.collision,
         n_pool=line_cfg["n_pool"],
         n_target_noise_deg=line_cfg["n_target_noise_deg"],
         seed=line_cfg.get("train_seed", None),
+        env_cfg=env_cfg,
+        feasibility_threshold_m=threshold_m,
     )
-    train_env.line_dist = train_line_dist
 
     eval_env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": eval_cfg["n_holdout"]})
     print(f"[train] building eval env (n_envs={eval_env_cfg.n_envs})")
     eval_env = NSRLBatchedEnv(eval_env_cfg, line_dist=None, device=device)
-    eval_line_dist = LineDistribution(
+    eval_env.line_dist = LineDistribution.load_or_build(
         kin=eval_env.kin, collision=eval_env.collision,
         n_pool=line_cfg["n_pool"],
         n_target_noise_deg=line_cfg["n_target_noise_deg"],
         seed=eval_cfg["holdout_seed"],
+        env_cfg=env_cfg,
+        feasibility_threshold_m=threshold_m,
     )
-    eval_env.line_dist = eval_line_dist
 
     log_file = open(log_path, "w")
     t0 = time.time()
@@ -153,7 +162,25 @@ def main():
         d_with_time = {"wall_s": time.time() - t0, **d}
         log_file.write(repr(d_with_time) + "\n")
         log_file.flush()
-        print({k: round(v, 4) if isinstance(v, float) else v for k, v in d_with_time.items()})
+        # Concise stdout: one line per PPO update with the metrics we care about
+        if "update" in d:
+            print(
+                f"upd {d['update']:>4}  step {d['global_step']:>9}  "
+                f"ent_coef {d.get('train/ent_coef', 0):.5f}  "
+                f"r[prog {d.get('reward/progress', 0):+.3f}  "
+                f"jl {d.get('reward/jl', 0):+.4f}  "
+                f"cone {d.get('reward/cone', 0):+.4f}  "
+                f"dm {d.get('reward/dm', 0):+.4f}  "
+                f"w_u {d.get('reward/w_u', 0):.3f}]  "
+                f"v_loss {d.get('train/v_loss', 0):.4f}  "
+                f"entropy {d.get('train/entropy', 0):.2f}",
+                flush=True)
+        elif "eval_at_step" in d:
+            print(
+                f"  eval @ {d['eval_at_step']:>9}  "
+                f"progress(mean {d.get('eval/mean_progress_m', 0):.3f}m  med {d.get('eval/median_progress_m', 0):.3f}m  max {d.get('eval/max_progress_m', 0):.3f}m)  "
+                f"len(mean {d.get('eval/mean_len', 0):.1f}  max {d.get('eval/max_len', 0):.0f})",
+                flush=True)
         if wandb_run is not None:
             # Map both per-update and eval logs onto global_step axis
             step = d.get("global_step", d.get("eval_at_step"))

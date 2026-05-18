@@ -35,10 +35,12 @@
 - 待验：eval term_reason 按空间分 bin，看是否有"某区域失败率显著偏高"
 - 有偏置 → 提升到 1e6
 
-**[P2-7] 30° 锥软 penalty 辅助 signal**
-- 若 P2-3 加 ent_coef 后 learning curve 仍长时间平
-- 试加 `r = -k · max(0, angle - 25°)²`，k 量级使中度越界 penalty ≈ 1.0/step
-- **最后手段**，违反 "reward 简洁" 哲学，需慎重
+**[P2-7] 30° 锥软 penalty 辅助 signal** — ✅ DONE (B 路线落地)
+- runs1–5 (alive-only) 跑完证明 PPO 学不到比初始随机更好的策略
+- env.py + config.yaml 加入三项 soft penalty（cone / JL / σ-min），都在 q_new 上计算，对动作可微
+- 默认权重：`w_cone_soft=0.05` (deg²), `w_jl_soft=1.0`, `w_sigma_soft=5.0`
+- 随机 policy 下 per-step 平均 penalty ≈ 0.030（alive 的 3%），如训练后觉得信号弱可 2-3× 调大权重
+- ablation：把三个 w 设 0 即退回 alive-only
 
 ### P3 — 已识别但可以暂时忽略
 

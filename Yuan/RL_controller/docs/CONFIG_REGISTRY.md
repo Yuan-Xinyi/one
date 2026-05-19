@@ -96,7 +96,7 @@ ppo:
 ### Ckpts
 
 - `Yuan/RL_controller/runs/framing_b_pd_smoke_v4/agent.pt` — 3M smoke
-- `Yuan/RL_controller/runs/framing_b_pd_10M_v4/agent.pt` — 10M
+- `Yuan/RL_controller/runs/framing_b_pd_10M_v4/agent.pt` — 10M (**main**)
 
 ### Baseline numbers (200-line holdout, seed=42, v4 controller setup)
 
@@ -141,7 +141,7 @@ ppo:
 - Task-space PD feedback: DISABLED
 
 ### Ckpts
-- `Yuan/RL_controller/runs/framing_b_smoke_v3/agent.pt`
+- ckpt and logs deleted (v4 supersedes this milestone)
 
 ### Baseline numbers (v3 setup)
 - L_zero  = 0.292 m
@@ -174,8 +174,7 @@ ppo:
 - Framing A reward (no lateral)
 
 ### Ckpts
-- `Yuan/RL_controller/runs/short_5b_iss3_10M/agent.pt`
-- `Yuan/RL_controller/runs/short_5b_iss3_13M/agent.pt` — continuation, ent_coef held at floor
+- ckpts and logs deleted (historical framing A reference; superseded by v4)
 
 ### Baseline numbers (framing A, ratios — see [feedback_eval_metrics](../../../../.claude/projects/-home-lqin-one/memory/feedback_eval_metrics.md))
 - L_RL / L_zero:      1.77 mean, 1.22 median
@@ -198,7 +197,7 @@ ppo:
 - 1M training only
 
 ### Ckpts
-- `Yuan/RL_controller/runs/short_5b/agent.pt`
+- ckpt and logs deleted (historical; superseded by v4)
 
 ### Baseline numbers
 - L_RL / L_zero ≈ 1.624 mean (1M training)
@@ -222,5 +221,4 @@ ppo:
 - L_RL / L_zero ≈ 0.93 (RL **worse** than doing nothing)
 
 ### Key findings
-- Diagnosed in [`runs/short_5b_iss3_10M/REPORT.md`](../runs/short_5b_iss3_10M/REPORT.md) §2–3
 - Two independent root causes (gauge + log_std saturation), both required to fix

@@ -77,6 +77,13 @@ parser.add_argument("--overlay", choices=["classical", "gpm"], default="classica
                          "side-by-side. Both robots are rendered semi-transparent; pen colors distinguish them.")
 parser.add_argument("--device", default="cpu")
 parser.add_argument("--seed", type=int, default=None)
+parser.add_argument("--case", default=None,
+                    help="comma-separated eval case indices (e.g. '0,5,17'); "
+                         "replays specs from the eval holdout pool — same "
+                         "holdout_seed/n_pool/feasibility filter as eval.py & "
+                         "plot_joint_trajectories.py, so case i here == line i "
+                         "in eval.csv. Looped: viewer cycles through the list "
+                         "indefinitely. Omit to use the random viz pool.")
 parser.add_argument("--steps-per-tick", type=int, default=1,
                     help="env steps per viewer tick; raise for fast-forward")
 parser.add_argument("--slowdown", type=float, default=4.0,
@@ -111,20 +118,90 @@ env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": 1})
 seed_val = args.seed if args.seed is not None else cfg_yaml["line_distribution"]["train_seed"]
 
 
+case_ids: list[int] | None = None
+if args.case is not None:
+    case_ids = [int(s) for s in args.case.split(",") if s.strip() != ""]
+    if not case_ids:
+        parser.error("--case parsed to an empty list")
+
+
+class LoopingScriptedDist:
+    """ScriptedLineDistribution that loops + tracks which eval case is next.
+
+    Unlike eval's ScriptedLineDistribution (which exhausts after one pass),
+    this wraps the cursor so the viewer can keep cycling through the chosen
+    cases. Exposes `current_case_id()` so episode-start logging can print
+    which eval case the viewer is showing.
+    """
+    def __init__(self, specs: dict[str, torch.Tensor], case_ids: list[int]):
+        assert specs["q0"].shape[0] == len(case_ids)
+        self._specs = specs
+        self._case_ids = case_ids
+        self._cursor = 0
+        self._total = len(case_ids)
+
+    def sample(self, n: int, generator: torch.Generator | None = None):
+        idx = [(self._cursor + i) % self._total for i in range(n)]
+        out = {k: v[idx].clone() for k, v in self._specs.items()}
+        self._cursor = (self._cursor + n) % self._total
+        return out
+
+    def peek_case_id(self) -> int:
+        return self._case_ids[self._cursor]
+
+
+# Eval holdout (shared across all runners) — built once if --case is set.
+_eval_specs_cache: dict | None = None
+
+
+def _eval_holdout_specs() -> dict[str, torch.Tensor]:
+    """Sample the same holdout as eval.py / plot_joint_trajectories.py."""
+    global _eval_specs_cache
+    if _eval_specs_cache is not None:
+        return _eval_specs_cache
+    line_cfg = cfg_yaml["line_distribution"]
+    eval_cfg = cfg_yaml["eval"]
+    threshold_m = (float(line_cfg["feasibility_threshold_m"])
+                   if line_cfg.get("feasibility_filter", False) else None)
+    proxy = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
+    sampler = LineDistribution.load_or_build(
+        kin=proxy.kin, collision=proxy.collision,
+        n_pool=line_cfg["n_pool"],
+        n_target_noise_deg=line_cfg["n_target_noise_deg"],
+        seed=eval_cfg["holdout_seed"],
+        env_cfg=env_cfg,
+        feasibility_threshold_m=threshold_m,
+    )
+    holdout = sampler.sample(eval_cfg["n_holdout"])
+    assert case_ids is not None
+    n_holdout = eval_cfg["n_holdout"]
+    for cid in case_ids:
+        if cid < 0 or cid >= n_holdout:
+            raise SystemExit(f"--case {cid} out of range [0, {n_holdout})")
+    _eval_specs_cache = {k: v[case_ids].clone() for k, v in holdout.items()}
+    return _eval_specs_cache
+
+
 def _build_env() -> NSRLBatchedEnv:
     e = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
-    # Viz only needs a handful of valid lines (one per episode); 500 is plenty
-    # and keeps the optional feasibility filter fast (~5s instead of ~130s).
-    e.line_dist = LineDistribution(
-        kin=e.kin, collision=e.collision,
-        n_pool=500,
-        n_target_noise_deg=cfg_yaml["line_distribution"]["n_target_noise_deg"],
-        seed=seed_val,
-    )
-    if cfg_yaml["line_distribution"].get("feasibility_filter", False):
-        e.line_dist.filter_by_classical_controller(
-            env_cfg, threshold_m=float(cfg_yaml["line_distribution"]["feasibility_threshold_m"]),
-            verbose=False)
+    if case_ids is not None:
+        # Replay eval cases by index. Each runner gets an independent
+        # LoopingScriptedDist over the SAME spec slice, so overlay runners
+        # stay in lock-step (both advance the cursor identically per reset).
+        e.line_dist = LoopingScriptedDist(_eval_holdout_specs(), case_ids)
+    else:
+        # Viz only needs a handful of valid lines (one per episode); 500 is
+        # plenty and keeps the optional feasibility filter fast (~5s vs ~130s).
+        e.line_dist = LineDistribution(
+            kin=e.kin, collision=e.collision,
+            n_pool=500,
+            n_target_noise_deg=cfg_yaml["line_distribution"]["n_target_noise_deg"],
+            seed=seed_val,
+        )
+        if cfg_yaml["line_distribution"].get("feasibility_filter", False):
+            e.line_dist.filter_by_classical_controller(
+                env_cfg, threshold_m=float(cfg_yaml["line_distribution"]["feasibility_threshold_m"]),
+                verbose=False)
     return e
 
 
@@ -291,6 +368,11 @@ def _all_done() -> bool:
 
 
 def _start_new_episode():
+    # Peek case id BEFORE reset advances the looping cursor (only meaningful
+    # in --case mode; primary env's line_dist mirrors all runners').
+    case_id_str = ""
+    if case_ids is not None:
+        case_id_str = f" [eval case {runners[0]['env'].line_dist.peek_case_id()}]"
     for r in runners:
         r["env"].reset()
         r["term_reason"] = None
@@ -300,7 +382,7 @@ def _start_new_episode():
     _state["episode"] += 1
     _state["step"] = 0
     _state["needs_init"] = False
-    print(f"[viz] episode {_state['episode']} started "
+    print(f"[viz] episode {_state['episode']}{case_id_str} started "
           f"(u_hat={env.line_dir[0].tolist()}, "
           f"n_target={env.n_target[0].tolist()})")
 

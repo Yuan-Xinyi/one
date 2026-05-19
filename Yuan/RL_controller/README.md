@@ -16,7 +16,8 @@ ppo.py                      cleanrl-style continuous PPO
 train.py / eval.py / visualize.py    entry points
 tests/test_reward.py        reward-shaping unit tests
 config.yaml                 all hyperparameters
-runs21/                     current main-line ckpt + logs
+runs/framing_b_pd_10M_v4/   current main-line (v4) ckpt + logs
+docs/CONFIG_REGISTRY.md     milestone-level config/component state (registry is source of truth)
 ```
 
 ## Run
@@ -24,11 +25,11 @@ runs21/                     current main-line ckpt + logs
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 python -m Yuan.RL_controller.train --config Yuan/RL_controller/config.yaml \
-    --out-dir Yuan/RL_controller/runs21 --wandb
+    --out-dir Yuan/RL_controller/runs/framing_b_pd_10M_v4 --wandb
 python -m Yuan.RL_controller.eval --config Yuan/RL_controller/config.yaml \
-    --ckpt Yuan/RL_controller/runs21/agent.pt
+    --ckpt Yuan/RL_controller/runs/framing_b_pd_10M_v4/agent.pt
 python -m Yuan.RL_controller.visualize --config Yuan/RL_controller/config.yaml \
-    --controller rl --ckpt Yuan/RL_controller/runs21/agent.pt
+    --controller rl --ckpt Yuan/RL_controller/runs/framing_b_pd_10M_v4/agent.pt
 ```
 
 ## Key design

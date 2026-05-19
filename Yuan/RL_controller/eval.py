@@ -39,6 +39,7 @@ from Yuan.RL_controller.env.env import NSRLBatchedEnv, EnvConfig
 from Yuan.RL_controller.env.line_distribution import LineDistribution, ScriptedLineDistribution
 from Yuan.RL_controller.env.baseline_controller import (
     GPMBaselineController, rollout_first_episode, baseline_action_fn,
+    zero_nullspace_action_fn,
 )
 from Yuan.RL_controller.ppo import Agent
 
@@ -101,7 +102,7 @@ def main():
     agent.eval()
     rl_stats = rollout_first_episode(rl_env, _rl_action_fn(agent))
 
-    # Baseline rollout — fresh env to reset internal state
+    # GPM-JL baseline rollout — fresh env to reset internal state
     base_env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
     base_env.line_dist = ScriptedLineDistribution(
         {k: v.clone() for k, v in holdout.items()})
@@ -109,31 +110,55 @@ def main():
                                       k_jl=cfg_yaml["baseline"]["k_jl"])
     base_stats = rollout_first_episode(base_env, baseline_action_fn(base_ctrl))
 
+    # Zero-nullspace baseline (a ≡ 0): pure J_p^+ v u_hat, no nullspace term.
+    # Diagnostic: if trained policy can't beat this, the nullspace pathway is
+    # net-harmful (sign convention / reward shaping / policy learning).
+    zero_env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
+    zero_env.line_dist = ScriptedLineDistribution(
+        {k: v.clone() for k, v in holdout.items()})
+    zero_stats = rollout_first_episode(zero_env, zero_nullspace_action_fn())
+
     rl_len = rl_stats["episode_len"].cpu().numpy()
     base_len = base_stats["episode_len"].cpu().numpy()
+    zero_len = zero_stats["episode_len"].cpu().numpy()
     rl_term = rl_stats["term_reason"].cpu().numpy()
     base_term = base_stats["term_reason"].cpu().numpy()
-    ratio = rl_len.astype(float) / base_len.astype(float).clip(min=1.0)
+    zero_term = zero_stats["term_reason"].cpu().numpy()
+    ratio_rl_base = rl_len.astype(float) / base_len.astype(float).clip(min=1.0)
+    ratio_rl_zero = rl_len.astype(float) / zero_len.astype(float).clip(min=1.0)
+    ratio_base_zero = base_len.astype(float) / zero_len.astype(float).clip(min=1.0)
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["line_id", "T_rl", "T_baseline", "ratio",
-                    "term_reason_rl", "term_reason_baseline"])
+        w.writerow(["line_id", "T_rl", "T_baseline", "T_zero",
+                    "ratio_rl_base", "ratio_rl_zero", "ratio_base_zero",
+                    "term_reason_rl", "term_reason_baseline", "term_reason_zero"])
         for i in range(n_holdout):
-            w.writerow([i, int(rl_len[i]), int(base_len[i]), float(ratio[i]),
+            w.writerow([i, int(rl_len[i]), int(base_len[i]), int(zero_len[i]),
+                        float(ratio_rl_base[i]), float(ratio_rl_zero[i]),
+                        float(ratio_base_zero[i]),
                         TERM_NAMES.get(int(rl_term[i]), "?"),
-                        TERM_NAMES.get(int(base_term[i]), "?")])
+                        TERM_NAMES.get(int(base_term[i]), "?"),
+                        TERM_NAMES.get(int(zero_term[i]), "?")])
 
-    sorted_ratio = sorted(ratio)
-    median = sorted_ratio[n_holdout // 2]
+    def _stats(r):
+        s = sorted(r)
+        return r.mean(), s[len(s) // 2]
+    rb_mean, rb_med = _stats(ratio_rl_base)
+    rz_mean, rz_med = _stats(ratio_rl_zero)
+    bz_mean, bz_med = _stats(ratio_base_zero)
     print(f"[eval] wrote {n_holdout} rows → {out_path}")
-    print(f"[eval] ratio  mean={ratio.mean():.3f}  median={median:.3f}")
+    print(f"[eval] L_rl   / L_base : mean={rb_mean:.3f}  median={rb_med:.3f}")
+    print(f"[eval] L_rl   / L_zero : mean={rz_mean:.3f}  median={rz_med:.3f}")
+    print(f"[eval] L_base / L_zero : mean={bz_mean:.3f}  median={bz_med:.3f}")
     rl_hist = collections.Counter(TERM_NAMES.get(int(t), "?") for t in rl_term)
     base_hist = collections.Counter(TERM_NAMES.get(int(t), "?") for t in base_term)
+    zero_hist = collections.Counter(TERM_NAMES.get(int(t), "?") for t in zero_term)
     print(f"[eval] RL term_reason   : {dict(rl_hist)}")
     print(f"[eval] base term_reason : {dict(base_hist)}")
+    print(f"[eval] zero term_reason : {dict(zero_hist)}")
     rl_trunc_rate = rl_hist.get("truncated", 0) / n_holdout
     if rl_trunc_rate > 0.05:
         print(f"[eval] WARNING: RL truncated rate {rl_trunc_rate:.1%} > 5% — "

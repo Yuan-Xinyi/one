@@ -76,7 +76,10 @@ def main():
     parser.add_argument("--config", required=True)
     parser.add_argument("--device", default=None,
                         help="cuda or cpu; default auto-detect")
-    parser.add_argument("--ckpt", default=None)
+    parser.add_argument("--ckpt", default=None,
+                        help="path to save agent.pt (default: <out-dir>/agent.pt)")
+    parser.add_argument("--resume-from-ckpt", default=None,
+                        help="load policy weights from this path before training")
     parser.add_argument("--out-dir", default="Yuan/RL_controller/runs")
     parser.add_argument("--wandb", action="store_true",
                         help="enable wandb logging")
@@ -192,7 +195,8 @@ def main():
                       eval_every=train_cfg["eval_every"],
                       log_fn=log_fn,
                       ckpt_path=ckpt_path,
-                      ckpt_every_n_updates=train_cfg.get("ckpt_every_n_updates", 10))
+                      ckpt_every_n_updates=train_cfg.get("ckpt_every_n_updates", 10),
+                      resume_from_ckpt=args.resume_from_ckpt)
     log_file.close()
     if wandb_run is not None:
         wandb_run.finish()

@@ -33,7 +33,9 @@ class PPOConfig:
     clip_coef: float = 0.2
     clip_vloss: bool = True
     ent_coef: float = 0.0
-    anneal_ent_coef: bool = False  # linearly decay ent_coef from initial to 0
+    anneal_ent_coef: bool = False  # linearly decay ent_coef from initial → floor
+    ent_coef_floor: float = 0.0    # floor (held after anneal_frac of training)
+    ent_coef_anneal_frac: float = 1.0  # fraction of training over which to anneal
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     target_kl: float | None = None
@@ -109,8 +111,12 @@ class Agent(nn.Module):
     gives biased gradient), producing perpetually-saturated actions whose
     deterministic eval matches the random-Gaussian baseline.
     """
-    LOG_STD_MIN = -5.0
-    LOG_STD_MAX = 0.0  # σ ≤ 1.0 (was 7.4); state-dep log_std grew unboundedly otherwise
+    # State-independent log_std (issue 3 fix): the state-dep Linear head saturated
+    # at upper clamp during 50M run; PPO continuous-control standard is a single
+    # learnable Parameter per action dim, much easier for the entropy bonus
+    # to compress without state-routing the gradient through the trunk.
+    LOG_STD_MIN = -2.0  # σ ≥ exp(-2) ≈ 0.135
+    LOG_STD_MAX =  0.5  # σ ≤ exp(0.5) ≈ 1.65 (safety cap; nn.Parameter rarely saturates)
 
     def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 512,
                  init_log_std: float = -0.5):
@@ -127,9 +133,7 @@ class Agent(nn.Module):
             _layer_init(nn.Linear(hidden_dim, hidden_dim)), nn.ReLU(),
         )
         self._mean_head = _layer_init(nn.Linear(hidden_dim, act_dim), std=0.01)
-        self._logstd_head = _layer_init(nn.Linear(hidden_dim, act_dim), std=0.01)
-        with torch.no_grad():
-            self._logstd_head.bias.fill_(init_log_std)
+        self.log_std = nn.Parameter(torch.full((act_dim,), float(init_log_std)))
 
     def actor_mean(self, x: torch.Tensor) -> torch.Tensor:
         """Deterministic action: tanh(μ(s)) ∈ (-1, 1). Used by eval / viz."""
@@ -141,7 +145,7 @@ class Agent(nn.Module):
     def _actor_dist(self, x: torch.Tensor) -> Normal:
         h = self._actor_trunk(x)
         mean = self._mean_head(h)
-        log_std = self._logstd_head(h).clamp(self.LOG_STD_MIN, self.LOG_STD_MAX)
+        log_std = self.log_std.clamp(self.LOG_STD_MIN, self.LOG_STD_MAX).expand_as(mean)
         return Normal(mean, log_std.exp())
 
     def get_action_and_value(self, x: torch.Tensor,
@@ -149,7 +153,7 @@ class Agent(nn.Module):
         """Action representation is PRE-SQUASH z. Caller is responsible for
         `torch.tanh(action)` before sending to env.
 
-        Returns (z, log_prob, entropy_of_underlying_Normal, value).
+        Returns (z, log_prob, entropy_of_underlying_Normal, value, log_std).
         """
         dist = self._actor_dist(x)
         if action is None:
@@ -161,13 +165,15 @@ class Agent(nn.Module):
         log_prob = log_prob_normal - torch.log(
             (1.0 - squashed.pow(2)).clamp(min=1e-6)).sum(-1)
         entropy = dist.entropy().sum(-1)  # underlying Normal entropy (proxy)
-        return action, log_prob, entropy, self.critic(x).squeeze(-1)
+        log_std = dist.scale.log()
+        return action, log_prob, entropy, self.critic(x).squeeze(-1), log_std
 
 
 def train(cfg: PPOConfig, env, device: torch.device,
           eval_fn=None, eval_every: int = 10_000,
           log_fn=None, ckpt_path: str | None = None,
-          ckpt_every_n_updates: int = 10):
+          ckpt_every_n_updates: int = 10,
+          resume_from_ckpt: str | None = None):
     """Train PPO on `env`.
 
     `env` must expose: `n_envs`, `obs_dim`, `act_dim`, `device`, `reset()`,
@@ -186,6 +192,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
 
     agent = Agent(obs_dim, act_dim, hidden_dim=cfg.hidden_dim,
                   init_log_std=cfg.init_log_std).to(device)
+    if resume_from_ckpt is not None:
+        print(f"[ppo] resuming policy weights from {resume_from_ckpt}")
+        agent.load_state_dict(torch.load(resume_from_ckpt, map_location=device))
     optimizer = torch.optim.Adam(agent.parameters(), lr=cfg.learning_rate, eps=1e-5)
 
     # Storage
@@ -211,23 +220,35 @@ def train(cfg: PPOConfig, env, device: torch.device,
     # Episode-finish aggregates (weighted by n_episodes_done across the rollout)
     _episode_keys = ("ep_reward_mean", "ep_len_mean", "r_terminal_mean",
                      "ep_progress_mean")
+    # MGS fallback rate per anchor column (rollout-averaged)
+    _fb_keys = ("fb_rate_e0", "fb_rate_e1", "fb_rate_e2")
 
     for update in range(1, n_updates + 1):
-        frac = 1.0 - (update - 1.0) / n_updates  # 1 → 0 over training
+        progress = (update - 1.0) / n_updates  # 0 → 1 over training
         if cfg.anneal_lr:
             for pg in optimizer.param_groups:
-                pg["lr"] = frac * cfg.learning_rate
-        ent_coef_now = cfg.ent_coef * frac if cfg.anneal_ent_coef else cfg.ent_coef
+                pg["lr"] = (1.0 - progress) * cfg.learning_rate
+        if cfg.anneal_ent_coef:
+            a = min(progress / max(cfg.ent_coef_anneal_frac, 1e-6), 1.0)  # 0 → 1 over anneal_frac
+            ent_coef_now = cfg.ent_coef * (1.0 - a) + cfg.ent_coef_floor * a
+        else:
+            ent_coef_now = cfg.ent_coef
 
         rollout_term_accum = {k: 0.0 for k in _reward_term_keys}
         rollout_term_n = 0
         ep_accum = {k: 0.0 for k in _episode_keys}
         ep_total_finished = 0
+        rollout_fb_accum = {k: 0.0 for k in _fb_keys}
+        rollout_sigma_sum = 0.0          # Σ over steps of (mean σ across env×dim)
+        rollout_sigma_clamp_sum = 0.0    # Σ over steps of fraction at log_std min
         for step in range(cfg.n_steps):
             global_step += n_envs
             obs_buf[step] = next_obs
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs)
+                action, logprob, _, value, log_std = agent.get_action_and_value(next_obs)
+                rollout_sigma_sum += float(log_std.exp().mean().item())
+                rollout_sigma_clamp_sum += float(
+                    (log_std <= Agent.LOG_STD_MIN + 1e-6).float().mean().item())
             actions_buf[step] = action
             logprobs_buf[step] = logprob
             values_buf[step] = value
@@ -247,6 +268,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
             for k in _reward_term_keys:
                 if k in info:
                     rollout_term_accum[k] += info[k]
+            for k in _fb_keys:
+                if k in info:
+                    rollout_fb_accum[k] += info[k]
             rollout_term_n += 1
             n_done = int(info.get("n_episodes_done", 0))
             if n_done > 0:
@@ -303,7 +327,7 @@ def train(cfg: PPOConfig, env, device: torch.device,
             for start in range(0, batch_size, minibatch_size):
                 end = start + minibatch_size
                 mb_inds = b_inds[start:end]
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(
+                _, newlogprob, entropy, newvalue, _ = agent.get_action_and_value(
                     b_obs[mb_inds], b_actions[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
@@ -354,11 +378,17 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 "train/ent_coef": ent_coef_now,
                 "train/reward_scale": (reward_scaler.scale
                                        if reward_scaler is not None else 1.0),
+                "train/sigma_mean": rollout_sigma_sum / max(rollout_term_n, 1),
+                "train/sigma_clamp_frac":
+                    rollout_sigma_clamp_sum / max(rollout_term_n, 1),
             }
             for k in _reward_term_keys:
                 short = k.replace("_mean", "").replace("r_", "")  # progress, jl, cone, dm, w_u
                 log_dict[f"reward/{short}"] = (rollout_term_accum[k] / rollout_term_n
                                                 if rollout_term_n > 0 else 0.0)
+            for k in _fb_keys:
+                log_dict[f"train/{k}"] = (rollout_fb_accum[k] / rollout_term_n
+                                          if rollout_term_n > 0 else 0.0)
             # Episode-finish stats (only emit if any episodes finished in this rollout)
             if ep_total_finished > 0:
                 log_dict["episode/reward_mean"] = ep_accum["ep_reward_mean"] / ep_total_finished

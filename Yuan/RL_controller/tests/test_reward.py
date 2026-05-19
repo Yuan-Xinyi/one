@@ -148,11 +148,12 @@ def test_reset_clears_prev_caches():
 def test_baseline_k_dm_actually_adds_term():
     """Sanity preserved from previous reward design."""
     from Yuan.RL_controller.env.baseline_controller import GPMBaselineController
+    from Yuan.RL_controller.env.env import build_task_aligned_basis
     env = _build_env(n_envs=4)
-    _, _, J, _ = env.kin.tcp_fk_jac(env.q)
-    J_p = J[:, :3, :]
-    from Yuan.RL_controller.env.env import align_nullspace_basis
-    B_basis = align_nullspace_basis(J_p, None)
+    B_basis, _ = build_task_aligned_basis(
+        env.kin, env.q, env.line_dir, env.n_target,
+        env.kin.q_mid, env.q_half, env.cfg.manip_damping,
+    )
     ctrl_weak = GPMBaselineController(env.kin, k_jl=1.0, k_dm=0.0)
     ctrl_strong = GPMBaselineController(env.kin, k_jl=1.0, k_dm=1.0)
     a_weak = ctrl_weak.action(env.q, B_basis, u_hat=env.line_dir)

@@ -16,6 +16,12 @@ Usage:
         --config Yuan/RL_controller/config.yaml \\
         --controller gpm
 
+    # Overlay: RL + baseline in same scene, both half-transparent
+    # (black pen = RL, orange pen = baseline). Identical seeded episodes.
+    python -m Yuan.RL_controller.visualize \\
+        --config Yuan/RL_controller/config.yaml \\
+        --controller rl --ckpt path/to/agent.pt --overlay classical
+
 Hot keys (one's default):
     drag/scroll to orbit / zoom; ESC quits.
 """
@@ -65,10 +71,17 @@ parser.add_argument("--controller", choices=["rl", "classical", "gpm"], default=
                     help="rl=trained policy (needs --ckpt); classical=4-term hand-tuned NS; gpm=weak GPM-JL")
 parser.add_argument("--ckpt", default=None,
                     help="agent state_dict path; required when --controller rl")
+parser.add_argument("--overlay", choices=["classical", "gpm"], default="classical",
+                    help="overlay a second baseline controller in the same scene; both robots run "
+                         "identical episodes (same seeded line_dist) so trajectories can be compared "
+                         "side-by-side. Both robots are rendered semi-transparent; pen colors distinguish them.")
 parser.add_argument("--device", default="cpu")
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--steps-per-tick", type=int, default=1,
                     help="env steps per viewer tick; raise for fast-forward")
+parser.add_argument("--slowdown", type=float, default=4.0,
+                    help="playback slowdown factor; tick interval = env_dt * slowdown. "
+                         "e.g. 4.0 = 0.25x speed (one env step every 4 * env_dt seconds)")
 args = parser.parse_args()
 
 with open(args.config, "r") as f:
@@ -85,41 +98,51 @@ if args.controller == "rl" and args.ckpt is None:
 device = torch.device(args.device)
 
 
-# Env -------------------------------------------------------------------------
+# Env + runner construction --------------------------------------------------
+# Each "runner" bundles one env + one action source + one rendered robot. With
+# --overlay we build two runners that share an identical seeded LineDistribution
+# (deterministic pool + lock-step sampling) so both controllers run the SAME
+# episode and trajectories can be compared visually.
+
+if args.overlay is not None and args.controller != "rl":
+    parser.error("--overlay only makes sense together with --controller rl")
 
 env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": 1})
-env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
-# Viz only needs a handful of valid lines (one per episode); 500 is plenty
-# and keeps the optional feasibility filter fast (~5s instead of ~130s).
-env.line_dist = LineDistribution(
-    kin=env.kin, collision=env.collision,
-    n_pool=500,
-    n_target_noise_deg=cfg_yaml["line_distribution"]["n_target_noise_deg"],
-    seed=args.seed if args.seed is not None
-         else cfg_yaml["line_distribution"]["train_seed"],
-)
-if cfg_yaml["line_distribution"].get("feasibility_filter", False):
-    env.line_dist.filter_by_classical_controller(
-        env_cfg, threshold_m=float(cfg_yaml["line_distribution"]["feasibility_threshold_m"]),
-        verbose=False)
+seed_val = args.seed if args.seed is not None else cfg_yaml["line_distribution"]["train_seed"]
 
 
-# Action source ----------------------------------------------------------------
+def _build_env() -> NSRLBatchedEnv:
+    e = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
+    # Viz only needs a handful of valid lines (one per episode); 500 is plenty
+    # and keeps the optional feasibility filter fast (~5s instead of ~130s).
+    e.line_dist = LineDistribution(
+        kin=e.kin, collision=e.collision,
+        n_pool=500,
+        n_target_noise_deg=cfg_yaml["line_distribution"]["n_target_noise_deg"],
+        seed=seed_val,
+    )
+    if cfg_yaml["line_distribution"].get("feasibility_filter", False):
+        e.line_dist.filter_by_classical_controller(
+            env_cfg, threshold_m=float(cfg_yaml["line_distribution"]["feasibility_threshold_m"]),
+            verbose=False)
+    return e
 
-if args.controller == "gpm":
-    ctrl = GPMBaselineController(env.kin,
-                                 k_jl=cfg_yaml["baseline"]["k_jl"],
-                                 k_dm=float(cfg_yaml["baseline"].get("k_dm", 0.0)),
-                                 manip_damping=float(cfg_yaml["baseline"].get("manip_damping", 1e-3)))
-    action_fn = baseline_action_fn(ctrl)
-    print(f"[viz] using GPM baseline (k_jl={ctrl.k_jl}, k_dm={ctrl.k_dm})")
-elif args.controller == "classical":
-    ctrl = ClassicalNullspaceController(env.kin)
-    action_fn = cn_action_fn(ctrl)
-    print("[viz] using classical 4-term nullspace controller "
-          "(manip + JL center + cone gradient + q_ref attract)")
-else:  # "rl"
-    agent = Agent(env.obs_dim, env.act_dim,
+
+def _build_action_fn(kind: str, env_for_dims: NSRLBatchedEnv):
+    if kind == "gpm":
+        ctrl = GPMBaselineController(env_for_dims.kin,
+                                     k_jl=cfg_yaml["baseline"]["k_jl"],
+                                     k_dm=float(cfg_yaml["baseline"].get("k_dm", 0.0)),
+                                     manip_damping=float(cfg_yaml["baseline"].get("manip_damping", 1e-3)))
+        print(f"[viz] GPM baseline (k_jl={ctrl.k_jl}, k_dm={ctrl.k_dm})")
+        return baseline_action_fn(ctrl)
+    if kind == "classical":
+        ctrl = ClassicalNullspaceController(env_for_dims.kin)
+        print("[viz] classical 4-term nullspace controller "
+              "(manip + JL center + cone gradient + q_ref attract)")
+        return cn_action_fn(ctrl)
+    # "rl"
+    agent = Agent(env_for_dims.obs_dim, env_for_dims.act_dim,
                   hidden_dim=cfg_yaml["ppo"]["hidden_dim"],
                   init_log_std=cfg_yaml["ppo"]["init_log_std"]).to(device)
     agent.load_state_dict(torch.load(args.ckpt, map_location=device))
@@ -127,9 +150,9 @@ else:  # "rl"
 
     @torch.no_grad()
     def action_fn(env_: NSRLBatchedEnv) -> torch.Tensor:
-        mean = agent.actor_mean(env_.current_obs())
-        return mean.clamp(-1.0, 1.0)
-    print(f"[viz] loaded RL policy from {args.ckpt}")
+        return agent.actor_mean(env_.current_obs()).clamp(-1.0, 1.0)
+    print(f"[viz] RL policy loaded from {args.ckpt}")
+    return action_fn
 
 
 # Viewer ----------------------------------------------------------------------
@@ -139,15 +162,49 @@ base = ovw.World(cam_pos=(1.5, 1.2, 1.2),
                  toggle_auto_cam_orbit=False)
 ossop.frame().attach_to(base.scene)
 
-# Hand + pen. With env `tcp_offset = 0.2034`, the env controls the pen tip;
-# we set `use_pen_tcp=True` so scalar FR3's `_loc_tcp_tf` is also at the pen
-# tip — `robot.gl_tcp_tf` then matches the env's EE position 1:1.
-robot, hand = make_fr3_with_pen(use_pen_tcp=True)
-robot.attach_to(base.scene)
-attach_pen_visual(robot)
+# Build runners. Single runner unless --overlay is set, in which case we add a
+# second baseline runner sharing the same seeded line_dist (deterministic ⇒
+# identical episodes). Both robots are half-transparent; pen color distinguishes
+# them: blue = RL (ours), red = overlay baseline.
+runners: list[dict] = []
+
+
+def _add_runner(kind: str, alpha: float, body_rgb, pen_rgb):
+    env_i = _build_env()
+    fn_i = _build_action_fn(kind, env_i)
+    robot_i, hand_i = make_fr3_with_pen(use_pen_tcp=True)
+    robot_i.attach_to(base.scene)
+    attach_pen_visual(robot_i, rgb=pen_rgb, alpha=alpha)
+    if body_rgb is not None:
+        robot_i.rgb = body_rgb  # uniform tint across all links + mounted hand
+    robot_i.alpha = alpha
+    runners.append({"label": kind, "env": env_i, "fn": fn_i,
+                    "robot": robot_i, "hand": hand_i,
+                    "term_reason": None})
+
+
+if args.overlay is None:
+    _add_runner(args.controller, alpha=1.0,
+                body_rgb=None, pen_rgb=(0.15, 0.15, 0.15))
+else:
+    # RL primary (blue body + blue pen) + baseline overlay (red body + red pen),
+    # both at alpha=0.5. Body uses a lighter tint than the pen so geometry stays
+    # readable while the color identity is unmistakable.
+    _add_runner("rl", alpha=0.5,
+                body_rgb=(0.45, 0.60, 0.95), pen_rgb=(0.10, 0.25, 0.95))
+    _add_runner(args.overlay, alpha=0.5,
+                body_rgb=(0.95, 0.55, 0.55), pen_rgb=(0.95, 0.10, 0.10))
+
+# Aliases for legacy viz helpers — arrows / cone check key off the primary env.
+primary = runners[0]
+env: NSRLBatchedEnv = primary["env"]
+robot = primary["robot"]
+hand = primary["hand"]
+
 builtins.base = base
 builtins.robot = robot
 builtins.hand = hand
+builtins.runners = runners
 
 # Visualization handles — rebuilt on each new episode
 _viz = {"u_hat_arrow": None, "n_target_arrow": None, "z_tool_arrow": None,
@@ -220,22 +277,28 @@ def _update_tool_arrow():
 
 # Episode state ---------------------------------------------------------------
 
-_state = {"episode": 0, "step": 0, "term_reason": None, "needs_init": True}
+_state = {"episode": 0, "step": 0, "needs_init": True}
 
 
-def _sync_robot():
-    q = env.q[0].cpu().numpy().astype(np.float32)
-    robot.fk(qs=q)
+def _sync_robots():
+    for r in runners:
+        q = r["env"].q[0].cpu().numpy().astype(np.float32)
+        r["robot"].fk(qs=q)
+
+
+def _all_done() -> bool:
+    return all(bool(r["env"].done_persistent[0].item()) for r in runners)
 
 
 def _start_new_episode():
-    env.reset()
-    _sync_robot()
+    for r in runners:
+        r["env"].reset()
+        r["term_reason"] = None
+    _sync_robots()
     _build_episode_viz()
     _update_tool_arrow()
     _state["episode"] += 1
     _state["step"] = 0
-    _state["term_reason"] = None
     _state["needs_init"] = False
     print(f"[viz] episode {_state['episode']} started "
           f"(u_hat={env.line_dir[0].tolist()}, "
@@ -251,25 +314,33 @@ def tick(dt):
         return
 
     for _ in range(args.steps_per_tick):
-        a = action_fn(env)
-        _, _, term, trunc, info = env.step(a, auto_reset=False)
+        for r in runners:
+            env_r = r["env"]
+            if bool(env_r.done_persistent[0].item()):
+                continue  # frozen
+            a = r["fn"](env_r)
+            _, _, _, _, info = env_r.step(a, auto_reset=False)
+            if bool(env_r.done_persistent[0].item()) and r["term_reason"] is None:
+                r["term_reason"] = TERM_NAMES.get(
+                    int(info["term_reason"][0].item()), "?")
+                print(f"[viz] episode {_state['episode']} {r['label']} ended: "
+                      f"step={_state['step']+1}, reason={r['term_reason']}")
         _state["step"] += 1
-        if bool(env.done_persistent[0].item()):
-            _state["term_reason"] = TERM_NAMES.get(
-                int(info["term_reason"][0].item()), "?")
+        if _all_done():
             break
 
-    _sync_robot()
+    _sync_robots()
     _update_tool_arrow()
 
-    if bool(env.done_persistent[0].item()):
-        print(f"[viz] episode {_state['episode']} ended: "
-              f"step={_state['step']}, reason={_state['term_reason']}")
+    if _all_done():
         # Pause one tick, then start the next episode
         _state["needs_init"] = True
 
 
-base.schedule_interval(tick, interval=env_cfg.dt)
-print(f"[viz] tick = {env_cfg.dt*args.steps_per_tick:.3f}s "
-      f"({args.steps_per_tick} env step(s)/tick). Ctrl-C or close window to exit.")
+tick_interval = env_cfg.dt * float(args.slowdown)
+base.schedule_interval(tick, interval=tick_interval)
+print(f"[viz] tick = {tick_interval:.3f}s "
+      f"({args.steps_per_tick} env step(s)/tick, slowdown={args.slowdown}x → "
+      f"playback {1.0/float(args.slowdown):.2f}x real-time per env step). "
+      "Ctrl-C or close window to exit.")
 base.run()

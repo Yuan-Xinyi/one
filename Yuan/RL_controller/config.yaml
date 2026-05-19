@@ -35,13 +35,15 @@ ppo:
   norm_adv: true
   clip_coef: 0.2
   clip_vloss: true
-  ent_coef: 0.01     # initial entropy bonus (decayed if anneal_ent_coef=true)
-  anneal_ent_coef: true  # linearly decay ent_coef → 0 over training (mirrors anneal_lr)
+  ent_coef: 0.01                 # v4: initial entropy bonus
+  ent_coef_floor: 0.01           # v4: hold floor at 1% (was 0.0)
+  ent_coef_anneal_frac: 0.7      # v4: anneal over first 70% of training (was 1.0)
+  anneal_ent_coef: true          # linearly decay ent_coef → floor over anneal_frac of training
   vf_coef: 0.5
   max_grad_norm: 0.5
   target_kl: 0.02
   hidden_dim: 512         # widened (256→512) to give actor more capacity for state-dependent μ(s)
-  init_log_std: -0.5
+  init_log_std: -1.0             # v4: was -0.5
   normalize_returns: true # A2: reward scaling by running std of discounted return; V learns z-score targets
 
 line_distribution:

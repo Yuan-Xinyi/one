@@ -115,7 +115,7 @@ class Agent(nn.Module):
     # at upper clamp during 50M run; PPO continuous-control standard is a single
     # learnable Parameter per action dim, much easier for the entropy bonus
     # to compress without state-routing the gradient through the trunk.
-    LOG_STD_MIN = -2.0  # σ ≥ exp(-2) ≈ 0.135
+    LOG_STD_MIN = -2.5  # σ ≥ exp(-2.5) ≈ 0.082 (v4: was -2.0)
     LOG_STD_MAX =  0.5  # σ ≤ exp(0.5) ≈ 1.65 (safety cap; nn.Parameter rarely saturates)
 
     def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 512,

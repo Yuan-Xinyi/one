@@ -29,7 +29,7 @@ from pathlib import Path
 import torch
 import yaml
 
-from Yuan.RL_controller.env.env import NSRLBatchedEnv, EnvConfig
+from Yuan.RL_controller.env.env import NSRLBatchedEnv, EnvConfig, TERM_NAMES
 from Yuan.RL_controller.env.line_distribution import LineDistribution
 from Yuan.RL_controller.ppo import PPOConfig, train as ppo_train, Agent
 
@@ -37,9 +37,6 @@ from Yuan.RL_controller.ppo import PPOConfig, train as ppo_train, Agent
 def _resolve_log_path(out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir / "train.log"
-
-
-_TERM_NAMES = {0: "alive", 2: "collision", 3: "cone", 4: "jl", 5: "truncated"}
 
 
 def _make_eval_fn(eval_env: NSRLBatchedEnv):
@@ -59,7 +56,7 @@ def _make_eval_fn(eval_env: NSRLBatchedEnv):
         n = term.shape[0]
         # term_reason fractions for trend tracking (failure-mode panel)
         frac = {f"eval_term/{name}": float((term == code).sum()) / n
-                for code, name in _TERM_NAMES.items()}
+                for code, name in TERM_NAMES.items()}
         ep_progress = stats["episode_progress"].float()
         return {
             "eval/mean_progress_m": float(ep_progress.mean().item()),
@@ -114,7 +111,7 @@ def main():
         kin=train_env.kin, collision=train_env.collision,
         n_pool=line_cfg["n_pool"],
         n_target_noise_deg=line_cfg["n_target_noise_deg"],
-        seed=line_cfg.get("train_seed", None),
+        seed=line_cfg["train_seed"],
         env_cfg=env_cfg,
         feasibility_threshold_m=threshold_m,
     )

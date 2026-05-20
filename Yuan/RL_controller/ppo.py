@@ -288,14 +288,14 @@ def train(cfg: PPOConfig, env, device: torch.device,
             advantages = torch.zeros_like(rewards_buf)
             lastgaelam = torch.zeros(n_envs, device=device)
             for t in reversed(range(cfg.n_steps)):
+                # bootstrap_val is masked only by `terminated` (zero if terminated);
+                # truncation is handled below by overwriting with V(terminal_obs),
+                # so we don't need a separate nextnonterminal_trunc factor here.
                 if t == cfg.n_steps - 1:
                     nextnonterminal_term = 1.0 - terminated_buf[t]
-                    nextnonterminal_trunc = 1.0 - truncated_buf[t]
-                    # For the boundary step: bootstrap from next_obs if not terminated
                     bootstrap_val = next_value * nextnonterminal_term
                 else:
                     nextnonterminal_term = 1.0 - terminated_buf[t]
-                    nextnonterminal_trunc = 1.0 - truncated_buf[t]
                     bootstrap_val = values_buf[t + 1] * nextnonterminal_term
                 # If truncated (and not terminated), bootstrap from terminal_obs
                 truncated_only = truncated_buf[t] * (1.0 - terminated_buf[t])

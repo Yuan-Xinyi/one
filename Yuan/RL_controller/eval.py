@@ -35,16 +35,13 @@ from pathlib import Path
 import torch
 import yaml
 
-from Yuan.RL_controller.env.env import NSRLBatchedEnv, EnvConfig
+from Yuan.RL_controller.env.env import NSRLBatchedEnv, EnvConfig, TERM_NAMES
 from Yuan.RL_controller.env.line_distribution import LineDistribution, ScriptedLineDistribution
 from Yuan.RL_controller.env.baseline_controller import (
     GPMBaselineController, rollout_first_episode, baseline_action_fn,
     zero_nullspace_action_fn,
 )
 from Yuan.RL_controller.ppo import Agent
-
-
-TERM_NAMES = {0: "alive", 2: "collision", 3: "cone", 4: "jl", 5: "truncated"}
 
 
 def _rl_action_fn(agent: Agent):

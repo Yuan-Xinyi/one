@@ -210,6 +210,15 @@ TERM_JL = 4
 TERM_TRUNCATED = 5
 TERM_LATERAL = 6
 
+TERM_NAMES = {
+    TERM_ALIVE: "alive",
+    TERM_COLLISION: "collision",
+    TERM_CONE: "cone",
+    TERM_JL: "jl",
+    TERM_TRUNCATED: "truncated",
+    TERM_LATERAL: "lateral",
+}
+
 
 class NSRLBatchedEnv:
     obs_dim = OBS_DIM
@@ -273,15 +282,19 @@ class NSRLBatchedEnv:
 
     # ---------------------------------------------------------------- helpers
 
-    def _compute_obs(self, R_tcp: torch.Tensor) -> torch.Tensor:
+    def _compute_obs(self, R_tcp: torch.Tensor,
+                     q: torch.Tensor | None = None,
+                     a_prev: torch.Tensor | None = None) -> torch.Tensor:
+        # q / a_prev default to self.q / self.a_prev, but step() must pass
+        # post-step values when building terminal_obs so all 31 dims are
+        # snapshotted at the same time (line_dir, n_target are reset-only).
+        q = self.q if q is None else q
+        a_prev = self.a_prev if a_prev is None else a_prev
         z_tool = R_tcp[:, :, 2]
-        q_norm = (self.q - self.q_mid) / self.q_half
-        # Explicit cone-relevant features so the actor doesn't have to
-        # learn dot/cross from raw vectors (ReLU MLPs are bad at it):
-        cos_angle = (z_tool * self.n_target).sum(-1, keepdim=True)  # 1
-        z_cross_n = torch.linalg.cross(z_tool, self.n_target, dim=-1)  # 3
-        # Quadratic JL proximity — makes |q_i_norm| close-to-1 directly visible
-        q_norm_sq = q_norm * q_norm  # 7
+        q_norm = (q - self.q_mid) / self.q_half
+        cos_angle = (z_tool * self.n_target).sum(-1, keepdim=True)
+        z_cross_n = torch.linalg.cross(z_tool, self.n_target, dim=-1)
+        q_norm_sq = q_norm * q_norm
         return torch.cat([
             q_norm,         # 7
             q_norm_sq,      # 7
@@ -290,7 +303,7 @@ class NSRLBatchedEnv:
             self.n_target,  # 3
             cos_angle,      # 1
             z_cross_n,      # 3
-            self.a_prev,    # 4
+            a_prev,         # 4
         ], dim=-1)          # = 31
 
     def current_obs(self) -> torch.Tensor:
@@ -485,7 +498,9 @@ class NSRLBatchedEnv:
         term_reason = torch.where(truncated & ~terminated,
                                   torch.full_like(term_reason, TERM_TRUNCATED), term_reason)
 
-        terminal_obs = self._compute_obs(R_new)  # snapshot of pre-reset obs
+        # snapshot of obs at end-of-step (post-step q, this-step actions);
+        # PPO bootstraps V(terminal_obs) for truncated episodes.
+        terminal_obs = self._compute_obs(R_new, q=q_new, a_prev=actions)
 
         # Accumulate per-episode reward + step counter (before reset wipes them)
         ep_reward_finished = torch.zeros_like(reward)  # cumulative ep reward for envs that just ended

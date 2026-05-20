@@ -34,14 +34,22 @@ class LineDistribution:
                  n_target_noise_deg: float = 5.0,
                  seed: int | None = None,
                  batch_size: int = 8192):
+        # Require explicit seed: cache_key() hashes the seed value, so a None
+        # seed yields a fixed cache_path but a non-deterministic pool — the
+        # first build wins and later "different" calls silently get the cached
+        # contents. Force callers to pass an int.
+        if seed is None:
+            raise ValueError(
+                "LineDistribution requires an explicit integer seed for "
+                "reproducibility (cache key depends on it)")
+
         self.kin = kin
         self.device = kin.device
         self.dtype = kin.dtype
         self.n_target_noise = float(n_target_noise_deg) * math.pi / 180.0
 
         gen = torch.Generator(device=self.device)
-        if seed is not None:
-            gen.manual_seed(int(seed))
+        gen.manual_seed(int(seed))
 
         q_pool, z_pool = [], []
         n_remaining = n_pool

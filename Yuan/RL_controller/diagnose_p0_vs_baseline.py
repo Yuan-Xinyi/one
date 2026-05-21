@@ -48,8 +48,8 @@ import yaml
 
 from Yuan.RL_controller.env.env import NSRLBatchedEnv, EnvConfig, TERM_NAMES, TERM_TRUNCATED
 from Yuan.RL_controller.env.line_distribution import LineDistribution, ScriptedLineDistribution
-from Yuan.RL_controller.env.baseline_controller import (
-    GPMBaselineController, baseline_action_fn,
+from Yuan.RL_controller.env.classical_nullspace import (
+    ClassicalNullspaceController, cn_action_fn,
 )
 from Yuan.RL_controller.ppo import Agent
 
@@ -133,7 +133,12 @@ def main():
         cfg_yaml = yaml.safe_load(f)
 
     line_cfg = cfg_yaml["line_distribution"]
-    env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": args.n})
+    # Drop stale shaping-reward keys EnvConfig no longer accepts (older P0
+    # config pre-dates env.py simplification to progress-only).
+    import dataclasses
+    valid_keys = {f.name for f in dataclasses.fields(EnvConfig)}
+    env_kw = {k: v for k, v in cfg_yaml["env"].items() if k in valid_keys}
+    env_cfg = EnvConfig(**{**env_kw, "n_envs": args.n})
 
     # Build pool (cached) and draw N tasks with an explicit generator seeded
     # by --seed (deterministic across reruns).
@@ -164,18 +169,15 @@ def main():
     print(f"[diag] running RL rollout ({args.n} envs, max_steps={env_cfg.max_steps})")
     rl_stats = rollout_with_q_traj(rl_env, _rl_action_fn(agent))
 
-    # ---- GPM-JL baseline rollout (fresh env so internal state is clean) ----
+    # ---- Classical 4-term hand-tuned baseline (fresh env) ----
     base_env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
     base_env.line_dist = ScriptedLineDistribution(
         {k: v.clone() for k, v in holdout.items()})
-    base_ctrl = GPMBaselineController(
-        base_env.kin,
-        k_jl=cfg_yaml["baseline"]["k_jl"],
-        k_dm=cfg_yaml["baseline"].get("k_dm", 0.0),
-        manip_damping=cfg_yaml["baseline"]["manip_damping"],
-    )
-    print(f"[diag] running baseline rollout (k_jl={base_ctrl.k_jl}, k_dm={base_ctrl.k_dm})")
-    base_stats = rollout_with_q_traj(base_env, baseline_action_fn(base_ctrl))
+    base_ctrl = ClassicalNullspaceController(base_env.kin)  # default hand-tuned gains
+    print(f"[diag] running Classical hand-tuned baseline rollout "
+          f"(manip={base_ctrl.manip_gain}, jl={base_ctrl.jl_gain}, "
+          f"angle_b={base_ctrl.angle_boundary_gain}, k_null={base_ctrl.k_null})")
+    base_stats = rollout_with_q_traj(base_env, cn_action_fn(base_ctrl))
 
     # ---- save npz ----
     rl_len = rl_stats["episode_len"].cpu().numpy()

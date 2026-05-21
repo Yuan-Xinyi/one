@@ -3,6 +3,9 @@
 Per rules.md, the "line" is an infinite ray (p_0, u_hat, n_target) — no length,
 no success terminate. Agent's only objective is to maximize episode lifetime.
 
+Reward (P0 progress-only):
+    r_t = w_progress · clip(Δp·u_hat / (v·dt), 0, 1)   ∈ [0, w_progress]
+
 Per env state:
     q              (7,)  current joint config
     line_dir       (3,)  task direction u_hat (unit, world frame)
@@ -27,9 +30,9 @@ from Yuan.RL_controller.env.line_distribution import LineDistribution
 OBS_DIM = 31
 ACT_DIM = 4
 
-# Framing B v4: lateral deviation is now controlled by a task-space PD term
-# in the controller (see step()), not by reward or a tight termination cap.
-# This bound is a safety net — only trips if PD feedback fails entirely.
+# Framing B: lateral deviation is controlled by a task-space PD term in the
+# controller (see step()), not by reward or a tight termination cap. This
+# bound is a safety net — only trips if PD feedback fails entirely.
 LATERAL_SAFETY_NET = 0.02
 
 
@@ -48,23 +51,8 @@ class EnvConfig:
     r_collision: float = 0.0
     r_cone: float = 0.0
     r_jl: float = 0.0
-    # ---- Length-based shaping reward (sum-to-1 normalized weights) ----
-    # Survival term now rewards EE TRAVEL not step count: each step earns
-    # w_progress · clip(Δp · u_hat / (v·dt), 0, 1)  ∈ [0, w_progress].
-    # When EE tracks the line at full speed → ~w_progress per step;
-    # when stuck near singular → ~0 (no incentive to burn steps in place).
-    #   r_t = w_progress · clip(Δp·u_hat/(v·dt), 0, 1)
-    #       + w_jl   · scale · (||q_norm_prev||²_mean − ||q_norm_curr||²_mean)   # away from JL center
-    #       + w_cone · scale · (cos_curr − cos_prev)                             # better alignment
-    #       + w_dm   · scale · (w_u_curr − w_u_prev)                             # higher manipulability
-    # Weights are normalized so w_progress + w_jl + w_cone + w_dm = 1 at runtime.
-    w_progress: float = 0.25
-    w_jl: float = 0.25
-    w_cone: float = 0.25
-    w_dm: float = 0.25
-    delta_scale: float = 100.0        # K: per-step clipped-delta scale
-    delta_lookback: int = 10          # N: metric_t − metric_{t−N}; defeats hi-freq oscillation hack
-    w_terminal: float = 0.0           # weight on terminal telescoping bonus = K·Σw_i·(metric_final − metric_init); disabled by default since signed per-step delta already telescopes
+    # Progress-only shaping reward.
+    w_progress: float = 1.0
     manip_damping: float = 1e-3
 
 
@@ -234,19 +222,6 @@ class NSRLBatchedEnv:
         self.a_max = cfg.a_max
         self.max_steps = cfg.max_steps
         self.cos_cone = math.cos(cfg.cone_deg * math.pi / 180.0)
-        # Normalize reward weights so they sum to 1
-        total_w = cfg.w_progress + cfg.w_jl + cfg.w_cone + cfg.w_dm
-        if abs(total_w - 1.0) > 1e-3:
-            print(f"[env] normalizing reward weights: sum={total_w:.4f} → 1.0")
-            self._w_progress = cfg.w_progress / total_w
-            self._w_jl = cfg.w_jl / total_w
-            self._w_cone = cfg.w_cone / total_w
-            self._w_dm = cfg.w_dm / total_w
-        else:
-            self._w_progress = cfg.w_progress
-            self._w_jl = cfg.w_jl
-            self._w_cone = cfg.w_cone
-            self._w_dm = cfg.w_dm
         self.kin = BatchedFR3Kinematics(device=self.device, tcp_offset=cfg.tcp_offset)
         self.collision = FR3SphereCollision(device=self.device)
         self.line_dist = line_dist
@@ -264,16 +239,6 @@ class NSRLBatchedEnv:
         self.t = torch.zeros((B,), device=self.device, dtype=torch.long)
         self.a_prev = torch.zeros((B, ACT_DIM), device=self.device, dtype=d)
         self.done_persistent = torch.zeros((B,), device=self.device, dtype=torch.bool)
-        # N-step lookback ring buffers for clipped delta reward.
-        # Each metric has shape (B, N). NaN sentinel ⇒ delta = 0 for first N steps.
-        N = int(cfg.delta_lookback)
-        self.q_norm_sq_hist = torch.full((B, N), float("nan"), device=self.device, dtype=d)
-        self.cos_angle_hist = torch.full((B, N), float("nan"), device=self.device, dtype=d)
-        self.w_u_hist = torch.full((B, N), float("nan"), device=self.device, dtype=d)
-        # Episode-start metric values for terminal telescoping bonus
-        self.q_norm_sq_init = torch.full((B,), float("nan"), device=self.device, dtype=d)
-        self.cos_angle_init = torch.full((B,), float("nan"), device=self.device, dtype=d)
-        self.w_u_init = torch.full((B,), float("nan"), device=self.device, dtype=d)
         # Cumulative per-episode reward (logged on done)
         self.episode_reward = torch.zeros((B,), device=self.device, dtype=d)
         self.episode_steps = torch.zeros((B,), device=self.device, dtype=torch.long)
@@ -322,12 +287,6 @@ class NSRLBatchedEnv:
         self.t[mask] = 0
         self.a_prev[mask] = 0
         self.done_persistent[mask] = False
-        self.q_norm_sq_hist[mask] = float("nan")
-        self.cos_angle_hist[mask] = float("nan")
-        self.w_u_hist[mask] = float("nan")
-        self.q_norm_sq_init[mask] = float("nan")  # will be set on first step
-        self.cos_angle_init[mask] = float("nan")
-        self.w_u_init[mask] = float("nan")
         self.episode_reward[mask] = 0.0
         self.episode_steps[mask] = 0
         # Compute EE start position for the reset envs (FK on the just-sampled q0)
@@ -366,7 +325,7 @@ class NSRLBatchedEnv:
             self.kin.q_mid, self.q_half, self.cfg.manip_damping,
         )
 
-        # Framing B v4: lateral correction is the controller's job, not the
+        # Framing B: lateral correction is the controller's job, not the
         # policy's. p_ref tracks the ideal point on the line at the current
         # episode time; K_P pulls TCP back toward it in task space, leaving
         # the nullspace projection (and reward) free of lateral concerns.
@@ -379,9 +338,8 @@ class NSRLBatchedEnv:
         q_new = self.q + qdot * self.dt
 
         link_tfs = self.kin.link_transforms(q_new)
-        p_new, R_new, J_new, _ = self.kin.tcp_fk_jac(q_new)
+        p_new, R_new, _, _ = self.kin.tcp_fk_jac(q_new)
         z_new = R_new[:, :, 2]
-        J_p_new = J_new[:, :3, :]
 
         is_coll = self.collision.is_collided(link_tfs)
         jl_viol = ((q_new < self.lmt_lo) | (q_new > self.lmt_up)).any(dim=-1)
@@ -404,83 +362,17 @@ class NSRLBatchedEnv:
         # backwards drift from finite-dt curvature.
         delta_progress = ((p_new - p) * self.line_dir).sum(-1)
         progress_norm = (delta_progress / (self.v * self.dt)).clamp(0.0, 1.0)
-        r_progress_per_env = self._w_progress * progress_norm
+        r_progress_per_env = self.cfg.w_progress * progress_norm
 
-        # progress survival base + terminal penalty modifiers (penalties set to 0 by default)
         reward = r_progress_per_env.clone()
         reward = torch.where(is_coll, reward + self.cfg.r_collision, reward)
         reward = torch.where(cone_viol & ~is_coll, reward + self.cfg.r_cone, reward)
         reward = torch.where(jl_viol & ~is_coll & ~cone_viol,
                              reward + self.cfg.r_jl, reward)
 
-        # ---- Incremental-delta shaping (positive = improvement) ----
-        q_norm_new = (q_new - self.q_mid) / self.q_half
-        q_norm_sq_now = (q_norm_new * q_norm_new).mean(-1)  # ∈ [0, 1]
-        # directional manipulability w_u(q_new, u_hat)
-        # Use torch.linalg.solve (Cholesky-friendly) + nan_to_num for numerical
-        # robustness; torch.linalg.inv occasionally returns NaN on FR3 configs
-        # with high condition number.
-        JJt_dmp = (J_p_new @ J_p_new.transpose(-1, -2)
-                   + (self.cfg.manip_damping ** 2) * torch.eye(
-                       3, device=self.device, dtype=self.kin.dtype
-                   ).expand(self.n_envs, 3, 3))
-        u_col = self.line_dir.unsqueeze(-1)
-        sol = torch.linalg.solve(JJt_dmp, u_col)  # JJt_dmp @ sol = u_col
-        inv_quad = (u_col.transpose(-1, -2) @ sol).squeeze(-1).squeeze(-1)
-        inv_quad = torch.nan_to_num(inv_quad, nan=1.0, posinf=1e12, neginf=1e-12).clamp_min(1e-12)
-        w_u_now = inv_quad.pow(-0.5).clamp_min(1e-6)
-        w_u_now = torch.nan_to_num(w_u_now, nan=1e-6)  # final safety net
-        cos_now = cos_angle  # already clamped to [-1, 1]
-
-        # Initialize episode-start metric values on first step (NaN sentinel)
-        first_step_mask = torch.isnan(self.q_norm_sq_init)
-        self.q_norm_sq_init = torch.where(first_step_mask, q_norm_sq_now, self.q_norm_sq_init)
-        self.cos_angle_init = torch.where(first_step_mask, cos_now, self.cos_angle_init)
-        self.w_u_init = torch.where(first_step_mask, w_u_now, self.w_u_init)
-
-        # N-step lookback delta: compare metric_now vs metric_{t-N}.
-        # Ring buffer slot for current step t is (t % N); reading from same
-        # slot BEFORE overwriting gives metric_{t-N}.
-        N = self.cfg.delta_lookback
-        slot = (self.t % N).long()  # (B,) write/read slot for THIS step
-        idx = slot.unsqueeze(-1)  # gather index along dim 1
-        # Read metric_{t-N} from each env's slot
-        old_qsq = self.q_norm_sq_hist.gather(1, idx).squeeze(-1)
-        old_cos = self.cos_angle_hist.gather(1, idx).squeeze(-1)
-        old_wu = self.w_u_hist.gather(1, idx).squeeze(-1)
-        no_old = torch.isnan(old_qsq)  # first N steps: no history yet → delta = 0
-        zero = torch.zeros_like(q_norm_sq_now)
-        # Signed (bidirectional) deltas: per-step shaping reward telescopes
-        # cleanly over the rollout. Degradations are penalized symmetrically
-        # to improvements, so the policy cannot harvest reward by oscillating
-        # the metric.
-        delta_jl = torch.where(no_old, zero, old_qsq - q_norm_sq_now)
-        delta_cone = torch.where(no_old, zero, cos_now - old_cos)
-        delta_dm = torch.where(no_old, zero, w_u_now - old_wu)
-
-        scale = self.cfg.delta_scale
-        r_jl_term = self._w_jl * scale * delta_jl
-        r_cone_term = self._w_cone * scale * delta_cone
-        r_dm_term = self._w_dm * scale * delta_dm
-        reward = reward + r_jl_term + r_cone_term + r_dm_term
-
-        # Terminal telescoping bonus: at episode end, add signed
-        # K · Σ w_i · (metric_final − metric_initial). Captures overall
-        # trajectory improvement (positive) or degradation (negative).
         # Framing B: lateral_viol is a terminating condition (hard constraint),
         # not bootstrapped. NOT included as bootstrap-truncation.
         terminated = is_coll | cone_viol | jl_viol | lateral_viol
-        done_now_for_bonus = terminated | truncated  # episodes ending this step
-        bonus = (
-            self._w_jl * scale * (self.q_norm_sq_init - q_norm_sq_now)
-            + self._w_cone * scale * (cos_now - self.cos_angle_init)
-            + self._w_dm * scale * (w_u_now - self.w_u_init)
-        ) * self.cfg.w_terminal
-        # Only apply bonus on the step where episode ends, and only for envs
-        # whose init was set (i.e., we've had at least one step). Guard NaN init.
-        bonus = torch.where(torch.isnan(self.q_norm_sq_init), zero, bonus)
-        reward = reward + torch.where(done_now_for_bonus, bonus, zero)
-
         done = terminated | truncated
 
         term_reason = torch.full((self.n_envs,), TERM_ALIVE,
@@ -501,11 +393,10 @@ class NSRLBatchedEnv:
         terminal_obs = self._compute_obs(R_new, q=q_new, a_prev=actions)
 
         # Accumulate per-episode reward + step counter (before reset wipes them)
-        ep_reward_finished = torch.zeros_like(reward)  # cumulative ep reward for envs that just ended
+        ep_reward_finished = torch.zeros_like(reward)
         ep_steps_finished = torch.zeros_like(self.episode_steps)
         # EE progress along u_hat = (p_final - p_start) · u_hat (meters). Per episode end.
         progress_now = ((p_new - self.p_start) * self.line_dir).sum(-1)
-        # Guard NaN (shouldn't happen since p_start is set in _reset_envs, but for first reset edge)
         progress_now = torch.nan_to_num(progress_now, nan=0.0)
         ep_progress_finished = torch.zeros_like(reward)
 
@@ -513,14 +404,9 @@ class NSRLBatchedEnv:
             self.q = q_new
             self.t = new_t
             self.a_prev = actions
-            # Write current metric values into ring buffer at slot for this step
-            self.q_norm_sq_hist.scatter_(1, idx, q_norm_sq_now.unsqueeze(-1))
-            self.cos_angle_hist.scatter_(1, idx, cos_now.unsqueeze(-1))
-            self.w_u_hist.scatter_(1, idx, w_u_now.unsqueeze(-1))
             self.episode_reward = self.episode_reward + reward
             self.episode_steps = self.episode_steps + 1
             new_done = done
-            # Snapshot finished episodes' cumulative reward + length before reset
             ep_reward_finished = torch.where(done, self.episode_reward,
                                              torch.zeros_like(self.episode_reward))
             ep_steps_finished = torch.where(done, self.episode_steps,
@@ -541,13 +427,6 @@ class NSRLBatchedEnv:
             self.q = torch.where(active.unsqueeze(-1), q_new, self.q)
             self.t = torch.where(active, new_t, self.t)
             self.a_prev = torch.where(active.unsqueeze(-1), actions, self.a_prev)
-            # Conditionally write history slots (only for active envs)
-            new_qsq = torch.where(active, q_norm_sq_now, old_qsq)
-            new_cos = torch.where(active, cos_now, old_cos)
-            new_wu = torch.where(active, w_u_now, old_wu)
-            self.q_norm_sq_hist.scatter_(1, idx, new_qsq.unsqueeze(-1))
-            self.cos_angle_hist.scatter_(1, idx, new_cos.unsqueeze(-1))
-            self.w_u_hist.scatter_(1, idx, new_wu.unsqueeze(-1))
             self.episode_reward = torch.where(active, self.episode_reward + reward,
                                               self.episode_reward)
             self.episode_steps = torch.where(active, self.episode_steps + 1,
@@ -573,29 +452,17 @@ class NSRLBatchedEnv:
             ep_len_mean = float("nan")
             ep_progress_mean = float("nan")
 
-        # Terminal bonus magnitude (mean over envs that ended this step)
-        if n_finished > 0:
-            terminal_bonus_mean = float(bonus[new_done].mean().item())
-        else:
-            terminal_bonus_mean = float("nan")
-
         info = {
             "terminal_obs": terminal_obs,
             "term_reason": term_reason,
             "sigma_min": sigma_min,
             "episode_done": new_done,
-            # Per-term reward means (scalars) for wandb decomposition panels
             "r_progress_mean": float(r_progress_per_env.mean().item()),
-            "r_jl_mean": float(r_jl_term.mean().item()),
-            "r_cone_mean": float(r_cone_term.mean().item()),
-            "r_dm_mean": float(r_dm_term.mean().item()),
-            "w_u_mean": float(w_u_now.mean().item()),
             "lateral_err_mean": float(lateral_err.mean().item()),
             "lateral_err_max": float(lateral_err.max().item()),
-            "r_terminal_mean": terminal_bonus_mean,  # signed; only on done step
-            "ep_reward_mean": ep_reward_mean,        # mean cum reward of envs that finished
-            "ep_len_mean": ep_len_mean,              # mean length of envs that finished
-            "ep_progress_mean": ep_progress_mean,    # mean (p_final − p_start)·u_hat in METERS
+            "ep_reward_mean": ep_reward_mean,
+            "ep_len_mean": ep_len_mean,
+            "ep_progress_mean": ep_progress_mean,
             "n_episodes_done": n_finished,
             # MGS fallback rates (batch-averaged) per anchor column.
             "fb_rate_e0": float(fb_mask[:, 0].float().mean().item()),

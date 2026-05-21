@@ -199,7 +199,7 @@ class LineDistribution:
         from Yuan.RL_controller.env.env import NSRLBatchedEnv
         from Yuan.RL_controller.env.classical_nullspace import (
             ClassicalNullspaceController, cn_action_fn)
-        from Yuan.RL_controller.env.baseline_controller import rollout_first_episode
+        from Yuan.RL_controller.env.rollout import rollout_first_episode
 
         threshold_steps = int(math.ceil(threshold_m / (env_cfg.v * env_cfg.dt)))
         if verbose:

@@ -33,9 +33,6 @@ class PPOConfig:
     clip_coef: float = 0.2
     clip_vloss: bool = True
     ent_coef: float = 0.0
-    anneal_ent_coef: bool = False  # linearly decay ent_coef from initial → floor
-    ent_coef_floor: float = 0.0    # floor (held after anneal_frac of training)
-    ent_coef_anneal_frac: float = 1.0  # fraction of training over which to anneal
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     target_kl: float | None = None
@@ -215,11 +212,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
     global_step = 0
     next_eval = eval_every
     # Per-term reward accumulators (averaged per update)
-    _reward_term_keys = ("r_progress_mean", "r_jl_mean", "r_cone_mean", "r_dm_mean",
-                         "w_u_mean")
+    _reward_term_keys = ("r_progress_mean",)
     # Episode-finish aggregates (weighted by n_episodes_done across the rollout)
-    _episode_keys = ("ep_reward_mean", "ep_len_mean", "r_terminal_mean",
-                     "ep_progress_mean")
+    _episode_keys = ("ep_reward_mean", "ep_len_mean", "ep_progress_mean")
     # MGS fallback rate per anchor column (rollout-averaged)
     _fb_keys = ("fb_rate_e0", "fb_rate_e1", "fb_rate_e2")
 
@@ -228,11 +223,6 @@ def train(cfg: PPOConfig, env, device: torch.device,
         if cfg.anneal_lr:
             for pg in optimizer.param_groups:
                 pg["lr"] = (1.0 - progress) * cfg.learning_rate
-        if cfg.anneal_ent_coef:
-            a = min(progress / max(cfg.ent_coef_anneal_frac, 1e-6), 1.0)  # 0 → 1 over anneal_frac
-            ent_coef_now = cfg.ent_coef * (1.0 - a) + cfg.ent_coef_floor * a
-        else:
-            ent_coef_now = cfg.ent_coef
 
         rollout_term_accum = {k: 0.0 for k in _reward_term_keys}
         rollout_term_n = 0
@@ -355,7 +345,7 @@ def train(cfg: PPOConfig, env, device: torch.device,
                     v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                 ent_loss = entropy.mean()
-                loss = pg_loss - ent_coef_now * ent_loss + cfg.vf_coef * v_loss
+                loss = pg_loss - cfg.ent_coef * ent_loss + cfg.vf_coef * v_loss
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -375,7 +365,7 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 "train/approx_kl": float(approx_kl_value),
                 "train/clipfrac": float(np.mean(clipfracs)) if clipfracs else 0.0,
                 "train/lr": optimizer.param_groups[0]["lr"],
-                "train/ent_coef": ent_coef_now,
+                "train/ent_coef": cfg.ent_coef,
                 "train/reward_scale": (reward_scaler.scale
                                        if reward_scaler is not None else 1.0),
                 "train/sigma_mean": rollout_sigma_sum / max(rollout_term_n, 1),
@@ -383,7 +373,7 @@ def train(cfg: PPOConfig, env, device: torch.device,
                     rollout_sigma_clamp_sum / max(rollout_term_n, 1),
             }
             for k in _reward_term_keys:
-                short = k.replace("_mean", "").replace("r_", "")  # progress, jl, cone, dm, w_u
+                short = k.replace("_mean", "").replace("r_", "")  # progress
                 log_dict[f"reward/{short}"] = (rollout_term_accum[k] / rollout_term_n
                                                 if rollout_term_n > 0 else 0.0)
             for k in _fb_keys:
@@ -394,7 +384,6 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 log_dict["episode/reward_mean"] = ep_accum["ep_reward_mean"] / ep_total_finished
                 log_dict["episode/length_mean"] = ep_accum["ep_len_mean"] / ep_total_finished
                 log_dict["episode/progress_mean_m"] = ep_accum["ep_progress_mean"] / ep_total_finished
-                log_dict["episode/terminal_bonus_mean"] = ep_accum["r_terminal_mean"] / ep_total_finished
                 log_dict["episode/n_finished"] = ep_total_finished
             log_fn(log_dict)
 

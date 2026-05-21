@@ -40,7 +40,7 @@ def _resolve_log_path(out_dir: Path) -> Path:
 
 
 def _make_eval_fn(eval_env: NSRLBatchedEnv):
-    from Yuan.RL_controller.env.baseline_controller import rollout_first_episode
+    from Yuan.RL_controller.env.rollout import rollout_first_episode
 
     @torch.no_grad()
     def _policy_action(env: NSRLBatchedEnv, agent: Agent) -> torch.Tensor:
@@ -143,7 +143,6 @@ def main():
                 "env": cfg_yaml["env"],
                 "ppo": cfg_yaml["ppo"],
                 "line_distribution": cfg_yaml["line_distribution"],
-                "baseline": cfg_yaml.get("baseline", {}),
                 "eval": cfg_yaml["eval"],
                 "train": cfg_yaml["train"],
             },
@@ -161,12 +160,7 @@ def main():
         if "update" in d:
             print(
                 f"upd {d['update']:>4}  step {d['global_step']:>9}  "
-                f"ent_coef {d.get('train/ent_coef', 0):.5f}  "
-                f"r[prog {d.get('reward/progress', 0):+.3f}  "
-                f"jl {d.get('reward/jl', 0):+.4f}  "
-                f"cone {d.get('reward/cone', 0):+.4f}  "
-                f"dm {d.get('reward/dm', 0):+.4f}  "
-                f"w_u {d.get('reward/w_u', 0):.3f}]  "
+                f"r/prog {d.get('reward/progress', 0):+.3f}  "
                 f"v_loss {d.get('train/v_loss', 0):.4f}  "
                 f"entropy {d.get('train/entropy', 0):.2f}",
                 flush=True)

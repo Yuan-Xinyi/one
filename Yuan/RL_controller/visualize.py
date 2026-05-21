@@ -6,18 +6,13 @@ Usage:
         --config Yuan/RL_controller/config.yaml \\
         --controller rl --ckpt path/to/agent.pt
 
-    # Classical 4-term nullspace controller (hand-tuned strong baseline)
+    # Classical 4-term nullspace controller (hand-tuned baseline)
     python -m Yuan.RL_controller.visualize \\
         --config Yuan/RL_controller/config.yaml \\
         --controller classical
 
-    # GPM-JL only (weak baseline)
-    python -m Yuan.RL_controller.visualize \\
-        --config Yuan/RL_controller/config.yaml \\
-        --controller gpm
-
-    # Overlay: RL + baseline in same scene, both half-transparent
-    # (black pen = RL, orange pen = baseline). Identical seeded episodes.
+    # Overlay: RL + classical in same scene, both half-transparent
+    # (black pen = RL, orange pen = classical). Identical seeded episodes.
     python -m Yuan.RL_controller.visualize \\
         --config Yuan/RL_controller/config.yaml \\
         --controller rl --ckpt path/to/agent.pt --overlay classical
@@ -54,9 +49,6 @@ from one.robots.manipulators.franka.fr3_pen.fr3_with_pen import (
 
 from Yuan.RL_controller.env.env import NSRLBatchedEnv, EnvConfig
 from Yuan.RL_controller.env.line_distribution import LineDistribution
-from Yuan.RL_controller.env.baseline_controller import (
-    GPMBaselineController, baseline_action_fn,
-)
 from Yuan.RL_controller.env.classical_nullspace import (
     ClassicalNullspaceController, cn_action_fn,
 )
@@ -67,11 +59,11 @@ from Yuan.RL_controller.ppo import Agent
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", required=True)
-parser.add_argument("--controller", choices=["rl", "classical", "gpm"], default=None,
-                    help="rl=trained policy (needs --ckpt); classical=4-term hand-tuned NS; gpm=weak GPM-JL")
+parser.add_argument("--controller", choices=["rl", "classical"], default=None,
+                    help="rl=trained policy (needs --ckpt); classical=4-term hand-tuned NS")
 parser.add_argument("--ckpt", default=None,
                     help="agent state_dict path; required when --controller rl")
-parser.add_argument("--overlay", choices=["classical", "gpm"], default="classical",
+parser.add_argument("--overlay", choices=["classical"], default="classical",
                     help="overlay a second baseline controller in the same scene; both robots run "
                          "identical episodes (same seeded line_dist) so trajectories can be compared "
                          "side-by-side. Both robots are rendered semi-transparent; pen colors distinguish them.")
@@ -80,10 +72,10 @@ parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--case", default=None,
                     help="comma-separated eval case indices (e.g. '0,5,17'); "
                          "replays specs from the eval holdout pool — same "
-                         "holdout_seed/n_pool/feasibility filter as eval.py & "
-                         "plot_joint_trajectories.py, so case i here == line i "
-                         "in eval.csv. Looped: viewer cycles through the list "
-                         "indefinitely. Omit to use the random viz pool.")
+                         "holdout_seed/n_pool/feasibility filter as eval.py, "
+                         "so case i here == line i in eval.csv. Looped: viewer "
+                         "cycles through the list indefinitely. Omit to use "
+                         "the random viz pool.")
 parser.add_argument("--steps-per-tick", type=int, default=1,
                     help="env steps per viewer tick; raise for fast-forward")
 parser.add_argument("--slowdown", type=float, default=4.0,
@@ -98,7 +90,7 @@ with open(args.config, "r") as f:
 if args.controller is None:
     args.controller = "rl" if args.ckpt is not None else None
 if args.controller is None:
-    parser.error("specify --controller {rl, classical, gpm} (or --ckpt for rl)")
+    parser.error("specify --controller {rl, classical} (or --ckpt for rl)")
 if args.controller == "rl" and args.ckpt is None:
     parser.error("--controller rl requires --ckpt")
 
@@ -155,7 +147,7 @@ _eval_specs_cache: dict | None = None
 
 
 def _eval_holdout_specs() -> dict[str, torch.Tensor]:
-    """Sample the same holdout as eval.py / plot_joint_trajectories.py."""
+    """Sample the same holdout as eval.py."""
     global _eval_specs_cache
     if _eval_specs_cache is not None:
         return _eval_specs_cache
@@ -206,13 +198,6 @@ def _build_env() -> NSRLBatchedEnv:
 
 
 def _build_action_fn(kind: str, env_for_dims: NSRLBatchedEnv):
-    if kind == "gpm":
-        ctrl = GPMBaselineController(env_for_dims.kin,
-                                     k_jl=cfg_yaml["baseline"]["k_jl"],
-                                     k_dm=float(cfg_yaml["baseline"].get("k_dm", 0.0)),
-                                     manip_damping=float(cfg_yaml["baseline"].get("manip_damping", 1e-3)))
-        print(f"[viz] GPM baseline (k_jl={ctrl.k_jl}, k_dm={ctrl.k_dm})")
-        return baseline_action_fn(ctrl)
     if kind == "classical":
         ctrl = ClassicalNullspaceController(env_for_dims.kin)
         print("[viz] classical 4-term nullspace controller "

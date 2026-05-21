@@ -64,7 +64,7 @@ class EnvConfig:
     w_dm: float = 0.25
     delta_scale: float = 100.0        # K: per-step clipped-delta scale
     delta_lookback: int = 10          # N: metric_t − metric_{t−N}; defeats hi-freq oscillation hack
-    w_terminal: float = 1.0           # weight on terminal telescoping bonus = K·Σw_i·(metric_final − metric_init)
+    w_terminal: float = 0.0           # weight on terminal telescoping bonus = K·Σw_i·(metric_final − metric_init); disabled by default since signed per-step delta already telescopes
     manip_damping: float = 1e-3
 
 
@@ -450,15 +450,13 @@ class NSRLBatchedEnv:
         old_wu = self.w_u_hist.gather(1, idx).squeeze(-1)
         no_old = torch.isnan(old_qsq)  # first N steps: no history yet → delta = 0
         zero = torch.zeros_like(q_norm_sq_now)
-        # Mod 4 rolled back: positive-only delta (only reward improvement,
-        # never penalize per-step degradation). Telescoping bonus on the
-        # final step still captures net signed init→final change.
-        delta_jl = torch.where(no_old, zero,
-                               (old_qsq - q_norm_sq_now).clamp(min=0.0))
-        delta_cone = torch.where(no_old, zero,
-                                 (cos_now - old_cos).clamp(min=0.0))
-        delta_dm = torch.where(no_old, zero,
-                               (w_u_now - old_wu).clamp(min=0.0))
+        # Signed (bidirectional) deltas: per-step shaping reward telescopes
+        # cleanly over the rollout. Degradations are penalized symmetrically
+        # to improvements, so the policy cannot harvest reward by oscillating
+        # the metric.
+        delta_jl = torch.where(no_old, zero, old_qsq - q_norm_sq_now)
+        delta_cone = torch.where(no_old, zero, cos_now - old_cos)
+        delta_dm = torch.where(no_old, zero, w_u_now - old_wu)
 
         scale = self.cfg.delta_scale
         r_jl_term = self._w_jl * scale * delta_jl

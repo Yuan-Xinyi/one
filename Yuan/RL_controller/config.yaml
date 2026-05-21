@@ -2,7 +2,7 @@ env:
   n_envs: 128
   dt: 0.05           # 20 Hz control (was 100 Hz @ dt=0.01)
   v: 0.2             # m/s linear EE speed along u_hat (was 0.05; 4× faster)
-  a_max: 1.0         # rad/s nullspace action scale; ||q_dot_null||_2 ≤ 2 rad/s, inside FR3 limits
+  a_max: 0.5         # rad/s nullspace action scale; ||q_dot_null||_2 ≤ 1 rad/s, inside FR3 limits
   lambda_0: 0.05     # DLS damping baseline
   sigma_thr: 0.05    # adaptive damping threshold
   cone_deg: 30.0     # rotation cone half-angle (hard terminate)
@@ -21,6 +21,7 @@ env:
   w_cone: 0.1
   w_dm: 0.1
   delta_scale: 100.0
+  w_terminal: 0.0    # signed per-step delta now telescopes; terminal bonus disabled to avoid double-count
   manip_damping: 1.0e-3
 
 ppo:

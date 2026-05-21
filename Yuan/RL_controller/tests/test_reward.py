@@ -1,6 +1,6 @@
 """Unit tests for the length-based shaping reward.
 
-Reward formula:
+Reward formula (signed per-step deltas; cumulative telescopes cleanly):
     r_t = w_progress · clip(Δp·u_hat / (v·dt), 0, 1)
         + w_jl   · K · (q_norm_sq_prev_mean - q_norm_sq_curr_mean)
         + w_cone · K · (cos_curr - cos_prev)
@@ -93,35 +93,81 @@ def test_progress_only_full_speed():
 
 
 def test_telescoping_property():
-    """Sum of jl-delta rewards over a rollout ≈ w_jl · K · (initial_q_norm² - final_q_norm²)."""
-    env = _build_env(w_progress=0.0, w_jl=1.0, w_cone=0.0, w_dm=0.0)
-    # Step 1: compute initial q_norm² after current state
-    q_norm_init = ((env.q - env.q_mid) / env.q_half)
-    q_norm_sq_init_mean = (q_norm_init * q_norm_init).mean(-1)
+    """Under signed per-step delta with delta_lookback=1, cumulative jl reward
+    over T steps EXACTLY telescopes to K · w_jl · (q_norm_sq_after_step_1 −
+    q_norm_sq_after_step_T). Modulo float precision the diff should be ~0; we
+    allow < 0.1 to leave headroom for fp32 accumulation noise."""
+    env = _build_env(w_progress=0.0, w_jl=1.0, w_cone=0.0, w_dm=0.0,
+                     delta_lookback=1)
 
     torch.manual_seed(0)
     cumulative = torch.zeros(env.n_envs)
+    q_norm_sq_after_step1 = None
     final_q_norm_sq_mean = None
-    for _ in range(10):
+    for i in range(10):
         a = torch.randn(env.n_envs, env.act_dim) * 0.3
         _, r, _, _, _ = env.step(a, auto_reset=False)
         cumulative = cumulative + r
         q_norm = (env.q - env.q_mid) / env.q_half
-        final_q_norm_sq_mean = (q_norm * q_norm).mean(-1)
+        q_norm_sq_mean = (q_norm * q_norm).mean(-1)
+        if i == 0:
+            q_norm_sq_after_step1 = q_norm_sq_mean.clone()
+        final_q_norm_sq_mean = q_norm_sq_mean
 
     K = env.cfg.delta_scale
-    # Cumulative = K · w_jl · (q_norm_sq_init - q_norm_sq_final)
-    # First-step delta = 0 (NaN sentinel), so actually cumulative is over steps 2..T
-    # → ≈ K · w_jl · (q_norm_sq_after_step_1 - q_norm_sq_final)
-    # Hard to know q_after_step_1 without tracking, so check looser invariant:
-    # absolute error vs (init - final) * K * w_jl
-    expected_full = env._w_jl * K * (q_norm_sq_init_mean - final_q_norm_sq_mean)
-    # First step contributes nothing → cumulative ≈ expected − (first-step delta we missed)
-    # which is at most ~K * w_jl * |Δ per step| ≈ 100 * 1 * 0.01 = 1
-    diff = (cumulative - expected_full).abs()
-    assert torch.all(diff < 2.0), \
-        f"telescoping violated by > 2.0: diff = {diff}"
-    print(f"[ok] telescoping: |cum - K·w·(init-final)| ≤ 2 (first-step gap), got max={diff.max():.4f}")
+    # Step 1 contributes r=0 (NaN history sentinel); steps 2..T form a telescoping
+    # sum that collapses to (qsq_after_step1 − qsq_after_stepT).
+    expected = env._w_jl * K * (q_norm_sq_after_step1 - final_q_norm_sq_mean)
+    diff = (cumulative - expected).abs()
+    assert torch.all(diff < 0.1), \
+        f"telescoping violated by > 0.1: diff = {diff}"
+    print(f"[ok] telescoping: |cum − K·w·(qsq_step1 − qsq_final)| < 0.1, "
+          f"got max={diff.max():.6f}")
+
+
+def test_signed_delta_can_be_negative():
+    """Regression test for the original positive-only-clamp bug.
+
+    Under the old code, delta_jl/cone/dm were clamped at 0, so per-step shaping
+    reward was always ≥ 0 — the policy could oscillate the metric and only
+    accrue the "improvement" half of every cycle. Under signed delta, per-step
+    rewards must be allowed to be negative when the metric degrades.
+
+    We drive the env with random nullspace actions; q_norm_sq fluctuates in
+    both directions; at least one step must produce a strictly negative reward
+    (impossible under the old clamped code)."""
+    env = _build_env(n_envs=16, w_progress=0.0, w_jl=1.0, w_cone=0.0, w_dm=0.0,
+                     delta_lookback=1, max_steps=10000, seed=0)
+
+    torch.manual_seed(1)
+    a = torch.zeros(env.n_envs, env.act_dim)
+    saw_negative = False
+    saw_positive = False
+    min_reward = float("inf")
+    max_reward = float("-inf")
+    for _ in range(30):
+        a = torch.randn_like(a) * 0.5
+        _, r, _, _, _ = env.step(a, auto_reset=False)
+        active = ~env.done_persistent
+        if not active.any():
+            break
+        r_active = r[active]
+        min_reward = min(min_reward, float(r_active.min().item()))
+        max_reward = max(max_reward, float(r_active.max().item()))
+        if (r_active < -1e-4).any():
+            saw_negative = True
+        if (r_active > 1e-4).any():
+            saw_positive = True
+
+    assert saw_negative, (
+        "Under signed delta some per-step rewards must be NEGATIVE (regression "
+        f"test for positive-only-clamp bug). Observed reward range: "
+        f"[{min_reward:.4f}, {max_reward:.4f}]")
+    assert saw_positive, (
+        f"Sanity: some per-step rewards must also be POSITIVE. "
+        f"Observed range: [{min_reward:.4f}, {max_reward:.4f}]")
+    print(f"[ok] signed delta: per-step reward spans "
+          f"[{min_reward:.4f}, {max_reward:.4f}] (both signs present)")
 
 
 def test_reset_clears_prev_caches():
@@ -168,6 +214,7 @@ if __name__ == "__main__":
     test_first_step_delta_is_zero()
     test_progress_only_full_speed()
     test_telescoping_property()
+    test_signed_delta_can_be_negative()
     test_reset_clears_prev_caches()
     test_baseline_k_dm_actually_adds_term()
     print("\n=== all tests passed ===")

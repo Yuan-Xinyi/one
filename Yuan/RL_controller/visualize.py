@@ -59,14 +59,26 @@ from Yuan.RL_controller.ppo import Agent
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", required=True)
-parser.add_argument("--controller", choices=["rl", "classical"], default=None,
-                    help="rl=trained policy (needs --ckpt); classical=4-term hand-tuned NS")
+parser.add_argument("--controller", choices=["rl", "classical", "hybrid"], default=None,
+                    help="rl=trained policy (needs --ckpt); classical=4-term hand-tuned NS; "
+                         "hybrid=step-level RL↔Classical switch on max|q_norm| with τ_enter/τ_exit")
 parser.add_argument("--ckpt", default=None,
-                    help="agent state_dict path; required when --controller rl")
+                    help="agent state_dict path; required when --controller rl or hybrid")
 parser.add_argument("--overlay", choices=["classical"], default="classical",
                     help="overlay a second baseline controller in the same scene; both robots run "
                          "identical episodes (same seeded line_dist) so trajectories can be compared "
                          "side-by-side. Both robots are rendered semi-transparent; pen colors distinguish them.")
+parser.add_argument("--te", type=float, default=0.98,
+                    help="hybrid: switch RL→Classical when max|q_norm| >= te (default 0.98)")
+parser.add_argument("--tx", type=float, default=0.98,
+                    help="hybrid: switch Classical→RL when max|q_norm| < tx (default 0.98 = no hysteresis)")
+parser.add_argument("--from-cache", default=None,
+                    help="path to a diag rollouts.npz; replay specific task(s) from "
+                         "that cache instead of sampling from the eval / viz pool. "
+                         "Use with --cache-task to pick task ids.")
+parser.add_argument("--cache-task", default=None,
+                    help="comma-separated task ids in the --from-cache npz (e.g. '9878,8316'); "
+                         "viewer loops through them")
 parser.add_argument("--device", default="cpu")
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--case", default=None,
@@ -90,9 +102,9 @@ with open(args.config, "r") as f:
 if args.controller is None:
     args.controller = "rl" if args.ckpt is not None else None
 if args.controller is None:
-    parser.error("specify --controller {rl, classical} (or --ckpt for rl)")
-if args.controller == "rl" and args.ckpt is None:
-    parser.error("--controller rl requires --ckpt")
+    parser.error("specify --controller {rl, classical, hybrid} (or --ckpt for rl)")
+if args.controller in ("rl", "hybrid") and args.ckpt is None:
+    parser.error(f"--controller {args.controller} requires --ckpt")
 
 device = torch.device(args.device)
 
@@ -103,8 +115,8 @@ device = torch.device(args.device)
 # (deterministic pool + lock-step sampling) so both controllers run the SAME
 # episode and trajectories can be compared visually.
 
-if args.overlay is not None and args.controller != "rl":
-    parser.error("--overlay only makes sense together with --controller rl")
+if args.overlay is not None and args.controller not in ("rl", "hybrid"):
+    parser.error("--overlay only makes sense with --controller rl or hybrid")
 
 env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": 1})
 seed_val = args.seed if args.seed is not None else cfg_yaml["line_distribution"]["train_seed"]
@@ -115,6 +127,18 @@ if args.case is not None:
     case_ids = [int(s) for s in args.case.split(",") if s.strip() != ""]
     if not case_ids:
         parser.error("--case parsed to an empty list")
+
+cache_task_ids: list[int] | None = None
+if args.from_cache is not None:
+    if args.cache_task is None:
+        parser.error("--from-cache requires --cache-task")
+    cache_task_ids = [int(s) for s in args.cache_task.split(",") if s.strip() != ""]
+    if not cache_task_ids:
+        parser.error("--cache-task parsed to an empty list")
+if args.cache_task is not None and args.from_cache is None:
+    parser.error("--cache-task requires --from-cache")
+if args.from_cache is not None and args.case is not None:
+    parser.error("--from-cache and --case are mutually exclusive")
 
 
 class LoopingScriptedDist:
@@ -144,6 +168,22 @@ class LoopingScriptedDist:
 
 # Eval holdout (shared across all runners) — built once if --case is set.
 _eval_specs_cache: dict | None = None
+
+
+def _cache_specs() -> dict[str, torch.Tensor]:
+    """Load q0/line_dir/n_target slices from a diag rollouts.npz for the
+    requested cache_task_ids. Returns specs in the order the IDs were listed."""
+    assert cache_task_ids is not None
+    d = np.load(args.from_cache, allow_pickle=True)
+    ids = cache_task_ids
+    n_in_cache = d["q0"].shape[0]
+    for cid in ids:
+        if cid < 0 or cid >= n_in_cache:
+            raise SystemExit(f"--cache-task {cid} out of range [0, {n_in_cache})")
+    q0 = torch.from_numpy(d["q0"][ids])
+    line_dir = torch.from_numpy(d["line_dir"][ids])
+    n_target = torch.from_numpy(d["n_target"][ids])
+    return {"q0": q0, "line_dir": line_dir, "n_target": n_target}
 
 
 def _eval_holdout_specs() -> dict[str, torch.Tensor]:
@@ -176,7 +216,11 @@ def _eval_holdout_specs() -> dict[str, torch.Tensor]:
 
 def _build_env() -> NSRLBatchedEnv:
     e = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
-    if case_ids is not None:
+    if cache_task_ids is not None:
+        # Replay specific tasks from a diag rollouts.npz.
+        specs = {k: v.to(e.kin.dtype) for k, v in _cache_specs().items()}
+        e.line_dist = LoopingScriptedDist(specs, cache_task_ids)
+    elif case_ids is not None:
         # Replay eval cases by index. Each runner gets an independent
         # LoopingScriptedDist over the SAME spec slice, so overlay runners
         # stay in lock-step (both advance the cursor identically per reset).
@@ -203,6 +247,66 @@ def _build_action_fn(kind: str, env_for_dims: NSRLBatchedEnv):
         print("[viz] classical 4-term nullspace controller "
               "(manip + JL center + cone gradient + q_ref attract)")
         return cn_action_fn(ctrl)
+    if kind == "hybrid":
+        from Yuan.RL_controller.env.env import build_task_aligned_basis
+        agent = Agent(env_for_dims.obs_dim, env_for_dims.act_dim,
+                      hidden_dim=cfg_yaml["ppo"]["hidden_dim"],
+                      init_log_std=cfg_yaml["ppo"]["init_log_std"]).to(device)
+        agent.load_state_dict(torch.load(args.ckpt, map_location=device))
+        agent.eval()
+        ctrl = ClassicalNullspaceController(env_for_dims.kin)
+        te, tx = float(args.te), float(args.tx)
+        print(f"[viz] hybrid: RL ↔ Classical step-level switching "
+              f"(τ_enter={te}, τ_exit={tx})")
+        state = {"using_rl": None, "q_ref": None, "last_t": None,
+                 "switch_count": 0}
+
+        def _max_abs_qn(q):
+            return ((q - env_for_dims.q_mid).abs() / env_for_dims.q_half).max(dim=-1).values
+
+        def action_fn(env_: NSRLBatchedEnv) -> torch.Tensor:
+            # Episode-start init (signaled by env.t == 0).
+            cur_t = int(env_.t[0].item())
+            need_init = (state["using_rl"] is None
+                         or (cur_t == 0 and state["last_t"] not in (None, 0)))
+            state["last_t"] = cur_t
+            if need_init:
+                init_max_qn = _max_abs_qn(env_.q)
+                state["using_rl"] = init_max_qn < te
+                state["q_ref"] = env_.q.clone()
+                state["switch_count"] = 0
+
+            cur_max_qn = _max_abs_qn(env_.q)
+            using_rl = state["using_rl"]
+            new_using_rl = torch.where(using_rl,
+                                       cur_max_qn < te,
+                                       cur_max_qn < tx)
+            switched = (new_using_rl != using_rl)
+            rl_to_cls = using_rl & (~new_using_rl)
+            if rl_to_cls.any():
+                state["q_ref"] = torch.where(rl_to_cls.unsqueeze(-1),
+                                             env_.q, state["q_ref"])
+            if switched.any():
+                state["switch_count"] += int(switched.sum().item())
+                direction = "RL→Cls" if bool(using_rl[0].item()) else "Cls→RL"
+                print(f"[viz] hybrid switch at step {state['last_t']}: "
+                      f"{direction}  (max|qn|={float(cur_max_qn[0]):.3f})")
+            state["using_rl"] = new_using_rl
+
+            with torch.no_grad():
+                rl_act = agent.actor_mean(env_.current_obs()).clamp(-1.0, 1.0)
+                B_basis, _ = build_task_aligned_basis(
+                    env_.kin, env_.q, env_.line_dir, env_.n_target,
+                    env_.kin.q_mid, env_.q_half, env_.cfg.manip_damping,
+                )
+            q_dot_raw = ctrl.q_dot_null(env_.q, env_.line_dir, env_.n_target,
+                                        state["q_ref"])
+            with torch.no_grad():
+                cls_act = (B_basis.transpose(-1, -2)
+                           @ q_dot_raw.unsqueeze(-1)).squeeze(-1)
+                cls_act = (cls_act / env_.a_max).clamp(-1.0, 1.0)
+            return torch.where(new_using_rl.unsqueeze(-1), rl_act, cls_act)
+        return action_fn
     # "rl"
     agent = Agent(env_for_dims.obs_dim, env_for_dims.act_dim,
                   hidden_dim=cfg_yaml["ppo"]["hidden_dim"],
@@ -249,10 +353,10 @@ if args.overlay is None:
     _add_runner(args.controller, alpha=1.0,
                 body_rgb=None, pen_rgb=(0.15, 0.15, 0.15))
 else:
-    # RL primary (blue body + blue pen) + baseline overlay (red body + red pen),
-    # both at alpha=0.5. Body uses a lighter tint than the pen so geometry stays
-    # readable while the color identity is unmistakable.
-    _add_runner("rl", alpha=0.5,
+    # Primary controller (blue body + blue pen) + baseline overlay (red body
+    # + red pen), both at alpha=0.5. Body uses a lighter tint than the pen so
+    # geometry stays readable while the color identity is unmistakable.
+    _add_runner(args.controller, alpha=0.5,
                 body_rgb=(0.45, 0.60, 0.95), pen_rgb=(0.10, 0.25, 0.95))
     _add_runner(args.overlay, alpha=0.5,
                 body_rgb=(0.95, 0.55, 0.55), pen_rgb=(0.95, 0.10, 0.10))

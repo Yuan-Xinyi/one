@@ -52,6 +52,10 @@ parser.add_argument("--ray-len", type=float, default=1.5,
                     help="reference ray length in meters")
 parser.add_argument("--plane-size", type=float, default=2.0,
                     help="ground plane edge length in meters; 0 to skip")
+parser.add_argument("--separate-y", type=float, default=0.0,
+                    help="if non-zero, shift Classical ghosts (and their ref ray) "
+                         "by this many meters along +Y so the two controllers no "
+                         "longer overlap. 0 keeps the original overlaid layout.")
 args = parser.parse_args()
 
 diag_dir = Path(args.diag_dir)
@@ -82,15 +86,21 @@ print(f"[viz]   RL ghost steps      : {steps_rl}")
 print(f"[viz]   Classical ghost steps: {steps_base}")
 
 
-# Camera: position-tweaked from visualize.py defaults
-base = ovw.World(cam_pos=(1.5, 1.2, 1.2),
-                 cam_lookat_pos=(0.0, 0.0, 0.4),
+# Camera: position-tweaked from visualize.py defaults. When the two
+# controllers are split along Y, recenter the camera lookat on the midpoint
+# so the framing stays symmetric.
+y_mid = 0.5 * float(args.separate_y)
+base = ovw.World(cam_pos=(1.5, 1.2 + y_mid, 1.2),
+                 cam_lookat_pos=(0.0, y_mid, 0.4),
                  toggle_auto_cam_orbit=False)
 ossop.frame().attach_to(base.scene)
 if args.plane_size > 0:
+    # Plane is square; widen Y so it spans both robots and still extends as
+    # far in X as before. Center it at the midpoint between the two bases.
+    plane_y = args.plane_size + abs(args.separate_y)
     ground = ossop.plane(
-        pos=(0.0, 0.0, -1e-3),
-        size=(args.plane_size, args.plane_size),
+        pos=(0.0, y_mid, -1e-3),
+        size=(args.plane_size, plane_y),
         rgb=(0.82, 0.82, 0.85), alpha=1.0)
     ground.attach_to(base.scene)
 
@@ -103,8 +113,12 @@ def _alpha_at(idx: int, n: int) -> float:
     return args.alpha_min + frac * (args.alpha_max - args.alpha_min)
 
 
-def _add_ghost(q: np.ndarray, body_rgb, pen_rgb, alpha: float):
-    arm, _hand = make_fr3_with_pen(use_pen_tcp=True)
+def _add_ghost(q: np.ndarray, body_rgb, pen_rgb, alpha: float,
+               base_pos=None):
+    kw = {"use_pen_tcp": True}
+    if base_pos is not None:
+        kw["pos"] = np.asarray(base_pos, dtype=np.float32)
+    arm, _hand = make_fr3_with_pen(**kw)
     arm.attach_to(base.scene)
     attach_pen_visual(arm, rgb=pen_rgb, alpha=alpha)
     arm.rgb = body_rgb
@@ -126,12 +140,17 @@ for k, t in enumerate(steps_rl):
     _add_ghost(q, body_rgb=RL_BODY, pen_rgb=RL_PEN, alpha=a)
 print(f"[viz] placed {len(steps_rl)} RL ghosts (blue)")
 
-# Classical ghosts (red)
+# Classical ghosts (red) — optionally shifted along +Y so they don't overlap
+# the RL cluster.
+cls_offset = np.array([0.0, float(args.separate_y), 0.0], dtype=np.float32)
 for k, t in enumerate(steps_base):
     q = q_traj_base[t, i]
     a = _alpha_at(k, len(steps_base))
-    _add_ghost(q, body_rgb=CLS_BODY, pen_rgb=CLS_PEN, alpha=a)
-print(f"[viz] placed {len(steps_base)} Classical ghosts (red)")
+    _add_ghost(q, body_rgb=CLS_BODY, pen_rgb=CLS_PEN, alpha=a,
+               base_pos=cls_offset if args.separate_y != 0.0 else None)
+print(f"[viz] placed {len(steps_base)} Classical ghosts (red)"
+      + (f"  [Y-shifted by {args.separate_y:+.2f} m]"
+         if args.separate_y != 0.0 else ""))
 
 
 # Reference line ray (from p_start along u_hat). Compute p_start via FK on q0.
@@ -140,16 +159,22 @@ arm_tmp.fk(qs=q_traj_rl[0, i].astype(np.float32))
 p_start = arm_tmp.gl_tcp_tf[:3, 3].copy()
 u_hat = line_dir[i].astype(np.float32)
 n_tgt = n_target[i].astype(np.float32)
-ray = ossop.dashed_cylinder(
-    spos=p_start, epos=p_start + u_hat * args.ray_len,
-    radius=0.003, rgb=(0.2, 0.4, 1.0), alpha=0.6)
-ray.attach_to(base.scene)
-u_arrow = ossop.arrow(
-    spos=p_start, epos=p_start + u_hat * 0.20, rgb=(0.2, 0.4, 1.0))
-u_arrow.attach_to(base.scene)
-n_arrow = ossop.arrow(
-    spos=p_start, epos=p_start + n_tgt * 0.15, rgb=(0.2, 0.9, 0.2))
-n_arrow.attach_to(base.scene)
+def _draw_task_anchor(p0):
+    ray = ossop.dashed_cylinder(
+        spos=p0, epos=p0 + u_hat * args.ray_len,
+        radius=0.003, rgb=(0.2, 0.4, 1.0), alpha=0.6)
+    ray.attach_to(base.scene)
+    u_arrow = ossop.arrow(
+        spos=p0, epos=p0 + u_hat * 0.20, rgb=(0.2, 0.4, 1.0))
+    u_arrow.attach_to(base.scene)
+    n_arrow = ossop.arrow(
+        spos=p0, epos=p0 + n_tgt * 0.15, rgb=(0.2, 0.9, 0.2))
+    n_arrow.attach_to(base.scene)
+
+
+_draw_task_anchor(p_start)
+if args.separate_y != 0.0:
+    _draw_task_anchor(p_start + cls_offset)
 
 
 print(f"[viz] task {i} static overlay ready — blue=RL, red=Classical, "

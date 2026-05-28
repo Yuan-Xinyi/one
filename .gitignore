@@ -79,3 +79,6 @@ scene_free.xml
 *.pdf
 *.jsonl
 *.pkl
+
+*.wandb
+wandb/

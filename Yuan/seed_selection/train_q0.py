@@ -31,8 +31,8 @@ from Yuan.seed_selection.dataset import SeedSelectionDataset
 from Yuan.seed_selection.model_q0 import SeedQ0Config, SeedQ0DiT
 
 
-DEFAULT_NPZ = Path('Yuan/seed_selection/runs/pilot_day5/pilot_1k.partial-800.npz')
-DEFAULT_CKPT_DIR = Path('Yuan/seed_selection/runs/pilot_day5/q0_ckpts')
+DEFAULT_NPZ = Path('Yuan/seed_selection/runs/pilot_day5/pilot_20k.npz')
+DEFAULT_CKPT_DIR = Path('Yuan/seed_selection/runs/pilot_day5/q0_20k_ckpts')
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,6 +58,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--weight-decay', type=float, default=1e-4)
     p.add_argument('--grad-clip', type=float, default=1.0)
     p.add_argument('--ema-decay', type=float, default=0.9995)
+    p.add_argument('--cfg-drop-prob', type=float, default=0.0,
+                   help='probability of replacing c with null condition each step '
+                        '(classifier-free guidance dropout). 0 = no CFG training.')
+    p.add_argument('--mirror-prob', type=float, default=0.0,
+                   help='probability of mirror-flipping a sample across the robot\'s '
+                        'xz plane (y → -y in c; sign-flip joints 0/2/4/6 in q0). '
+                        'Applied only to the TRAIN set; val never mirrors.')
     p.add_argument('--log-every', type=int, default=100)
     p.add_argument('--val-every', type=int, default=500,
                    help='compute and log val loss every N steps.')
@@ -66,6 +73,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--ckpt-every', type=int, default=2000)
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--device', default='cuda')
+    # WandB
+    p.add_argument('--wandb-project', default='seed_selection_q0',
+                   help='WandB project name. Pass empty string or --no-wandb to disable.')
+    p.add_argument('--wandb-entity', default=None,
+                   help='WandB entity/team. Default: account default.')
+    p.add_argument('--wandb-name', default=None,
+                   help='WandB run name. Default: derived from --ckpt-dir.')
+    p.add_argument('--no-wandb', action='store_true', help='disable WandB entirely')
     return p.parse_args()
 
 
@@ -129,13 +144,16 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     print(f'[train] device={device}  data={args.data}')
 
-    full_ds = SeedSelectionDataset(args.data)
-    print(f'[train] full dataset: {len(full_ds)} entries')
+    # Train side may use mirror aug; val never mirrors so metrics are comparable.
+    full_ds_train = SeedSelectionDataset(args.data, mirror_prob=args.mirror_prob)
+    full_ds_val   = SeedSelectionDataset(args.data, mirror_prob=0.0)
+    print(f'[train] full dataset: {len(full_ds_train)} entries  '
+          f'(train mirror_prob={args.mirror_prob}, val mirror_prob=0.0)')
     args.ckpt_dir.mkdir(parents=True, exist_ok=True)
-    train_idx, val_idx = make_or_load_split(args.ckpt_dir, len(full_ds), args.val_n, args.val_seed)
+    train_idx, val_idx = make_or_load_split(args.ckpt_dir, len(full_ds_train), args.val_n, args.val_seed)
     print(f'[train] split: train={len(train_idx)}  val={len(val_idx)}')
-    train_ds = Subset(full_ds, train_idx.tolist())
-    val_ds = Subset(full_ds, val_idx.tolist())
+    train_ds = Subset(full_ds_train, train_idx.tolist())
+    val_ds   = Subset(full_ds_val,   val_idx.tolist())
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=False)
 
@@ -174,6 +192,28 @@ def main():
         print(f'[train] start_step={start_step} >= num_steps={args.num_steps}; nothing to do.')
         return
 
+    # WandB
+    use_wandb = (not args.no_wandb) and bool(args.wandb_project)
+    if use_wandb:
+        import wandb
+        run_name = args.wandb_name or args.ckpt_dir.name
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=run_name,
+            config={k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
+            resume='allow',
+        )
+        wandb.config.update({
+            'n_train': int(len(train_idx)),
+            'n_val': int(len(val_idx)),
+            'n_params_M': float(n_params),
+            'cfg': cfg.__dict__,
+        }, allow_val_change=True)
+        print(f'[train] wandb: {wandb.run.url}', flush=True)
+    else:
+        wandb = None  # type: ignore
+
     with open(args.ckpt_dir / 'train_args.json', 'w') as f:
         json.dump({k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, f, indent=2)
 
@@ -193,7 +233,11 @@ def main():
         t = torch.randint(0, cfg.diffusion_steps, (q0.shape[0],), device=device)
         xt, eps = q_sample(q0, t, schedule)
         v_tgt = v_target_from(q0, eps, t, schedule)
-        v_pred = model(xt, t, c)
+        if args.cfg_drop_prob > 0.0:
+            uncond_mask = (torch.rand(q0.shape[0], device=device) < args.cfg_drop_prob)
+            v_pred = model(xt, t, c, uncond_mask=uncond_mask)
+        else:
+            v_pred = model(xt, t, c)
         loss = ((v_pred - v_tgt) ** 2).mean()
 
         opt.zero_grad()
@@ -205,14 +249,24 @@ def main():
                 ema[n].mul_(args.ema_decay).add_(p.detach(), alpha=1 - args.ema_decay)
 
         losses.append(float(loss.item()))
+        if use_wandb:
+            wandb.log({'train/loss_step': float(loss.item())}, step=step)
         if step % args.log_every == 0:
             recent = float(np.mean(losses[-args.log_every:]))
             dt = time.time() - t0
             sps = (step - start_step) / max(dt, 1e-6)
             print(f'[train] step={step:>6d}/{args.num_steps} loss={recent:.4f} sps={sps:.1f}', flush=True)
+            if use_wandb:
+                wandb.log({'train/loss_avg': recent, 'train/sps': sps}, step=step)
         if step % args.val_every == 0:
             v_l = val_loss(model, schedule, val_loader, device, cfg.diffusion_steps, args.val_batches)
             print(f'[train] step={step:>6d} VAL loss={v_l:.4f}', flush=True)
+            if use_wandb:
+                # train_loss reference for the gap plot.
+                t_l = float(np.mean(losses[-args.log_every:])) if losses else float('nan')
+                wandb.log({'val/loss': v_l,
+                           'val/train_loss_concurrent': t_l,
+                           'val/gap': v_l - t_l}, step=step)
         if step % args.ckpt_every == 0 or step == args.num_steps:
             ckpt_path = args.ckpt_dir / f'step_{step}.pt'
             torch.save({
@@ -224,8 +278,12 @@ def main():
                 'args': {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
             }, ckpt_path)
             print(f'[train] saved {ckpt_path}', flush=True)
+            if use_wandb:
+                wandb.log({'ckpt_saved_step': step}, step=step)
 
     print(f'[train] DONE total_steps={args.num_steps} elapsed={time.time()-t0:.1f}s')
+    if use_wandb:
+        wandb.finish()
 
 
 if __name__ == '__main__':

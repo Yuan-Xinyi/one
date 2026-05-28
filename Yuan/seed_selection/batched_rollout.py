@@ -36,6 +36,9 @@ def _rollout_one_chunk(
     *,
     env: NSRLBatchedEnv,
     controller: ClassicalNullspaceController,
+    pierce_collision=None,                  # FR3SphereCollision or None
+    pierce_keep_mask: torch.Tensor | None = None,  # (S,) bool sphere mask
+    pierce_plane_extent_m: float = 1.5,
 ) -> dict:
     """Run env to completion for exactly n_envs (q, c) pairs.
 
@@ -72,12 +75,38 @@ def _rollout_one_chunk(
     qn0 = ((env.q - q_center) / q_half).abs().amax(dim=-1)
     max_q_norm = torch.maximum(max_q_norm, qn0)
 
+    # Plane-pierce tracking: cumulative "did arm ever straddle the bounded plane
+    # at any point during the rollout". `ever_pierced[i] = True` means at some
+    # step `t`, env i had spheres on both sides of the bounded plane.
+    do_pierce = pierce_collision is not None
+    if do_pierce:
+        ever_pierced = torch.zeros(n, dtype=torch.bool, device=env.device)
+
+        def _step_pierce(q_now):
+            link_tfs = env.kin.link_transforms(q_now)
+            sp = pierce_collision.sphere_positions(link_tfs)   # (n, S, 3)
+            signed = ((sp - p_start[:, None, :]) * n_targets_chunk[:, None, :]).sum(dim=-1)
+            proj_d = ((sp - p_start[:, None, :]) * line_dir[:, None, :]).sum(dim=-1)
+            over = (proj_d >= 0.0) & (proj_d <= float(pierce_plane_extent_m))
+            if pierce_keep_mask is not None:
+                over = over & pierce_keep_mask.bool().unsqueeze(0)
+            sm = signed.masked_fill(~over, float('nan'))
+            has_pos = (sm > 0.0).any(dim=-1)
+            has_neg = (sm < 0.0).any(dim=-1)
+            return has_pos & has_neg
+
+        # Initial config piercing
+        ever_pierced = ever_pierced | _step_pierce(env.q)
+
     for _ in range(env.max_steps + 1):
         a = action_fn(env)
         _, _, _, _, info = env.step(a, auto_reset=False)
         qn = ((env.q - q_center) / q_half).abs().amax(dim=-1)
         active = ~env.done_persistent
         max_q_norm = torch.where(active, torch.maximum(max_q_norm, qn), max_q_norm)
+        if do_pierce:
+            pierce_now = _step_pierce(env.q)
+            ever_pierced = ever_pierced | (active & pierce_now)
         new_done = info["episode_done"]
         if bool(new_done.any().item()):
             p_now, _, _, _ = env.kin.tcp_fk_jac(env.q)
@@ -97,12 +126,15 @@ def _rollout_one_chunk(
         episode_len[not_done] = env.t[not_done]
         term[not_done] = TERM_TRUNCATED
 
-    return {
+    out = {
         "episode_progress_m": episode_progress,
         "episode_len": episode_len,
         "term_reason": term,
         "max_q_norm": max_q_norm,
     }
+    if do_pierce:
+        out["ever_pierced"] = ever_pierced
+    return out
 
 
 @torch.no_grad()
@@ -113,6 +145,9 @@ def batched_rollout_many(
     env: NSRLBatchedEnv,
     controller: ClassicalNullspaceController,
     target_distance_m: float = 1.5,
+    pierce_collision=None,
+    pierce_keep_mask: torch.Tensor | None = None,
+    pierce_plane_extent_m: float = 1.5,
 ) -> dict:
     """Rollout ``B`` (q, c) pairs through a single shared env.
 
@@ -151,6 +186,7 @@ def batched_rollout_many(
     len_out = np.zeros(B, dtype=np.int64)
     term_out = np.zeros(B, dtype=np.int32)
     mqn_out = np.zeros(B, dtype=np.float32)
+    pierce_out = np.zeros(B, dtype=bool) if pierce_collision is not None else None
 
     n_chunks = math.ceil(B / n_envs)
     for ci in range(n_chunks):
@@ -171,18 +207,27 @@ def batched_rollout_many(
             n_c = torch.cat([n_full[start:end], n_full[end - 1:end].expand(pad, 3)], dim=0)
 
         res = _rollout_one_chunk(
-            qs_c, p0_c, d_c, n_c, env=env, controller=controller)
+            qs_c, p0_c, d_c, n_c, env=env, controller=controller,
+            pierce_collision=pierce_collision,
+            pierce_keep_mask=pierce_keep_mask,
+            pierce_plane_extent_m=pierce_plane_extent_m,
+        )
         progress = res["episode_progress_m"][:real_n].detach().cpu().numpy()
         prog_out[start:end] = progress
         L_out[start:end] = progress / float(target_distance_m)
         len_out[start:end] = res["episode_len"][:real_n].detach().cpu().numpy()
         term_out[start:end] = res["term_reason"][:real_n].detach().cpu().numpy()
         mqn_out[start:end] = res["max_q_norm"][:real_n].detach().cpu().numpy()
+        if pierce_out is not None and "ever_pierced" in res:
+            pierce_out[start:end] = res["ever_pierced"][:real_n].detach().cpu().numpy()
 
-    return {
+    out = {
         "L": L_out,
         "episode_progress_m": prog_out,
         "episode_len": len_out,
         "term_reason": term_out,
         "max_q_norm": mqn_out,
     }
+    if pierce_out is not None:
+        out["ever_pierced"] = pierce_out
+    return out

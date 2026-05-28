@@ -1,0 +1,68 @@
+# Frozen config for the 10k-task systematic ablation.
+#
+# Cells (defined in run_cell.py):
+#   A  baseline:           seed = q0_seed (pilot_20k);                    controller = classical
+#   B  seed ablation:      seed = diffusion best-of-N + Newton IK refine; controller = classical
+#   C  controller ablation:seed = q0_seed;                                controller = hybrid_variantB
+#   D  full method:        seed = diffusion best-of-N + Newton IK refine; controller = hybrid_variantB
+#   E  oracle ceiling:     seed = labels_q0[argmax(labels_L_clean)];      controller = hybrid_variantB
+
+dataset:
+  pilot_npz: Yuan/seed_selection/runs/pilot_day5/pilot_20k.npz
+  # plane-collision filter (safe-task = `any_label_collides == False`)
+  plane_collision_npz: Yuan/seed_selection/runs/pilot_day5/pilot_20k.plane_collision.npz
+  # buckets keyed by L_seed (closed-open intervals, same convention as eval_rollout)
+  buckets:
+    weak:        [0.10, 0.15]
+    medium-weak: [0.15, 0.20]
+    medium:      [0.20, 0.30]
+    strong:      [0.30, .inf]
+  bucket_targets:
+    weak: 2500
+    medium-weak: 2500
+    medium: 3000
+    strong: 2000
+  task_seed: 42                # used to pick which tasks within each bucket
+
+diffusion:
+  ckpt: Yuan/seed_selection/runs/pilot_day5/q0_20k_cfg_mirror_ckpts/step_300000.pt
+  use_ema: true
+  n_samples: 8                 # best-of-N
+  ddim_steps: 50
+  cfg_w: 1.5
+  sample_seed: 42              # diffusion noise seed (deterministic)
+  mirror_eval: false           # mirror aug disabled at eval (training-only)
+  # IK refinement (newton_project onto strict (p0, R_target))
+  ik:
+    enabled: true              # cells B and D refine; A/C/E use the raw seed
+    # newton uses kin's defaults from label_builder._build_R_target_strict
+
+rl_controller:
+  ckpt_dir: Yuan/RL_controller/runs/p0_progress_only_30M_0520
+  # variant B (step-level hysteresis) — switching policy
+  variant: B
+  tau_enter: 0.98              # using_rl: q_max >= tau_enter -> switch to Cls
+  tau_exit:  0.98              # using_cls: q_max <  tau_exit  -> switch back to RL
+
+env:
+  # Inherit env params from rl_controller/config.yaml; we override n_envs at runtime.
+  config_yaml: Yuan/RL_controller/config.yaml
+  n_envs: 256                  # batched rollout chunk size
+  target_distance_m: 1.5       # L_clean = progress_m / target_distance_m
+
+runner:
+  ckpt_every_tasks: 500        # write partial NPZ every N tasks (resumable)
+  device: cuda
+
+output:
+  root: Yuan/system_eval/runs/eval_10k_systematic
+  eval_set_name: eval_set_10k.npz
+  cell_results_pattern: "cell_{cell}_results.npz"
+
+metrics:
+  # Reporting unit: absolute progress in meters (= L_best * target_distance_m).
+  # Memory rule still applies: per-task ratios (e.g. L_X/L_E) stay meaningful;
+  # arbitrary normalization L = progress/1.5m does not.
+  progress_thresholds_m: [0.30, 0.50, 0.75]   # acceptable / good / strong
+  catastrophic_progress_m: 0.15               # < this counted as catastrophic
+  recovery_fraction_oracle: 0.9               # task is "recovered" if progress >= 0.9 * oracle

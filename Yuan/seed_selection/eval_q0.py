@@ -50,6 +50,14 @@ def parse_args():
                         "'all' ignores any split.")
     p.add_argument('--split-file', type=Path, default=None,
                    help='override split.json path (default: <ckpt-dir>/split.json)')
+    p.add_argument('--shuffle-c', action='store_true',
+                   help='replace each task\'s c with a random other task\'s c '
+                        '(within the eval set) before sampling. Tests whether the '
+                        'model is using c or just sampling the marginal q0 dist.')
+    p.add_argument('--shuffle-seed', type=int, default=12345,
+                   help='RNG seed for --shuffle-c permutation.')
+    p.add_argument('--cfg-w', type=float, default=1.0,
+                   help='classifier-free guidance weight (1.0 = no guidance).')
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--device', default='cuda')
     return p.parse_args()
@@ -112,21 +120,38 @@ def main():
         if L < 0.30: return 'medium'
         return 'strong'
 
+    # If --shuffle-c: derangement of multi_idx (no fixed points). The sample
+    # for task i is drawn under c_{shuffle[i]}, but evaluated against task i's
+    # labels. A model that actually uses c should produce near-random coverage.
+    if args.shuffle_c:
+        rng = np.random.default_rng(args.shuffle_seed)
+        perm = rng.permutation(len(multi_idx))
+        # ensure derangement (no fixed points) — if any, rotate by 1
+        if (perm == np.arange(len(multi_idx))).any():
+            perm = np.concatenate([perm[1:], perm[:1]])
+        shuffle_src_idx = multi_idx[perm]   # for task i, use c from task shuffle_src_idx[i]
+        n_fixed = int((perm == np.arange(len(multi_idx))).sum())
+        print(f'[eval] --shuffle-c: deranged {len(multi_idx)} tasks (fixed points: {n_fixed})')
+    else:
+        shuffle_src_idx = multi_idx  # identity (use own c)
+
     # Batch eval: process tasks in groups for GPU efficiency.
     # Each task replicates c M times → (T*M, 9) condition matrix.
     BATCH_TASKS = 64
     for start in range(0, len(multi_idx), BATCH_TASKS):
         batch_t = multi_idx[start:start + BATCH_TASKS]
+        c_src_t = shuffle_src_idx[start:start + BATCH_TASKS]
         Bt = len(batch_t)
         c_np = np.stack([
             np.concatenate([ds.cs_p0[i], ds.cs_line_dir[i], ds.cs_n_target[i]])
-            for i in batch_t
+            for i in c_src_t              # ← sample under shuffled c (or own c if no shuffle)
         ], axis=0).astype(np.float32)
         c_t = torch.from_numpy(c_np).to(device)
         # repeat each c M times
         c_rep = c_t.repeat_interleave(args.n_samples, dim=0)  # (Bt*M, 9)
         q_norm = ddim_sample_q0(model, schedule, c_rep, device=device,
-                                num_steps=args.ddim_steps, eta=0.0)
+                                num_steps=args.ddim_steps, eta=0.0,
+                                cfg_w=args.cfg_w)
         q_raw = denormalize_q(q_norm).cpu().numpy()  # (Bt*M, 7) absolute joint angles
 
         for bi, ti in enumerate(batch_t):
@@ -267,6 +292,10 @@ def main():
 
     plt.tight_layout()
     suffix = f'step{step}_{args.which}' if args.which != 'all' else f'step{step}'
+    if args.shuffle_c:
+        suffix = f'{suffix}_shuffled'
+    if args.cfg_w != 1.0:
+        suffix = f'{suffix}_cfg{args.cfg_w}'
     fig_path = out_dir / f'{args.out_prefix}_{suffix}.png'
     plt.savefig(fig_path, dpi=120)
     print(f'\nSaved: {fig_path}')

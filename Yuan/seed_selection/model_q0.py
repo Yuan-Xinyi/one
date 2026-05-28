@@ -38,6 +38,10 @@ class SeedQ0DiT(nn.Module):
             nn.Linear(cfg.c_dim, d), nn.SiLU(),
             nn.Linear(d, d), nn.SiLU(),
         )
+        # Learnable null condition for classifier-free guidance. When
+        # `uncond_mask[i]` is True, c[i] is replaced with this vector before
+        # the c-MLP. Trained jointly via dropout in train_q0.
+        self.null_c = nn.Parameter(torch.zeros(cfg.c_dim))
         self.t_mlp = nn.Sequential(
             nn.Linear(d, d * 2), nn.SiLU(),
             nn.Linear(d * 2, d),
@@ -58,10 +62,15 @@ class SeedQ0DiT(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,   # (B, q_dim)
-        t: torch.Tensor,   # (B,)
-        c: torch.Tensor,   # (B, c_dim)
+        x: torch.Tensor,                       # (B, q_dim)
+        t: torch.Tensor,                       # (B,)
+        c: torch.Tensor,                       # (B, c_dim)
+        uncond_mask: torch.Tensor | None = None,   # (B,) bool. True → replace c[i] with null_c
     ) -> torch.Tensor:
+        if uncond_mask is not None and uncond_mask.any():
+            c = torch.where(uncond_mask.unsqueeze(-1),
+                            self.null_c.to(c.dtype).expand_as(c),
+                            c)
         c_emb = self.c_mlp(self.c_ln(c))
         t_emb = self.t_mlp(sinusoidal_timestep_embedding(t, self.cfg.d_model))
         h = self.q_in(x) + c_emb + t_emb

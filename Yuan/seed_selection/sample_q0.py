@@ -22,13 +22,27 @@ def ddim_sample_q0(
     num_steps: int = 50,
     eta: float = 0.0,
     clip_x0: float | None = 1.2,
+    cfg_w: float = 1.0,
 ) -> torch.Tensor:
-    """DDIM sampling with v-prediction. Returns q0 in NORMALIZED space (B, 7)."""
+    """DDIM sampling with v-prediction and classifier-free guidance.
+
+    cfg_w:
+      1.0 → pure conditional sampling (no guidance, equivalent to no-CFG path).
+      0.0 → unconditional sampling (uses null condition).
+      >1  → amplify the conditional signal:
+              v = v_uncond + cfg_w * (v_cond - v_uncond)
+    Returns q0 in NORMALIZED space (B, 7).
+    """
     model.eval()
     B = c.shape[0]
     T = schedule.T
     steps = max(1, min(int(num_steps), T))
     step_indices = torch.linspace(T - 1, 0, steps + 1, dtype=torch.long, device=device)
+
+    use_cfg = (cfg_w != 1.0)
+    if use_cfg:
+        uncond_mask_pos = torch.zeros(B, dtype=torch.bool, device=device)
+        uncond_mask_neg = torch.ones(B, dtype=torch.bool, device=device)
 
     xt = torch.randn(B, model.cfg.q_dim, device=device)
     for i in range(steps):
@@ -41,7 +55,17 @@ def ddim_sample_q0(
         alpha_t = ba_t.sqrt()
         sigma_t = (1 - ba_t).sqrt()
 
-        v_pred = model(xt, t_vec, c)
+        if use_cfg:
+            # Single batched forward over [cond, uncond] for efficiency.
+            xt2 = torch.cat([xt, xt], dim=0)
+            t2  = torch.cat([t_vec, t_vec], dim=0)
+            c2  = torch.cat([c, c], dim=0)
+            um2 = torch.cat([uncond_mask_pos, uncond_mask_neg], dim=0)
+            v_both = model(xt2, t2, c2, uncond_mask=um2)
+            v_cond, v_uncond = v_both[:B], v_both[B:]
+            v_pred = v_uncond + cfg_w * (v_cond - v_uncond)
+        else:
+            v_pred = model(xt, t_vec, c)
 
         x0_hat = alpha_t * xt - sigma_t * v_pred
         eps_pred = sigma_t * xt + alpha_t * v_pred

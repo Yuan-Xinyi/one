@@ -1,0 +1,56 @@
+{
+  "n_tasks": 20000,
+  "n_procs": 4,
+  "wall_seconds_parallel": 28686.336931228638,
+  "wall_seconds_summed": 114243.7978887558,
+  "parallel_speedup": 3.9825160724647017,
+  "status_counts": {
+    "kept": 13480,
+    "low_quality": 4094,
+    "edge": 1784,
+    "infeasible": 642
+  },
+  "errors": [],
+  "per_chunk": [
+    {
+      "n_tasks": 5000,
+      "elapsed_seconds": 28629.459452152252,
+      "status_counts": {
+        "kept": 3387,
+        "low_quality": 969,
+        "edge": 464,
+        "infeasible": 180
+      }
+    },
+    {
+      "n_tasks": 5000,
+      "elapsed_seconds": 28526.65963244438,
+      "status_counts": {
+        "kept": 3395,
+        "low_quality": 1024,
+        "edge": 439,
+        "infeasible": 142
+      }
+    },
+    {
+      "n_tasks": 5000,
+      "elapsed_seconds": 28412.119195222855,
+      "status_counts": {
+        "kept": 3338,
+        "low_quality": 1056,
+        "infeasible": 161,
+        "edge": 445
+      }
+    },
+    {
+      "n_tasks": 5000,
+      "elapsed_seconds": 28675.55960893631,
+      "status_counts": {
+        "kept": 3360,
+        "low_quality": 1045,
+        "edge": 436,
+        "infeasible": 159
+      }
+    }
+  ]
+}

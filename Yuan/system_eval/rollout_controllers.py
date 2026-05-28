@@ -6,14 +6,14 @@ runs them through a shared `NSRLBatchedEnv`, and returns per-seed metrics.
 Two underlying controllers are supported:
 
   controller='classical'         — Yoshikawa-style nullspace (current code-path
-                                    in `seed_selection.batched_rollout`).
+                                    in `seed_selection.smm.rollout_batched`).
   controller='hybrid_variantB'   — step-level hysteresis switching between RL
                                     (agent.pt) and Classical, as in
-                                    `RL_controller.eval_hybrid_steplevel`.
+                                    `RL_controller.eval.hybrid_steplevel`.
 
 Common to both: env.p_start is overridden to the task-defined p0 so the
 progress signal aligns with what the data labels assume (matches
-seed_selection.batched_rollout).
+seed_selection.smm.rollout_batched).
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from Yuan.RL_controller.env.classical_nullspace import (
     ClassicalNullspaceController, cn_action_fn,
 )
 from Yuan.RL_controller.env.line_distribution import ScriptedLineDistribution
-from Yuan.RL_controller.ppo import Agent
+from Yuan.RL_controller.algorithms.ppo import Agent
 
 
 # ----------------------------------------------------------------------
@@ -79,7 +79,7 @@ def _rollout_classical_chunk(
     env: NSRLBatchedEnv,
     classical: ClassicalNullspaceController,
 ) -> dict:
-    """Pure classical rollout (mirrors seed_selection.batched_rollout)."""
+    """Pure classical rollout (mirrors seed_selection.smm.rollout_batched)."""
     assert qs_chunk.shape[0] == env.n_envs
     spec = {'q0': qs_chunk, 'line_dir': line_dirs_chunk, 'n_target': n_targets_chunk}
     env.line_dist = ScriptedLineDistribution(spec)

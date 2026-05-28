@@ -1,12 +1,15 @@
 """Per-cell seed builders.
 
-A cell's seed is the q0 fed to the controller at episode start. The five
-cells differ in *where* that q0 comes from:
+A cell's seed is the q0 fed to the controller at episode start. The cells
+differ in *where* that q0 comes from:
 
-  baseline_seeds(eval_set)            shape (n_tasks, 1, 7)    — cells A, C
-  oracle_seeds(eval_set)              shape (n_tasks, 1, 7)    — cell E
-  diffusion_seeds(eval_set, ...)      shape (n_tasks, N, 7)    — cells B, D
-                                       returns also `ik_ok` mask
+  baseline_seeds(eval_set)        shape (n_tasks, 1, 7)  — cls_cls, cls_hyb
+  oracle_seeds(eval_set)          shape (n_tasks, 1, 7)  — oracle_cls
+  diffusion_seeds(eval_set, ...)  shape (n_tasks, N, 7)  — diff_cls, diff_hyb
+                                  also returns an `ik_ok` mask
+
+(oracle_hyb is the controller-aware oracle and is built in run_oracle_prime
+directly from the SMM top-K' pool — not via this dispatcher.)
 
 For the diffusion path we sample N q0 from the trained DiT (with mirror aug
 DISABLED at eval — the model handles symmetry itself), then refine each
@@ -22,19 +25,22 @@ from typing import Optional
 import numpy as np
 import torch
 
-from Yuan.fr3_dit.training.task_cond_dit_q0 import denormalize_q
-from Yuan.flow_connectivity.intro_motivation.v18_smm_core import newton_project
-from Yuan.seed_selection.label_builder import _build_R_target_strict
-from Yuan.seed_selection.sample_q0 import ddim_sample_q0, load_ckpt
+from Yuan.seed_selection.diffusion import ddim_sample_q0, denormalize_q, load_ckpt
+from Yuan.seed_selection.smm import _build_R_target_strict, newton_project
 
 
 def baseline_seeds(eval_set: dict) -> np.ndarray:
-    """q0_seed from pilot_20k. Shape (n_tasks, 1, 7)."""
+    """Pilot q0_seed (classical-derived). Shape (n_tasks, 1, 7)."""
     return eval_set['q0_seed'][:, None, :].astype(np.float32).copy()
 
 
 def oracle_seeds(eval_set: dict) -> np.ndarray:
-    """labels_q0[argmax(labels_L_clean)]. Shape (n_tasks, 1, 7)."""
+    """SMM classical-label oracle: labels_q0[argmax(labels_L_clean)].
+
+    Shape (n_tasks, 1, 7). Note: this is optimal under the classical
+    controller (which generated the labels) but not necessarily under
+    the hybrid deployment controller — see oracle_hyb in run_oracle_prime.
+    """
     return eval_set['max_label_q'][:, None, :].astype(np.float32).copy()
 
 
@@ -130,12 +136,11 @@ def build_seeds_for_cell(
         seeds:  (n_tasks, n_samples, 7) float32
         ik_ok:  (n_tasks, n_samples) bool OR None for non-diffusion cells
     """
-    cell = cell.upper()
-    if cell in ('A', 'C'):
+    if cell in ('cls_cls', 'cls_hyb'):
         return baseline_seeds(eval_set), None
-    if cell == 'E':
+    if cell == 'oracle_cls':
         return oracle_seeds(eval_set), None
-    if cell in ('B', 'D'):
+    if cell in ('diff_cls', 'diff_hyb'):
         assert diffusion_cfg is not None and kin is not None and device is not None
         seeds, ik_ok = diffusion_seeds(
             eval_set,

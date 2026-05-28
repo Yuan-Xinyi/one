@@ -1,12 +1,12 @@
-"""Aggregate cell_{A..E,E_prime}_results.npz into summary table, report, figures.
+"""Aggregate cell_<name>_results.npz into summary table, report, figures.
 
 Reporting units: absolute EE progress in METERS (= L_best * target_distance_m).
 The 1.5m normalizer was an arbitrary constant; absolute meters are what
 deployment cares about. Per-task ratios (L_X / L_oracle) stay meaningful.
 
-For diffusion cells (B, D), two reductions are reported:
+For diffusion cells (diff_cls, diff_hyb), two reductions are reported:
     progress_best_m      best-of-N with IK-fails counted as 0          (conservative)
-    progress_realistic_m best-of-N; if ALL N fail IK, fallback to A    (realistic)
+    progress_realistic_m best-of-N; if ALL N fail IK, fallback to cls_cls (realistic)
 The realistic number is closer to actual deployment behavior.
 
 Outputs (under <root>/):
@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 from pathlib import Path
 
 import matplotlib
@@ -37,18 +36,32 @@ import numpy as np
 import yaml
 
 
-CELLS = ['A', 'B', 'C', 'D', 'E', 'E_prime']
+# Cells in display order. Naming convention: <seed_source>_<controller>.
+#   cls = pilot q0_seed,            classical = Yoshikawa nullspace
+#   diff = diffusion seed,          hyb       = hybrid (RL + Classical, variant B)
+#   oracle_cls = label-argmax seed (classical-label oracle, deployed under hybrid)
+#   oracle_hyb = controller-aware oracle (max over SMM top-K' under hybrid)
+CELLS = ['cls_cls', 'diff_cls', 'cls_hyb', 'diff_hyb', 'oracle_cls', 'oracle_hyb']
+BASELINE_CELL = 'cls_cls'
+FULL_METHOD_CELL = 'diff_hyb'
+DIFFUSION_CELLS = ('diff_cls', 'diff_hyb')
+ORACLE_CELLS = ('oracle_cls', 'oracle_hyb')
+
 CELL_LABEL = {
-    'A': 'A: baseline (q0_seed + Classical)',
-    'B': 'B: seed ablation (Diffusion + Classical)',
-    'C': 'C: controller ablation (q0_seed + RL hybrid)',
-    'D': 'D: full method (Diffusion + RL hybrid)',
-    'E': "E: seed-oracle (max-L_classical label + RL hybrid)",
-    'E_prime': "E': controller-aware oracle (max over SMM top-K' + RL hybrid)",
+    'cls_cls':    'cls_cls: baseline (q0_seed + Classical)',
+    'diff_cls':   'diff_cls: seed ablation (Diffusion + Classical)',
+    'cls_hyb':    'cls_hyb: controller ablation (q0_seed + RL hybrid)',
+    'diff_hyb':   'diff_hyb: full method (Diffusion + RL hybrid)',
+    'oracle_cls': 'oracle_cls: classical-label oracle (controller-mismatched)',
+    'oracle_hyb': 'oracle_hyb: controller-aware oracle (true ceiling under hybrid)',
 }
 CELL_COLOR = {
-    'A': '#888888', 'B': '#1f77b4', 'C': '#ff7f0e',
-    'D': '#2ca02c', 'E': '#d62728', 'E_prime': '#8b0000',
+    'cls_cls':    '#888888',
+    'diff_cls':   '#1f77b4',
+    'cls_hyb':    '#ff7f0e',
+    'diff_hyb':   '#2ca02c',
+    'oracle_cls': '#d62728',
+    'oracle_hyb': '#8b0000',
 }
 BUCKET_ORDER = ['weak', 'medium-weak', 'medium', 'strong']
 
@@ -74,10 +87,10 @@ def _percentile_safe(a, q):
     return float(np.percentile(a, q))
 
 
-def _progress_best(cell_data: dict, target_distance_m: float,
-                   fallback_progress: np.ndarray | None = None) -> np.ndarray:
-    """Return per-task progress (m). If fallback_progress is given, replace
-    NaN entries (all-IK-failed tasks for diffusion cells) with fallback."""
+def _best_of_N_progress(cell_data: dict, target_distance_m: float,
+                        fallback_progress: np.ndarray | None = None) -> np.ndarray:
+    """Per-task best-of-N progress (m). If `fallback_progress` is given,
+    replace NaN entries (all-IK-failed tasks for diffusion cells) with it."""
     progress = cell_data['L_best'].astype(np.float64) * target_distance_m
     if fallback_progress is not None:
         nan_mask = ~np.isfinite(progress)
@@ -85,7 +98,7 @@ def _progress_best(cell_data: dict, target_distance_m: float,
     return progress.astype(np.float32)
 
 
-def metric_block(progress, bucket_mask, thresholds_m, catastrophic_m):
+def _bucket_metrics(progress, bucket_mask, thresholds_m, catastrophic_m):
     a = progress[bucket_mask]
     finite = a[np.isfinite(a)]
     row = {
@@ -120,7 +133,7 @@ def main():
         p = in_dir / pat.format(cell=c)
         if not p.exists():
             msg = f'[aggregate] missing {p}'
-            if args.require_all and c != 'E_prime':  # E' is optional
+            if args.require_all and c != 'oracle_hyb':  # oracle_hyb is optional
                 raise SystemExit(msg)
             print(msg + ' — skipping')
             continue
@@ -142,16 +155,17 @@ def main():
 
     # ---- Build progress arrays (conservative + realistic) -------------
     # Conservative: NaN where all IK failed (excluded from finite stats)
-    # Realistic: fallback to Cell A's progress on those tasks
-    progress_A = _progress_best(cells['A'], target_distance_m) if 'A' in cells else None
+    # Realistic: fallback to baseline progress on those tasks
+    progress_baseline = (_best_of_N_progress(cells[BASELINE_CELL], target_distance_m)
+                         if BASELINE_CELL in cells else None)
 
     progress = {}             # conservative version
-    progress_real = {}        # realistic version (A-fallback for B, D)
+    progress_real = {}        # realistic version (baseline-fallback for diffusion)
     for c, d in cells.items():
-        progress[c] = _progress_best(d, target_distance_m, fallback_progress=None)
-        if c in ('B', 'D') and progress_A is not None:
-            progress_real[c] = _progress_best(d, target_distance_m,
-                                              fallback_progress=progress_A)
+        progress[c] = _best_of_N_progress(d, target_distance_m, fallback_progress=None)
+        if c in DIFFUSION_CELLS and progress_baseline is not None:
+            progress_real[c] = _best_of_N_progress(d, target_distance_m,
+                                                    fallback_progress=progress_baseline)
         else:
             progress_real[c] = progress[c].copy()
 
@@ -160,8 +174,8 @@ def main():
     bucket_masks['ALL'] = np.ones(n_tasks, dtype=bool)
     bucket_iter = list(bucket_masks.keys())
 
-    # ---- Choose the canonical oracle for ratios: E' if available else E
-    oracle_cell = 'E_prime' if 'E_prime' in cells else 'E'
+    # ---- Choose the canonical oracle for ratios: oracle_hyb if available else oracle_cls
+    oracle_cell = 'oracle_hyb' if 'oracle_hyb' in cells else 'oracle_cls'
     progress_O = progress[oracle_cell] if oracle_cell in progress else None
     print(f'[aggregate] cells loaded: {sorted(cells.keys())}; '
           f'oracle for ratios = {oracle_cell}; n_tasks={n_tasks}')
@@ -172,12 +186,12 @@ def main():
         for b in bucket_iter:
             m = bucket_masks[b]
             row = {'cell': c, 'bucket': b, 'variant': 'conservative',
-                   **metric_block(progress[c], m, thresholds_m, catastrophic_m)}
-            if progress_A is not None:
-                d = progress[c][m] - progress_A[m]
+                   **_bucket_metrics(progress[c], m, thresholds_m, catastrophic_m)}
+            if progress_baseline is not None:
+                d = progress[c][m] - progress_baseline[m]
                 row['gain_over_baseline_median_m'] = float(np.nanmedian(d))
                 with np.errstate(invalid='ignore'):
-                    r = progress[c][m] / np.where(progress_A[m] > 0, progress_A[m], np.nan)
+                    r = progress[c][m] / np.where(progress_baseline[m] > 0, progress_baseline[m], np.nan)
                 rf = r[np.isfinite(r)]
                 row['mean_ratio_vs_baseline'] = float(rf.mean()) if len(rf) else float('nan')
             if progress_O is not None:
@@ -188,19 +202,19 @@ def main():
                 row[f'recovery_vs_oracle_at_{recovery_frac}'] = (
                     float((rf >= recovery_frac).mean()) if len(rf) else float('nan'))
 
-            if c in ('B', 'D') and 'ik_ok' in cells[c]:
+            if c in DIFFUSION_CELLS and 'ik_ok' in cells[c]:
                 ik = cells[c]['ik_ok'][m]
                 row['ik_convergence_rate_per_sample'] = float(ik.mean()) if ik.size else float('nan')
                 row['mean_n_ik_success_per_task'] = float(ik.sum(axis=1).mean()) if ik.size else float('nan')
                 row['ik_all_fail_rate'] = float((~ik).all(axis=1).mean()) if ik.size else float('nan')
             rows.append(row)
 
-            # Realistic variant for B, D (A-fallback on all-IK-fail tasks)
-            if c in ('B', 'D'):
-                row_r = {'cell': c, 'bucket': b, 'variant': 'realistic_A_fallback',
-                         **metric_block(progress_real[c], m, thresholds_m, catastrophic_m)}
-                if progress_A is not None:
-                    d = progress_real[c][m] - progress_A[m]
+            # Realistic variant for diffusion cells (baseline-fallback on all-IK-fail tasks)
+            if c in DIFFUSION_CELLS:
+                row_r = {'cell': c, 'bucket': b, 'variant': 'realistic_baseline_fallback',
+                         **_bucket_metrics(progress_real[c], m, thresholds_m, catastrophic_m)}
+                if progress_baseline is not None:
+                    d = progress_real[c][m] - progress_baseline[m]
                     row_r['gain_over_baseline_median_m'] = float(np.nanmedian(d))
                 if progress_O is not None:
                     with np.errstate(invalid='ignore'):
@@ -230,7 +244,7 @@ def main():
     print(f'[aggregate] wrote {csv_path} ({len(rows)} rows)')
 
     # ---- Markdown report --------------------------------------------
-    md_lines = build_report(cells, rows, progress, progress_real, progress_A,
+    md_lines = build_report(cells, rows, progress, progress_real, progress_baseline,
                             progress_O, oracle_cell, bucket_ref, bucket_iter,
                             thresholds_m, recovery_frac, catastrophic_m, n_tasks,
                             target_distance_m)
@@ -268,18 +282,19 @@ def _fmt_pct(v, prec=1):
     return f'{100*v:.{prec}f}'
 
 
-def build_report(cells, rows, progress, progress_real, progress_A, progress_O,
+def build_report(cells, rows, progress, progress_real, progress_baseline, progress_O,
                  oracle_cell, bucket_ref, bucket_iter, thresholds_m, recovery_frac,
                  catastrophic_m, n_tasks, target_distance_m):
     out = []
-    out.append(f'# System eval — 5+1 cell ablation (N={n_tasks})')
+    out.append(f'# System eval — seed x controller ablation (N={n_tasks})')
     out.append('')
+    oracle_note = ("controller-aware" if oracle_cell == 'oracle_hyb'
+                   else "classical-label oracle (controller-mismatched)")
     out.append(f'All progress values in **meters** (raw EE displacement along the '
                f'task line). Conservative variant: best-of-N over diffusion samples, '
                f'all-IK-fail tasks counted as progress=0. Realistic variant: '
-               f'all-IK-fail tasks fall back to the q0_seed rollout (Cell A). '
-               f'Oracle used for recovery ratios = **{oracle_cell}** '
-               f'{"(controller-aware)" if oracle_cell == "E_prime" else "(seed-oracle under classical labels)"}.')
+               f'all-IK-fail tasks fall back to the baseline rollout ({BASELINE_CELL}). '
+               f'Oracle used for recovery ratios = **{oracle_cell}** ({oracle_note}).')
     out.append('')
     out.append('| cell | source |')
     out.append('|---|---|')
@@ -289,7 +304,7 @@ def build_report(cells, rows, progress, progress_real, progress_A, progress_O,
     out.append('')
 
     hdr = ['cell', 'variant', 'n', 'prog_med (m)', 'p25', 'p75',
-           f'≥{thresholds_m[0]:g}m', f'≥{thresholds_m[1]:g}m', f'≥{thresholds_m[2]:g}m',
+           f'>={thresholds_m[0]:g}m', f'>={thresholds_m[1]:g}m', f'>={thresholds_m[2]:g}m',
            'recov_vs_oracle', 'gain_med (m)']
 
     def row_for(c, b, variant):
@@ -303,13 +318,13 @@ def build_report(cells, rows, progress, progress_real, progress_A, progress_O,
         for c in CELLS:
             if c not in cells:
                 continue
-            if c in ('B', 'D'):
+            if c in DIFFUSION_CELLS:
                 r = row_for(c, b, variant_label)
             else:
-                r = row_for(c, b, 'conservative')   # A, C, E, E' have no IK fallback
+                r = row_for(c, b, 'conservative')
             if r is None:
                 continue
-            row = [c, r['variant'][:10], str(r['n_tasks']),
+            row = [c, r['variant'][:14], str(r['n_tasks']),
                    _fmt(r['progress_median_m']),
                    _fmt(r['progress_p25_m']), _fmt(r['progress_p75_m']),
                    _fmt_pct(r.get(f'success_progress_geq_{thresholds_m[0]:g}m')),
@@ -320,16 +335,14 @@ def build_report(cells, rows, progress, progress_real, progress_A, progress_O,
             out.append('| ' + ' | '.join(row) + ' |')
         out.append('')
 
-    # Overall (ALL) — both variants for B/D
     out.append('## Overall (ALL tasks) — CONSERVATIVE (IK fail = 0)')
     out.append('')
     emit_table('ALL', 'conservative')
 
-    out.append('## Overall (ALL tasks) — REALISTIC (IK fail → q0_seed fallback)')
+    out.append(f'## Overall (ALL tasks) — REALISTIC (IK fail -> {BASELINE_CELL} fallback)')
     out.append('')
-    emit_table('ALL', 'realistic_A_fallback')
+    emit_table('ALL', 'realistic_baseline_fallback')
 
-    # Per-bucket break-down (conservative only, for brevity)
     out.append('## Per-bucket break-down (conservative variant)')
     out.append('')
     for b in bucket_iter:
@@ -338,13 +351,12 @@ def build_report(cells, rows, progress, progress_real, progress_A, progress_O,
         out.append(f'### Bucket: {b}')
         emit_table(b, 'conservative')
 
-    # IK convergence
-    if 'B' in cells:
-        out.append('## Diffusion-specific (IK convergence) — cells B, D')
+    if any(c in cells for c in DIFFUSION_CELLS):
+        out.append('## Diffusion-specific (IK convergence)')
         out.append('')
         out.append('| cell | bucket | ik_rate | mean_n_ok | all_fail_rate |')
         out.append('|---|---|---|---|---|')
-        for c in ('B', 'D'):
+        for c in DIFFUSION_CELLS:
             if c not in cells:
                 continue
             for b in bucket_iter:
@@ -357,51 +369,56 @@ def build_report(cells, rows, progress, progress_real, progress_A, progress_O,
                            f'{_fmt_pct(r.get("ik_all_fail_rate"))} |')
         out.append('')
 
-    # Ablation decomposition (in meters, conservative)
-    if all(c in cells for c in ('A', 'B', 'C', 'D')):
+    ablation_cells = (BASELINE_CELL, 'diff_cls', 'cls_hyb', FULL_METHOD_CELL)
+    if all(c in cells for c in ablation_cells):
         out.append('## Ablation decomposition (median progress in meters, conservative)')
         out.append('')
-        out.append('| bucket | n | A (m) | Δ_B (m) | Δ_C (m) | Δ_D (m) | '
-                   '(Δ_B+Δ_C) | synergy |')
+        out.append('| bucket | n | baseline (m) | seed_only_d | ctrl_only_d | full_d | '
+                   '(seed+ctrl)_d | synergy |')
         out.append('|---|---|---|---|---|---|---|---|')
         for b in [bb for bb in bucket_iter if bb != 'ALL']:
             m = bucket_ref == b
             n = int(m.sum())
-            pA = progress['A'][m]; pB = progress['B'][m]
-            pC = progress['C'][m]; pD = progress['D'][m]
-            mA = float(np.nanmedian(pA))
-            dB = float(np.nanmedian(pB - pA))
-            dC = float(np.nanmedian(pC - pA))
-            dD = float(np.nanmedian(pD - pA))
-            syn = dD - (dB + dC)
-            out.append(f'| {b} | {n} | {mA:.3f} | {dB:+.3f} | {dC:+.3f} | {dD:+.3f} '
-                       f'| {(dB+dC):+.3f} | **{syn:+.3f}** |')
+            p_base = progress[BASELINE_CELL][m]
+            p_seed = progress['diff_cls'][m]
+            p_ctrl = progress['cls_hyb'][m]
+            p_full = progress[FULL_METHOD_CELL][m]
+            mB = float(np.nanmedian(p_base))
+            dS = float(np.nanmedian(p_seed - p_base))
+            dC = float(np.nanmedian(p_ctrl - p_base))
+            dF = float(np.nanmedian(p_full - p_base))
+            syn = dF - (dS + dC)
+            out.append(f'| {b} | {n} | {mB:.3f} | {dS:+.3f} | {dC:+.3f} | {dF:+.3f} '
+                       f'| {(dS+dC):+.3f} | **{syn:+.3f}** |')
         out.append('')
 
-    # D vs E vs E'
-    if 'D' in cells and 'E' in cells:
-        out.append('## D vs E vs E\' (controller-aware oracle comparison)')
+    if FULL_METHOD_CELL in cells and 'oracle_cls' in cells:
+        out.append('## Full method vs oracles')
         out.append('')
-        delta_DE = progress['D'] - progress['E']
-        f = np.isfinite(delta_DE)
-        out.append(f'**D vs E** (E = SMM-classical seed oracle, controller-mismatched):')
-        out.append(f'- D > E on **{100*(delta_DE[f]>0).mean():.1f}%** of tasks; '
-                   f'median(D−E) = **{np.median(delta_DE[f])*1000:+.1f} mm**')
-        if 'E_prime' in cells:
-            delta_DEp = progress['D'] - progress['E_prime']
-            f = np.isfinite(delta_DEp)
-            out.append(f'')
-            out.append(f"**D vs E'** (E' = controller-aware oracle over SMM top-K' under hybrid):")
-            out.append(f"- D > E' on **{100*(delta_DEp[f]>0).mean():.1f}%** of tasks; "
-                       f"median(D−E') = **{np.median(delta_DEp[f])*1000:+.1f} mm**")
-            delta_EpE = progress['E_prime'] - progress['E']
-            f = np.isfinite(delta_EpE)
-            out.append(f'')
-            out.append(f"**E' vs E**:")
-            out.append(f"- E' > E on **{100*(delta_EpE[f]>0).mean():.1f}%** of tasks; "
-                       f"median(E'−E) = **{np.median(delta_EpE[f])*1000:+.1f} mm** "
-                       "(this measures how much the SMM seed-oracle leaves on the table "
-                       "by being controller-mismatched).")
+        delta = progress[FULL_METHOD_CELL] - progress['oracle_cls']
+        f = np.isfinite(delta)
+        out.append(f'**{FULL_METHOD_CELL} vs oracle_cls** '
+                   f'(classical-label oracle, controller-mismatched):')
+        out.append(f'- {FULL_METHOD_CELL} > oracle_cls on '
+                   f'**{100*(delta[f]>0).mean():.1f}%** of tasks; '
+                   f'median delta = **{np.median(delta[f])*1000:+.1f} mm**')
+        if 'oracle_hyb' in cells:
+            delta_full_hyb = progress[FULL_METHOD_CELL] - progress['oracle_hyb']
+            f = np.isfinite(delta_full_hyb)
+            out.append('')
+            out.append(f'**{FULL_METHOD_CELL} vs oracle_hyb** '
+                       f'(controller-aware oracle, true upper bound under hybrid):')
+            out.append(f'- {FULL_METHOD_CELL} > oracle_hyb on '
+                       f'**{100*(delta_full_hyb[f]>0).mean():.1f}%** of tasks; '
+                       f'median delta = **{np.median(delta_full_hyb[f])*1000:+.1f} mm**')
+            delta_oracles = progress['oracle_hyb'] - progress['oracle_cls']
+            f = np.isfinite(delta_oracles)
+            out.append('')
+            out.append('**oracle_hyb vs oracle_cls** (oracle gap from controller mismatch):')
+            out.append(f'- oracle_hyb > oracle_cls on **{100*(delta_oracles[f]>0).mean():.1f}%** of tasks; '
+                       f'median delta = **{np.median(delta_oracles[f])*1000:+.1f} mm** '
+                       '(this measures how much the SMM seed-oracle leaves on the table '
+                       'by being controller-mismatched).')
         out.append('')
 
     return out
@@ -418,8 +435,8 @@ def plot_deployment_gain(cells, progress, progress_real, bucket, out_path):
     width = 0.80 / max(len(cells_present), 1)
     x = np.arange(n_buckets)
     for i, c in enumerate(cells_present):
-        # Use realistic for B/D so the bar reflects deploy behavior
-        p = progress_real[c] if c in ('B', 'D') else progress[c]
+        # Use realistic for diffusion cells so the bar reflects deploy behavior.
+        p = progress_real[c] if c in DIFFUSION_CELLS else progress[c]
         meds, p25s, p75s = [], [], []
         for b in BUCKET_ORDER:
             m = bucket == b
@@ -429,18 +446,18 @@ def plot_deployment_gain(cells, progress, progress_real, bucket, out_path):
             p75s.append(float(np.percentile(f, 75)) if len(f) else 0.0)
         meds = np.asarray(meds); p25s = np.asarray(p25s); p75s = np.asarray(p75s)
         offset = (i - (len(cells_present) - 1) / 2) * width
-        is_oracle = c in ('E', 'E_prime')
+        is_oracle = c in ORACLE_CELLS
         ax.bar(x + offset, meds, width, label=CELL_LABEL[c],
                color=CELL_COLOR[c],
                yerr=[np.maximum(meds - p25s, 0.0), np.maximum(p75s - meds, 0.0)],
                capsize=2,
                edgecolor='red' if is_oracle else 'none',
                linewidth=1.2 if is_oracle else 0,
-               hatch='//' if c == 'E_prime' else ('\\\\' if c == 'E' else None))
+               hatch='//' if c == 'oracle_hyb' else ('\\\\' if c == 'oracle_cls' else None))
     ax.set_xticks(x); ax.set_xticklabels(BUCKET_ORDER)
     ax.set_ylabel('progress (m, median, error bars = 25/75%)')
     ax.set_xlabel('L_seed bucket')
-    ax.set_title('Deployment performance (B, D use realistic IK-fallback)')
+    ax.set_title('Deployment performance (diffusion cells use realistic IK-fallback)')
     ax.legend(loc='upper left', fontsize=7, ncol=1)
     ax.grid(True, axis='y', linestyle=':', alpha=0.5)
     fig.tight_layout(); fig.savefig(out_path, dpi=130); plt.close(fig)
@@ -463,8 +480,8 @@ def plot_recovery_distribution(cells, progress, bucket, oracle_cell, progress_O,
         r_sorted = np.sort(r)
         y = np.arange(1, len(r_sorted) + 1) / len(r_sorted)
         ax.plot(r_sorted, y, label=CELL_LABEL[c], color=CELL_COLOR[c],
-                linewidth=2 if c == 'D' else 1.2,
-                linestyle='--' if c in ('E', 'E_prime') else '-')
+                linewidth=2 if c == FULL_METHOD_CELL else 1.2,
+                linestyle='--' if c in ORACLE_CELLS else '-')
     ax.axvline(1.0, linestyle=':', color='black', alpha=0.5)
     ax.set_xlabel(f'progress / progress_{oracle_cell} (recovery ratio)')
     ax.set_ylabel('cumulative fraction of tasks')
@@ -476,61 +493,67 @@ def plot_recovery_distribution(cells, progress, bucket, oracle_cell, progress_O,
 
 
 def plot_ablation_decomposition(cells, progress, bucket, out_path):
-    if not all(c in cells for c in ('A', 'B', 'C', 'D')):
+    ablation_cells = (BASELINE_CELL, 'diff_cls', 'cls_hyb', FULL_METHOD_CELL)
+    if not all(c in cells for c in ablation_cells):
         return
     fig, ax = plt.subplots(figsize=(9, 5))
     x = np.arange(len(BUCKET_ORDER))
-    pA = progress['A']
-    dB, dC, dD, syn = [], [], [], []
+    p_base = progress[BASELINE_CELL]
+    dS, dC, dF, syn = [], [], [], []
     for b in BUCKET_ORDER:
         m = bucket == b
-        dB.append(float(np.nanmedian(progress['B'][m] - pA[m])))
-        dC.append(float(np.nanmedian(progress['C'][m] - pA[m])))
-        dD.append(float(np.nanmedian(progress['D'][m] - pA[m])))
-        syn.append(dD[-1] - (dB[-1] + dC[-1]))
-    ax.plot(x, dB, marker='o', label='B − A  (seed only)', color=CELL_COLOR['B'])
-    ax.plot(x, dC, marker='s', label='C − A  (controller only)', color=CELL_COLOR['C'])
-    ax.plot(x, dD, marker='^', label='D − A  (full method)', color=CELL_COLOR['D'], linewidth=2.5)
-    ax.plot(x, np.asarray(dB) + np.asarray(dC), marker='x',
-            label='(B−A) + (C−A) — additive prediction', color='gray', linestyle='--')
+        dS.append(float(np.nanmedian(progress['diff_cls'][m] - p_base[m])))
+        dC.append(float(np.nanmedian(progress['cls_hyb'][m] - p_base[m])))
+        dF.append(float(np.nanmedian(progress[FULL_METHOD_CELL][m] - p_base[m])))
+        syn.append(dF[-1] - (dS[-1] + dC[-1]))
+    ax.plot(x, dS, marker='o', label='diff_cls - cls_cls  (seed only)',
+            color=CELL_COLOR['diff_cls'])
+    ax.plot(x, dC, marker='s', label='cls_hyb - cls_cls  (controller only)',
+            color=CELL_COLOR['cls_hyb'])
+    ax.plot(x, dF, marker='^', label='diff_hyb - cls_cls  (full method)',
+            color=CELL_COLOR[FULL_METHOD_CELL], linewidth=2.5)
+    ax.plot(x, np.asarray(dS) + np.asarray(dC), marker='x',
+            label='(seed-only) + (ctrl-only) — additive prediction',
+            color='gray', linestyle='--')
     ax.set_xticks(x); ax.set_xticklabels(BUCKET_ORDER)
     ax.set_ylabel('median gain over baseline (m)')
     ax.set_xlabel('L_seed bucket')
-    ax.set_title('Ablation decomposition: seed × controller (median Δprogress)')
+    ax.set_title('Ablation decomposition: seed x controller (median delta-progress)')
     ax.grid(True, linestyle=':', alpha=0.5)
     ax.legend(loc='best', fontsize=8)
     ax.axhline(0, color='black', linewidth=0.8)
     for xi, s in zip(x, syn):
-        ax.annotate(f'syn={s*1000:+.0f}mm', xy=(xi, dD[xi]),
+        ax.annotate(f'syn={s*1000:+.0f}mm', xy=(xi, dF[xi]),
                     xytext=(0, 8), textcoords='offset points',
                     ha='center', fontsize=8, color='dimgray')
     fig.tight_layout(); fig.savefig(out_path, dpi=130); plt.close(fig)
 
 
 def plot_oracle_gap(cells, progress, bucket, oracle_cell, out_path):
-    if not all(c in cells for c in ('D', oracle_cell)):
+    if not all(c in cells for c in (FULL_METHOD_CELL, oracle_cell)):
         return
     fig, ax = plt.subplots(figsize=(8, 5))
     x = np.arange(len(BUCKET_ORDER))
     width = 0.30
-    pD = progress['D']; pO = progress[oracle_cell]
-    medD, medO = [], []
+    p_full = progress[FULL_METHOD_CELL]; pO = progress[oracle_cell]
+    medF, medO = [], []
     for b in BUCKET_ORDER:
         m = bucket == b
-        medD.append(float(np.nanmedian(pD[m])))
+        medF.append(float(np.nanmedian(p_full[m])))
         medO.append(float(np.nanmedian(pO[m])))
-    ax.bar(x - width / 2, medD, width, label='D (full method)', color=CELL_COLOR['D'])
+    ax.bar(x - width / 2, medF, width, label=f'{FULL_METHOD_CELL} (full method)',
+           color=CELL_COLOR[FULL_METHOD_CELL])
     ax.bar(x + width / 2, medO, width, label=f'{oracle_cell} (oracle)',
            color=CELL_COLOR[oracle_cell], edgecolor='red', linewidth=1.5, hatch='//')
-    for xi, lD, lO in zip(x, medD, medO):
-        gap = lO - lD
-        ax.annotate(f'gap {gap*1000:+.0f}mm', xy=(xi, max(lD, lO)),
+    for xi, lF, lO in zip(x, medF, medO):
+        gap = lO - lF
+        ax.annotate(f'gap {gap*1000:+.0f}mm', xy=(xi, max(lF, lO)),
                     xytext=(0, 8), textcoords='offset points',
                     ha='center', fontsize=8)
     ax.set_xticks(x); ax.set_xticklabels(BUCKET_ORDER)
     ax.set_ylabel('progress (m, median)')
     ax.set_xlabel('L_seed bucket')
-    ax.set_title(f'Oracle gap: D (deployment) vs {oracle_cell}')
+    ax.set_title(f'Oracle gap: {FULL_METHOD_CELL} (deployment) vs {oracle_cell}')
     ax.legend(loc='best', fontsize=8)
     ax.grid(True, axis='y', linestyle=':', alpha=0.5)
     fig.tight_layout(); fig.savefig(out_path, dpi=130); plt.close(fig)

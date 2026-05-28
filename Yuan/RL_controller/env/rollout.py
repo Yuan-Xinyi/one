@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import torch
 
-from Yuan.RL_controller.env.env import NSRLBatchedEnv
+from Yuan.RL_controller.env.env import NSRLBatchedEnv, TERM_TRUNCATED
 
 
 @torch.no_grad()
@@ -54,6 +54,6 @@ def rollout_first_episode(env: NSRLBatchedEnv, action_fn,
         progress = ((p_now - p_start) * line_dir).sum(-1)
         episode_progress[not_done] = progress[not_done]
         episode_len[not_done] = env.t[not_done]
-        episode_term[not_done] = 5  # TERM_TRUNCATED
+        episode_term[not_done] = TERM_TRUNCATED
     return {"episode_len": episode_len, "term_reason": episode_term,
             "episode_progress": episode_progress}

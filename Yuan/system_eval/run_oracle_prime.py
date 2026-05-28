@@ -1,24 +1,25 @@
-"""Controller-aware oracle E': roll every SMM candidate through the HYBRID
-controller, take per-task max.
+"""Controller-aware oracle (cell `oracle_hyb`): roll every SMM candidate
+through the HYBRID controller, take per-task max.
 
-Cell E uses labels_q0[argmax(labels_L_clean)] as the "oracle" seed, but
-labels_L_clean was measured under CLASSICAL during SMM data generation.
-Under the HYBRID deployment controller, that seed is no longer guaranteed
-to be optimal — and indeed Cell D beats Cell E on 84% of tasks.
+The classical-label oracle (cell `oracle_cls`) uses
+labels_q0[argmax(labels_L_clean)], but labels_L_clean was measured under
+CLASSICAL during SMM data generation. Under the HYBRID deployment
+controller, that seed is no longer guaranteed to be optimal — and indeed
+the full method (`diff_hyb`) beats `oracle_cls` on ~84% of tasks.
 
-E' is the *controller-aware* oracle: for each task we look at all valid
-candidates in `top_Kprime_q[t]` (the SMM top-K' pool stored in pilot_20k),
-roll each one through the hybrid controller, and take the max L. This
-gives the true upper bound for any q0 in the SMM pool under the
-deployment controller.
+`oracle_hyb` is the *controller-aware* oracle: for each task we look at
+all valid candidates in `top_Kprime_q[t]` (the SMM top-K' pool stored in
+pilot_20k), roll each one through the hybrid controller, and take the
+max L. This gives the true upper bound for any q0 in the SMM pool under
+the deployment controller.
 
-Output schema matches cell_X_results.npz so aggregate.py / make_latex_tables
-can pick it up as cell 'E_prime'.
+Output schema matches cell_<name>_results.npz so aggregate.py picks it up
+as cell 'oracle_hyb'.
 
 Usage:
     python -m Yuan.system_eval.run_oracle_prime \\
         --eval-set Yuan/system_eval/runs/eval_10k_systematic/eval_set_10k.npz \\
-        --pilot-npz Yuan/seed_selection/runs/pilot_day5/pilot_20k.npz \\
+        --pilot-npz Yuan/seed_selection/runs/pilot_20k/pilot_20k.npz \\
         --out-dir  Yuan/system_eval/runs/eval_10k_systematic
 """
 from __future__ import annotations
@@ -54,7 +55,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--config', default='Yuan/system_eval/config.yaml')
     p.add_argument('--eval-set', required=True)
-    p.add_argument('--pilot-npz', default='Yuan/seed_selection/runs/pilot_day5/pilot_20k.npz')
+    p.add_argument('--pilot-npz', default='Yuan/seed_selection/runs/pilot_20k/pilot_20k.npz')
     p.add_argument('--out-dir', default=None)
     p.add_argument('--max-tasks', type=int, default=None)
     return p.parse_args()
@@ -67,7 +68,7 @@ def main():
 
     out_dir = Path(args.out_dir or cfg['output']['root'])
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / cfg['output']['cell_results_pattern'].format(cell='E_prime')
+    out_path = out_dir / cfg['output']['cell_results_pattern'].format(cell='oracle_hyb')
 
     # ---- Load eval set + pilot ---------------------------------------
     es = np.load(Path(args.eval_set), allow_pickle=False)
@@ -83,7 +84,7 @@ def main():
     top_valid = pilot['top_Kprime_valid_mask'][src_idx].astype(bool)         # (n, K')
     top_Lclean= pilot['top_Kprime_L_clean'][src_idx].astype(np.float32)      # (n, K')
     K_prime = int(top_q.shape[1])
-    print(f'[oracle\'] n_tasks={n_tasks}  K_prime={K_prime}  '
+    print(f'[oracle_hyb] n_tasks={n_tasks}  K_prime={K_prime}  '
           f'avg valid candidates/task = {top_valid.sum(axis=1).mean():.2f}  '
           f'(min={top_valid.sum(axis=1).min()}, max={top_valid.sum(axis=1).max()})')
 
@@ -103,7 +104,7 @@ def main():
     p0_flat = p0_all[flat_task_idx]                              # (flat_n, 3)
     d_flat  = d_all[flat_task_idx]                               # (flat_n, 3)
     n_flat  = n_all[flat_task_idx]                               # (flat_n, 3)
-    print(f'[oracle\'] flat valid candidates: {flat_n}')
+    print(f'[oracle_hyb] flat valid candidates: {flat_n}')
 
     # ---- Build env + controllers --------------------------------------
     env = build_env(cfg['env']['config_yaml'],
@@ -124,9 +125,9 @@ def main():
         tau_enter=tau_e, tau_exit=tau_x,
         target_distance_m=target_distance_m,
         progress_every_chunks=max(1, (flat_n // env.n_envs) // 20),
-        progress_prefix='[E\']  ',
+        progress_prefix='[oracle_hyb] ',
     )
-    print(f'[oracle\'] rollout done: {flat_n} envs in {time.time()-t0:.1f}s')
+    print(f'[oracle_hyb] rollout done: {flat_n} envs in {time.time()-t0:.1f}s')
 
     # ---- Regroup ------------------------------------------------------
     L_per_sample  = np.full((n_tasks, K_prime), np.nan, dtype=np.float32)
@@ -154,12 +155,10 @@ def main():
     for t in range(n_tasks):
         bi = int(best_idx[t])
         seeds_used[t, 0] = top_q[t, bi] if bi >= 0 else np.nan
-    L_best_reshape = L_best[:, None]
-    prog_best = (L_best * target_distance_m).astype(np.float32)
 
     # ---- Save ---------------------------------------------------------
     snapshot = json.dumps({
-        'cell': 'E_prime',
+        'cell': 'oracle_hyb',
         'controller': 'hybrid_variantB',
         'tau_enter': tau_e, 'tau_exit': tau_x,
         'K_prime': K_prime,
@@ -175,7 +174,7 @@ def main():
     # Shape conventions: store as (n_tasks, K_prime, 7) since K_prime > 1.
     np.savez_compressed(
         out_path,
-        cell=np.array('E_prime'),
+        cell=np.array('oracle_hyb'),
         n_tasks=np.int64(n_tasks),
         n_samples=np.int64(K_prime),
         src_idx=src_idx,
@@ -198,29 +197,28 @@ def main():
     )
     print(f'[oracle\'] wrote {out_path} ({out_path.stat().st_size/1e6:.1f} MB)')
 
-    # ---- Quick comparison vs old E ----------------------------------
+    # ---- Quick comparison vs oracle_cls and diff_hyb ----------------
     fin = np.isfinite(L_best)
-    print(f'\n[oracle\'] E\' L_best: n_valid={fin.sum()}/{n_tasks}  '
+    print(f'\n[oracle_hyb] L_best: n_valid={fin.sum()}/{n_tasks}  '
           f'median={np.nanmedian(L_best):.3f}  mean={np.nanmean(L_best):.3f}  '
           f'p25={np.nanpercentile(L_best,25):.3f}  '
           f'p75={np.nanpercentile(L_best,75):.3f}')
-    e_path = out_dir / cfg['output']['cell_results_pattern'].format(cell='E')
-    if e_path.exists():
-        E_old = np.load(e_path, allow_pickle=False)
-        L_E   = E_old['L_best']
-        delta = L_best - L_E
+    ocls_path = out_dir / cfg['output']['cell_results_pattern'].format(cell='oracle_cls')
+    if ocls_path.exists():
+        ocls = np.load(ocls_path, allow_pickle=False)
+        delta = L_best - ocls['L_best']
         f = np.isfinite(delta)
-        print(f'[oracle\'] E\' vs old E: median(E\'−E) = {np.median(delta[f]):+.3f}  '
-              f'E\' > E on {100*(delta[f] > 0).mean():.1f}% of tasks')
-        # Now check D vs E'
-        d_path = out_dir / cfg['output']['cell_results_pattern'].format(cell='D')
-        if d_path.exists():
-            D = np.load(d_path, allow_pickle=False)
-            delta_DE = D['L_best'] - L_best
-            f = np.isfinite(delta_DE)
-            print(f'[oracle\'] D vs E\':  median(D−E\') = {np.median(delta_DE[f]):+.3f}  '
-                  f'D > E\' on {100*(delta_DE[f] > 0).mean():.1f}% of tasks  '
-                  f'(was 83.9% vs old E)')
+        print(f'[oracle_hyb] vs oracle_cls: '
+              f'median(oracle_hyb - oracle_cls) = {np.median(delta[f]):+.3f}  '
+              f'oracle_hyb > oracle_cls on {100*(delta[f] > 0).mean():.1f}% of tasks')
+        full_path = out_dir / cfg['output']['cell_results_pattern'].format(cell='diff_hyb')
+        if full_path.exists():
+            full = np.load(full_path, allow_pickle=False)
+            delta_full = full['L_best'] - L_best
+            f = np.isfinite(delta_full)
+            print(f'[oracle_hyb] diff_hyb vs oracle_hyb: '
+                  f'median(diff_hyb - oracle_hyb) = {np.median(delta_full[f]):+.3f}  '
+                  f'diff_hyb > oracle_hyb on {100*(delta_full[f] > 0).mean():.1f}% of tasks')
 
 
 if __name__ == '__main__':

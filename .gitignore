@@ -66,6 +66,9 @@ venv.bak/
 Thumbs.db
 
 # Project specific
+Yuan/seed_selection/runs/
+Yuan/system_eval/runs/
+Yuan/RL_controller/runs/
 *.npz
 scene.xml
 scene_free.xml

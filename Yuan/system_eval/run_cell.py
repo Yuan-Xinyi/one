@@ -1,13 +1,23 @@
-"""Single-cell runner: produces cell_{A,B,C,D,E}_results.npz.
+"""Single-cell runner: produces cell_<name>_results.npz.
+
+Cells (seed_source x controller):
+    cls_cls       q0_seed   + classical             — baseline
+    diff_cls      diffusion + classical             — seed-only ablation
+    cls_hyb       q0_seed   + hybrid (variant B)    — controller-only ablation
+    diff_hyb      diffusion + hybrid (variant B)    — full method
+    oracle_cls    label-argmax seed + hybrid        — classical-label oracle
+                                                      (controller-mismatched)
+
+(The controller-aware oracle 'oracle_hyb' is built in run_oracle_prime.py.)
 
 Each cell loads the same eval set, builds its seed source, runs the
 corresponding controller through the shared batched env, and saves per-task
 results + best-of-N reduction for diffusion cells.
 
 Output NPZ schema:
-    cell                str (e.g. 'D')
+    cell                str (e.g. 'diff_hyb')
     n_tasks             int
-    n_samples           int (1 for A/C/E, N for B/D)
+    n_samples           int (1 for non-diffusion cells, N for diff_*)
     src_idx             (n_tasks,) int64
     bucket              (n_tasks,) <U16
     L_seed              (n_tasks,) f32
@@ -19,11 +29,11 @@ Output NPZ schema:
     term_per_sample     (n_tasks, n_samples) int32
     init_max_qn         (n_tasks, n_samples) f32
     L_best              (n_tasks,) f32                     — best L over samples (NaN/0 for empty)
-    best_sample_idx     (n_tasks,) int32                   — argmax over samples (–1 if none valid)
+    best_sample_idx     (n_tasks,) int32                   — argmax over samples (-1 if none valid)
     config_snapshot     str (json)
 
 Usage:
-    python -m Yuan.system_eval.run_cell --cell A \
+    python -m Yuan.system_eval.run_cell --cell cls_cls \
         --eval-set Yuan/system_eval/runs/eval_10k_systematic/eval_set_10k.npz \
         --config Yuan/system_eval/config.yaml
 """
@@ -58,12 +68,13 @@ from Yuan.system_eval.seed_sources import build_seeds_for_cell
 
 
 CELL_CONTROLLER = {
-    'A': 'classical',
-    'B': 'classical',
-    'C': 'hybrid_variantB',
-    'D': 'hybrid_variantB',
-    'E': 'hybrid_variantB',
+    'cls_cls':    'classical',
+    'diff_cls':   'classical',
+    'cls_hyb':    'hybrid_variantB',
+    'diff_hyb':   'hybrid_variantB',
+    'oracle_cls': 'hybrid_variantB',
 }
+DIFFUSION_CELLS = ('diff_cls', 'diff_hyb')
 
 
 def parse_args():
@@ -80,8 +91,9 @@ def parse_args():
                    help='reuse seeds.npz from a prior diffusion cell '
                         '(skips diffusion sampling + IK refine).')
     p.add_argument('--write-diffusion-cache', action='store_true',
-                   help='write seeds/ik_ok next to results so the partner cell '
-                        '(B<->D) can reuse them via --diffusion-cache.')
+                   help='write seeds/ik_ok next to results so the partner '
+                        'diffusion cell (diff_cls <-> diff_hyb) can reuse '
+                        'them via --diffusion-cache.')
     return p.parse_args()
 
 
@@ -93,7 +105,7 @@ def load_eval_set(path: Path) -> dict:
 def main():
     args = parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
-    cell = args.cell.upper()
+    cell = args.cell
     controller_name = CELL_CONTROLLER[cell]
 
     device = torch.device(cfg['runner']['device']
@@ -128,7 +140,7 @@ def main():
 
     # ---- Build seeds for the cell --------------------------------------
     t0 = time.time()
-    if args.diffusion_cache is not None and cell in ('B', 'D'):
+    if args.diffusion_cache is not None and cell in DIFFUSION_CELLS:
         cache = np.load(args.diffusion_cache, allow_pickle=False)
         seeds = cache['seeds'][:n_tasks].astype(np.float32)
         ik_ok = cache['ik_ok'][:n_tasks].astype(bool)
@@ -149,7 +161,7 @@ def main():
           f'({time.time()-t0:.1f}s)')
 
     # Optional cache writeout so the partner cell can skip re-sampling.
-    if args.write_diffusion_cache and cell in ('B', 'D'):
+    if args.write_diffusion_cache and cell in DIFFUSION_CELLS:
         cache_path = out_dir / f'diffusion_seeds_{cell}.npz'
         np.savez(cache_path,
                  seeds=seeds, ik_ok=ik_ok,
@@ -183,14 +195,14 @@ def main():
     print(f'[run_cell] rollouts done: {qs_flat.shape[0]} envs '
           f'({time.time()-t0:.1f}s)')
 
-    # Reshape to (n_tasks, n_samples, ·)
-    def _resh(a):
+    # Reshape from flat (n_tasks*n_samples,) to (n_tasks, n_samples).
+    def _to_task_x_sample(a):
         return a.reshape(n_tasks, n_samples)
-    L_per = _resh(res['L']).copy()
-    prog_per = _resh(res['episode_progress_m']).copy()
-    term_per = _resh(res['term_reason']).astype(np.int32).copy()
-    init_qn_per = _resh(res['init_max_qn']).astype(np.float32).copy()
-    switch_per  = _resh(res['switch_count']).astype(np.int32).copy()
+    L_per = _to_task_x_sample(res['L']).copy()
+    prog_per = _to_task_x_sample(res['episode_progress_m']).copy()
+    term_per = _to_task_x_sample(res['term_reason']).astype(np.int32).copy()
+    init_qn_per = _to_task_x_sample(res['init_max_qn']).astype(np.float32).copy()
+    switch_per  = _to_task_x_sample(res['switch_count']).astype(np.int32).copy()
 
     # Mask out IK-failed seeds (NaN so they're excluded from finite reductions).
     L_per[~ik_ok] = np.nan
@@ -213,7 +225,7 @@ def main():
         'controller': controller_name,
         'tau_enter': tau_e, 'tau_exit': tau_x,
         'n_samples': int(n_samples),
-        'diffusion': cfg['diffusion'] if cell in ('B', 'D') else None,
+        'diffusion': cfg['diffusion'] if cell in DIFFUSION_CELLS else None,
         'rl_ckpt_dir': cfg['rl_controller']['ckpt_dir'] if controller_name == 'hybrid_variantB' else None,
         'env_config_yaml': str(env_yaml),
         'target_distance_m': float(cfg['env']['target_distance_m']),

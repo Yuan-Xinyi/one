@@ -1,9 +1,10 @@
-"""SMM-aware seed selection pipeline for diffusion training datasets.
+"""SMM-aware seed selection for diffusion-based start-q0 prediction.
 
-Modules:
-    perturb.py  — Module 4: task perturbation (c → c') preserving d ⊥ n.
-    cone_ik.py  — Module 3a: cone-constrained IK enumeration on a task c.
-
-Downstream modules (5–10) are added as the pipeline grows; see
-the design discussion in the project's connectivity-flow branch.
+Three subpackages:
+    smm/        — SMM-aware label generation pipeline (perturb, cone-IK, walk,
+                  rollout, robustness, label builder, dataset builder, parallel
+                  build orchestration).
+    diffusion/  — c → q0 diffusion model: definition, DataLoader, training,
+                  DDIM sampling.
+    eval/       — evaluation, post-build analysis, and visualization.
 """

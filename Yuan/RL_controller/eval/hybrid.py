@@ -9,9 +9,9 @@ Per-env hysteresis:
     at t=0: using_rl = (max|q_norm(q_0)| < tau_enter)        # start-in-classical
     at each step (q_t = env.q, before this step's action):
         cur_max_qn = max(|q_norm(q_t)|)
-        if using_rl and cur_max_qn >= tau_enter: switch to Classical, q_ref := q_t
+        if using_rl and cur_max_qn >= tau_enter: switch to Classical
         elif not using_rl and cur_max_qn < tau_exit: switch back to RL
-        a_t = RL(obs_t) if using_rl else Classical(q_t, line_dir, n_target, q_ref)
+        a_t = RL(obs_t) if using_rl else Classical(q_t, line_dir, n_target)
 
 We batch all (tau_enter, tau_exit) pairs into ONE big env by tiling each cell's
 N=10000 tasks K times (K = number of pairs). All cells run in parallel with
@@ -92,8 +92,6 @@ def run_hybrid_rollout(env, agent, classical_ctrl, tau_enter, tau_exit,
     init_max_qn = _max_abs_qn(env.q)
     using_rl = init_max_qn < tau_enter
     started_in_cls = ~using_rl
-    # q_ref: last "safe" attractor. At t=0 this is q_0 (matches default Classical).
-    q_ref = env.q.clone()
     switch_count = torch.zeros(N_total, dtype=torch.long, device=device)
 
     episode_len = torch.full((N_total,), -1, dtype=torch.long, device=device)
@@ -110,10 +108,6 @@ def run_hybrid_rollout(env, agent, classical_ctrl, tau_enter, tau_exit,
             cur_max_qn < tau_exit,        # currently Cls: switch back if < tau_exit
         )
         switched = new_using_rl != using_rl
-        # On RL → Classical, snapshot q_ref := env.q.
-        rl_to_cls = using_rl & (~new_using_rl)
-        if rl_to_cls.any():
-            q_ref = torch.where(rl_to_cls.unsqueeze(-1), env.q, q_ref)
         # Count switches only on still-active envs.
         active = ~finished
         switch_count = switch_count + (switched & active).long()
@@ -125,14 +119,13 @@ def run_hybrid_rollout(env, agent, classical_ctrl, tau_enter, tau_exit,
             rl_act = agent.actor_mean(obs).clamp(-1.0, 1.0)
 
         # Classical action: q_dot_null projected onto task-aligned basis.
-        # (Mirror of cn_action_fn but with our per-env q_ref.)
         with torch.no_grad():
             B_basis, _ = build_task_aligned_basis(
                 env.kin, env.q, env.line_dir, env.n_target,
                 env.kin.q_mid, env.q_half, env.cfg.manip_damping,
             )
         q_dot_raw = classical_ctrl.q_dot_null(
-            env.q, env.line_dir, env.n_target, q_ref)
+            env.q, env.line_dir, env.n_target)
         with torch.no_grad():
             cls_act = (B_basis.transpose(-1, -2)
                        @ q_dot_raw.unsqueeze(-1)).squeeze(-1)
@@ -308,8 +301,7 @@ def main():
             classical_ctrl = ClassicalNullspaceController(env.kin)
             print(f"[hybrid] classical gains: manip={classical_ctrl.manip_gain}, "
                   f"jl={classical_ctrl.jl_gain}, "
-                  f"angle_b={classical_ctrl.angle_boundary_gain}, "
-                  f"k_null={classical_ctrl.k_null}")
+                  f"angle_b={classical_ctrl.angle_boundary_gain}")
 
         print(f"[hybrid] chunk {ck+1}/{len(chunks)}: "
               f"{n_in_chunk} pairs, N_total={N_total}, running...")

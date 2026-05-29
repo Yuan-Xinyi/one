@@ -17,6 +17,10 @@ Output (under <ckpt-dir>/diag_10000_classical/):
   per_task.csv   row per task: idx, T_rl, T_base, ratio, term_rl, term_base
 
 Usage:
+    # debug run (uses script defaults: --ckpt-dir p0_progress_only_30M_0520, --n 32)
+    python -m Yuan.RL_controller.eval.rl_vs_classical
+
+    # full run
     python -m Yuan.RL_controller.eval.rl_vs_classical \\
         --ckpt-dir Yuan/RL_controller/runs/p0_progress_only_30M_0520 \\
         --n 1000 --seed 1000
@@ -105,11 +109,14 @@ def rollout_with_q_traj(env: NSRLBatchedEnv, action_fn,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt-dir", required=True,
+    parser.add_argument("--ckpt-dir",
+                        default="Yuan/RL_controller/runs/p0_progress_only_30M_0520",
                         help="run dir containing agent.pt and config.yaml")
-    parser.add_argument("--n", type=int, default=1000)
+    parser.add_argument("--n", type=int, default=32,
+                        help="number of tasks (small default for debug; raise to "
+                             "1000+ for real eval)")
     parser.add_argument("--seed", type=int, default=1000,
-                        help="sample seed for the 1000 random tasks (disjoint "
+                        help="sample seed for the random tasks (disjoint "
                              "from holdout_seed=42)")
     parser.add_argument("--out-dir", default=None,
                         help="defaults to <ckpt-dir>/diag_<n>/")
@@ -174,7 +181,7 @@ def main():
     base_ctrl = ClassicalNullspaceController(base_env.kin)  # default hand-tuned gains
     print(f"[diag] running Classical hand-tuned baseline rollout "
           f"(manip={base_ctrl.manip_gain}, jl={base_ctrl.jl_gain}, "
-          f"angle_b={base_ctrl.angle_boundary_gain}, k_null={base_ctrl.k_null})")
+          f"angle_b={base_ctrl.angle_boundary_gain})")
     base_stats = rollout_with_q_traj(base_env, cn_action_fn(base_ctrl))
 
     # ---- save npz ----

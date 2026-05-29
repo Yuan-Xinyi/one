@@ -135,9 +135,8 @@ def _rollout_hybrid_variantB_chunk(
     tau_exit: float,
 ) -> dict:
     """Step-level hysteresis hybrid: at each step,
-        if using_rl and  max|q_norm(q_t)| >= tau_enter -> switch to Cls (and snapshot q_ref := q_t)
+        if using_rl and  max|q_norm(q_t)| >= tau_enter -> switch to Cls
         if using_cls and max|q_norm(q_t)| <  tau_exit  -> switch back to RL
-    The classical branch uses the per-env q_ref attractor.
     """
     assert qs_chunk.shape[0] == env.n_envs
     spec = {'q0': qs_chunk, 'line_dir': line_dirs_chunk, 'n_target': n_targets_chunk}
@@ -157,7 +156,6 @@ def _rollout_hybrid_variantB_chunk(
 
     init_qn = _max_abs_qn(env.q)
     using_rl = init_qn < tau_enter
-    q_ref = env.q.clone()                           # per-env attractor
 
     progress = torch.zeros(n, dtype=env.kin.dtype, device=env.device)
     ep_len = torch.full((n,), -1, dtype=torch.long, device=env.device)
@@ -173,10 +171,6 @@ def _rollout_hybrid_variantB_chunk(
             cur_qn < tau_exit,             # Cls: come back only if dropped past exit
         )
         switched = new_using_rl != using_rl
-        # On RL -> Cls, snapshot the q_ref attractor at the switch point.
-        rl_to_cls = using_rl & (~new_using_rl)
-        if bool(rl_to_cls.any().item()):
-            q_ref = torch.where(rl_to_cls.unsqueeze(-1), env.q, q_ref)
         active = ~finished
         switch_count = switch_count + (switched & active).long()
         using_rl = new_using_rl
@@ -189,7 +183,7 @@ def _rollout_hybrid_variantB_chunk(
             env.kin, env.q, env.line_dir, env.n_target,
             env.kin.q_mid, env.q_half, env.cfg.manip_damping,
         )
-        q_dot = classical.q_dot_null(env.q, env.line_dir, env.n_target, q_ref)
+        q_dot = classical.q_dot_null(env.q, env.line_dir, env.n_target)
         cls_act = (B_basis.transpose(-1, -2) @ q_dot.unsqueeze(-1)).squeeze(-1)
         cls_act = (cls_act / env.a_max).clamp(-1.0, 1.0)
 

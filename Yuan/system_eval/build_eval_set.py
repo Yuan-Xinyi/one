@@ -5,9 +5,10 @@ Selection rules (mirrors the user's spec):
             and n_labels >= 1   (same default keep as SeedSelectionDataset)
   - safe filter: any_label_collides == False  (matches val eval default;
             "labels don't pierce the bounded plane")
-  - stratify by L_seed bucket; targets: weak=2500, medium-weak=2500,
-            medium=3000, strong=2000  (under-fill if a bucket is short)
-  - deterministic shuffle inside each bucket via task_seed (default 42).
+  - flat random draw of total_target (default 10000) from all eligible tasks
+            with L_seed >= weak.lo (=0.10); deterministic via task_seed (42).
+  - bucket label is attached per task for reporting strata only — it does
+            NOT set a per-bucket quota.
 
 Saved fields (all aligned to row index i in [0, n_selected)):
   src_idx        (n,) int64    original index into pilot_20k.npz
@@ -65,10 +66,10 @@ def main():
     npz_path = Path(cfg['dataset']['pilot_npz'])
     pc_path  = Path(cfg['dataset']['plane_collision_npz'])
     bucket_def = {k: tuple(v) for k, v in cfg['dataset']['buckets'].items()}
-    targets    = dict(cfg['dataset']['bucket_targets'])
+    total_target = int(cfg['dataset']['total_target'])
     if args.pilot_frac is not None:
-        targets = {k: max(1, int(round(v * args.pilot_frac))) for k, v in targets.items()}
-        print(f'[build_eval_set] pilot fraction {args.pilot_frac} → targets={targets}')
+        total_target = max(1, int(round(total_target * args.pilot_frac)))
+        print(f'[build_eval_set] pilot fraction {args.pilot_frac} → total_target={total_target}')
 
     z = np.load(npz_path, allow_pickle=False)
     pc = np.load(pc_path, allow_pickle=False)
@@ -96,32 +97,27 @@ def main():
         kbest = int(valid[np.argmax(ls[valid])])
         return float(ls[kbest]), labels_q0[i, kbest].copy()
 
-    # Stratified sampling per bucket
+    # Flat random sampling: draw `total_target` from all eligible tasks that
+    # fall in a bucket (L_seed >= weak.lo). Buckets are tagged afterwards for
+    # reporting strata only — they no longer set per-bucket quotas.
     rng = np.random.default_rng(int(cfg['dataset']['task_seed']))
 
-    by_bucket: dict[str, list[int]] = {b: [] for b in bucket_def.keys()}
+    bucket_of: dict[int, str] = {}
     for i in eligible_idx:
         b = assign_bucket(float(L_seed[i]), bucket_def)
         if b is not None:
-            by_bucket[b].append(int(i))
+            bucket_of[int(i)] = b
+    pool = np.fromiter(bucket_of.keys(), dtype=np.int64, count=len(bucket_of))
+    print(f'[build_eval_set] sampling pool (eligible ∧ in-bucket) = {len(pool)}')
 
-    chosen: list[int] = []
-    chosen_bucket: list[str] = []
-    for b, target in targets.items():
-        pool = np.array(by_bucket[b], dtype=np.int64)
-        rng.shuffle(pool)
-        actual = min(target, len(pool))
-        if actual < target:
-            print(f'[build_eval_set] WARN bucket {b}: only {actual} available '
-                  f'(target {target})')
-        else:
-            print(f'[build_eval_set] bucket {b}: {actual} (target {target}, pool {len(pool)})')
-        sel = pool[:actual].tolist()
-        chosen.extend(sel)
-        chosen_bucket.extend([b] * len(sel))
-
-    chosen = np.asarray(chosen, dtype=np.int64)
-    chosen_bucket = np.asarray(chosen_bucket, dtype='<U16')
+    rng.shuffle(pool)
+    actual = min(total_target, len(pool))
+    if actual < total_target:
+        print(f'[build_eval_set] WARN only {actual} in pool (target {total_target})')
+    else:
+        print(f'[build_eval_set] drew {actual} of {len(pool)} (target {total_target})')
+    chosen = pool[:actual].astype(np.int64)
+    chosen_bucket = np.asarray([bucket_of[int(i)] for i in chosen], dtype='<U16')
 
     # Optional global cap (mostly for pilot)
     if args.max_total is not None and len(chosen) > args.max_total:
@@ -170,7 +166,7 @@ def main():
         'pilot_npz': str(npz_path),
         'plane_collision_npz': str(pc_path),
         'buckets': bucket_def,
-        'targets_used': targets,
+        'total_target': total_target,
         'task_seed': int(cfg['dataset']['task_seed']),
         'eligible_n': int(eligible.sum()),
         'selected_n': int(len(chosen)),

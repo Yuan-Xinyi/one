@@ -2,7 +2,7 @@ env:
   n_envs: 128
   dt: 0.05           # 20 Hz control
   v: 0.2             # m/s linear EE speed along u_hat
-  a_max: 0.3         # rad/s nullspace action scale (0.5 → 0.1 too weak; settled at 0.3 on 2026-05-28)
+  a_max: 0.5         # rad/s nullspace action scale. History: 1.0→0.5→0.1(weak)→0.3(2026-05-28); back to 0.5 on 2026-05-29 (K_P removed)
   lambda_0: 0.05     # DLS damping baseline
   sigma_thr: 0.05    # adaptive damping threshold
   cone_deg: 30.0     # rotation cone half-angle (hard terminate)
@@ -33,7 +33,7 @@ ppo:
   max_grad_norm: 0.5
   target_kl: 0.02
   hidden_dim: 512
-  init_log_std: -0.5      # matches 0520 baseline effective joint-vel exploration std (~0.18 rad/s) at a_max=0.3
+  init_log_std: -0.5      # effective joint-vel exploration std = exp(-0.5)*a_max = 0.30 rad/s at a_max=0.5 (matches 0520 baseline)
   normalize_returns: true # A2: reward scaling by running std of discounted return
 
 line_distribution:

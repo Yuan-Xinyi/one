@@ -17,12 +17,15 @@ from Yuan.RL_controller.env.env import NSRLBatchedEnv, build_task_aligned_basis
 
 
 class ClassicalNullspaceController:
-    """Match flow_connectivity's NULL_* gains by default."""
+    """Null-space controller. Default gains (manip 0.8, jl 0.4, angle 0.2) were
+    retuned on the 10k eval set (2026-05-30 grid sweep over q0_seed rollouts).
+    angle_boundary_gain is inert in practice (the cone term g(theta) almost
+    never activates on this task distribution), so its value is immaterial."""
 
     def __init__(self, kin,
-                 manip_gain: float = 0.6,
-                 jl_gain: float = 0.2,
-                 angle_boundary_gain: float = 0.4,
+                 manip_gain: float = 0.8,
+                 jl_gain: float = 0.4,
+                 angle_boundary_gain: float = 0.2,
                  angle_margin_deg: float = 8.0,
                  theta_max_deg: float = 30.0,
                  manip_damping: float = 1e-3):

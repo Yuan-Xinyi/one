@@ -1,0 +1,125 @@
+\begin{thebibliography}{10}
+
+\bibitem{wu2021t}
+Di~Wu, Guowei Hou, Wenjie Qiu, and Bin Xie.
+\newblock T-ik: An efficient multi-objective evolutionary algorithm for
+  analytical inverse kinematics of redundant manipulator.
+\newblock {\em IEEE Robotics and Automation Letters}, 6(4):8474--8481, 2021.
+
+\bibitem{beeson2015trac}
+Patrick Beeson and Barrett Ames.
+\newblock Trac-ik: An open-source library for improved solving of generic
+  inverse kinematics.
+\newblock In {\em 2015 IEEE-RAS 15th International Conference on Humanoid
+  Robots (Humanoids)}, pages 928--935. IEEE, 2015.
+
+\bibitem{ananthanarayanan2015real}
+Hariharan Ananthanarayanan and Ra{\'u}l Ord{\'o}{\~n}ez.
+\newblock Real-time inverse kinematics of (2n+ 1) dof hyper-redundant
+  manipulator arm via a combined numerical and analytical approach.
+\newblock {\em Mechanism and Machine Theory}, 91:209--226, 2015.
+
+\bibitem{taghirad2011analytic}
+Hamid~D Taghirad and Yousef~B Bedoustani.
+\newblock An analytic-iterative redundancy resolution scheme for cable-driven
+  redundant parallel manipulators.
+\newblock {\em IEEE Transactions on Robotics}, 27(6):1137--1143, 2011.
+
+\bibitem{wang2024hierarchical}
+Yongchao Wang, Yang Liu, Marion Leibold, Martin Buss, and Jinoh Lee.
+\newblock Hierarchical incremental mpc for redundant robots: A robust and
+  singularity-free approach.
+\newblock {\em IEEE Transactions on Robotics}, 40:2128--2148, 2024.
+
+\bibitem{malik2022deep}
+Aryslan Malik, Yevgeniy Lischuk, Troy Henderson, and Richard Prazenica.
+\newblock A deep reinforcement-learning approach for inverse kinematics
+  solution of a high degree of freedom robotic manipulator.
+\newblock {\em Robotics}, 11(2):44, 2022.
+
+\bibitem{ames2022ikflow}
+Barrett Ames, Jeremy Morgan, and George Konidaris.
+\newblock Ikflow: Generating diverse inverse kinematics solutions.
+\newblock {\em IEEE Robotics and Automation Letters}, 7(3):7177--7184, 2022.
+
+\bibitem{zhang2025ikdiffuser}
+Zeyu Zhang and Ziyuan Jiao.
+\newblock Ikdiffuser: a diffusion-based generative inverse kinematics solver
+  for kinematic trees.
+\newblock {\em arXiv preprint arXiv:2506.13087}, 2025.
+
+\bibitem{yoshikawa1985manipulability}
+Tsuneo Yoshikawa.
+\newblock Manipulability and redundancy control of robotic mechanisms.
+\newblock In {\em Proceedings. 1985 IEEE International Conference on Robotics
+  and Automation}, volume~2, pages 1004--1009. IEEE, 1985.
+
+\bibitem{jin2017manipulability}
+Long Jin, Shuai Li, Hung~Manh La, and Xin Luo.
+\newblock Manipulability optimization of redundant manipulators using dynamic
+  neural networks.
+\newblock {\em IEEE Transactions on Industrial Electronics}, 64(6):4710--4720,
+  2017.
+
+\bibitem{shen2023adaptive}
+Henghua Shen, Wen-Fang Xie, Jianyu Tang, and Tao Zhou.
+\newblock Adaptive manipulability-based path planning strategy for industrial
+  robot manipulators.
+\newblock {\em IEEE/ASME transactions on mechatronics}, 28(3):1742--1753, 2023.
+
+\bibitem{cai2025just}
+Kuanqi Cai, Liding Zhang, Xinwen Su, Kejia Chen, Chaoqun Wang, Sami Haddadin,
+  Alois Knoll, Arash Ajoudani, and Luis Figueredo.
+\newblock Just-in-time informed trees: Manipulability-aware asymptotically
+  optimized motion planning.
+\newblock {\em IEEE/ASME Transactions on Mechatronics}, 2025.
+
+\bibitem{jaquier2021geometry}
+No{\'e}mie Jaquier, Leonel Rozo, Darwin~G Caldwell, and Sylvain Calinon.
+\newblock Geometry-aware manipulability learning, tracking, and transfer.
+\newblock {\em The International Journal of Robotics Research},
+  40(2-3):624--650, 2021.
+
+\bibitem{yang2009placement}
+Jingzhou~James Yang, Wei Yu, Joo Kim, and Karim Abdel-Malek.
+\newblock On the placement of open-loop robotic manipulators for reachability.
+\newblock {\em Mechanism and Machine Theory}, 44(4):671--684, 2009.
+
+\bibitem{makhal2018reuleaux}
+Abhijit Makhal and Alex~K Goins.
+\newblock Reuleaux: robot base placement by reachability analysis.
+\newblock In {\em 2018 second IEEE international conference on robotic
+  computing (IRC)}, pages 137--142. IEEE, 2018.
+
+\bibitem{yao2023enhanced}
+Haowen Yao, Riddhiman Laha, Luis~FC Figueredo, and Sami Haddadin.
+\newblock Enhanced dexterity maps (edm): A new map for manipulator capability
+  analysis.
+\newblock {\em IEEE Robotics and Automation Letters}, 9(2):1628--1635, 2023.
+
+\bibitem{chen2018dexterous}
+Fei Chen, Mario Selvaggio, and Darwin~G Caldwell.
+\newblock Dexterous grasping by manipulability selection for mobile manipulator
+  with visual guidance.
+\newblock {\em IEEE Transactions on Industrial Informatics}, 15(2):1202--1210,
+  2018.
+
+\bibitem{feng2025predictive}
+Xiaoxu Feng, Takato Horii, and Takayuki Nagai.
+\newblock Predictive reachability for embodiment selection in mobile
+  manipulation behaviors.
+\newblock {\em IEEE Robotics and Automation Letters}, 10(3):2966--2973, 2025.
+
+\bibitem{jauhri2022robot}
+Snehal Jauhri, Jan Peters, and Georgia Chalvatzaki.
+\newblock Robot learning of mobile manipulation with reachability behavior
+  priors.
+\newblock {\em IEEE Robotics and Automation Letters}, 7(3):8399--8406, 2022.
+
+\bibitem{selim2022safe}
+Mahmoud Selim, Amr Alanwar, Shreyas Kousik, Grace Gao, Marco Pavone, and Karl~H
+  Johansson.
+\newblock Safe reinforcement learning using black-box reachability analysis.
+\newblock {\em IEEE Robotics and Automation Letters}, 7(4):10665--10672, 2022.
+
+\end{thebibliography}

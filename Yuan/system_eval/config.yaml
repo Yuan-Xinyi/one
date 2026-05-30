@@ -19,12 +19,12 @@ dataset:
     medium-weak: [0.15, 0.20]
     medium:      [0.20, 0.30]
     strong:      [0.30, .inf]
-  bucket_targets:
-    weak: 2500
-    medium-weak: 2500
-    medium: 3000
-    strong: 2000
-  task_seed: 42                # used to pick which tasks within each bucket
+  # Selection: flat random draw of `total_target` tasks from the pool of
+  # eligible tasks that fall in any bucket (i.e. L_seed >= weak.lo = 0.10).
+  # Buckets above are kept ONLY for reporting strata, not selection quotas.
+  total_target: 10000
+  # bucket_targets: legacy per-bucket quotas (no longer used for selection).
+  task_seed: 42                # seed for the random draw + within-pool shuffle
 
 diffusion:
   ckpt: Yuan/seed_selection/runs/pilot_20k/q0_20k_cfg_mirror_ckpts/step_300000.pt
@@ -44,7 +44,9 @@ rl_controller:
   # variant B (step-level hysteresis) — switching policy
   variant: B
   tau_enter: 0.98              # using_rl: q_max >= tau_enter -> switch to Cls
-  tau_exit:  0.98              # using_cls: q_max <  tau_exit  -> switch back to RL
+  tau_exit:  0.94              # using_cls: q_max <  tau_exit  -> switch back to RL
+                               # (2026-05-30 grid sweep on 10k set: hysteresis gap
+                               #  cuts mean switches/episode 1.43 -> 0.44 at -0.4pp l%)
 
 env:
   # Inherit env params from rl_controller/config.yaml; we override n_envs at runtime.

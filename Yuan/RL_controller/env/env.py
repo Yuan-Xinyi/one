@@ -325,13 +325,13 @@ class NSRLBatchedEnv:
             self.kin.q_mid, self.q_half, self.cfg.manip_damping,
         )
 
-        # Framing B: lateral correction is the controller's job, not the
-        # policy's. p_ref tracks the ideal point on the line at the current
-        # episode time; K_P pulls TCP back toward it in task space, leaving
-        # the nullspace projection (and reward) free of lateral concerns.
-        K_P = 5.0
-        p_ref = self.p_start + (self.v * self.dt * self.t.to(p.dtype)).unsqueeze(-1) * self.line_dir
-        x_dot = (self.v * self.line_dir + K_P * (p_ref - p)).unsqueeze(-1)
+        # Task-space command is pure feed-forward along the line. The damped
+        # pseudo-inverse keeps the realized TCP velocity on-axis; at a_max<=0.5
+        # the residual lateral drift from finite-dt nullspace leakage stays
+        # well below LATERAL_SAFETY_NET (verified via kp ablation), so no
+        # proportional lateral-feedback term is used. Lateral deviation is a
+        # safety-net terminate only (see lateral_viol below).
+        x_dot = (self.v * self.line_dir).unsqueeze(-1)
         qdot_task = (J_plus @ x_dot).squeeze(-1)
         qdot_null = (B_basis @ a_scaled.unsqueeze(-1)).squeeze(-1)
         qdot = qdot_task + qdot_null

@@ -1,6 +1,6 @@
 {
-  "pilot_npz": "Yuan/seed_selection/runs/pilot_day5/pilot_20k.npz",
-  "plane_collision_npz": "Yuan/seed_selection/runs/pilot_day5/pilot_20k.plane_collision.npz",
+  "pilot_npz": "Yuan/seed_selection/runs/pilot_20k/pilot_20k.npz",
+  "plane_collision_npz": "Yuan/seed_selection/runs/pilot_20k/pilot_20k.plane_collision.npz",
   "buckets": {
     "weak": [
       0.1,
@@ -19,19 +19,14 @@
       Infinity
     ]
   },
-  "targets_used": {
-    "weak": 2500,
-    "medium-weak": 2500,
-    "medium": 3000,
-    "strong": 2000
-  },
+  "total_target": 10000,
   "task_seed": 42,
   "eligible_n": 13752,
-  "selected_n": 8953,
+  "selected_n": 10000,
   "per_bucket": {
-    "weak": 1453,
-    "medium-weak": 2500,
-    "medium": 3000,
-    "strong": 2000
+    "weak": 1092,
+    "medium-weak": 2313,
+    "medium": 4453,
+    "strong": 2142
   }
 }

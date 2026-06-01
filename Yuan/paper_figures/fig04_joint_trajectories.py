@@ -134,7 +134,7 @@ def capture(env, classical, agent, q0, p0, d, n, mode, tau_e, tau_x, device):
 # Plotting
 # -----------------------------------------------------------------------
 Y_LO = 0.5
-Y_HI = 1.0
+Y_HI = 2.0
 
 
 def plot_single_q6(q_traj, using_rl_traj, mode, q_mid, q_half,
@@ -228,6 +228,26 @@ def main():
         print(f'{mode:9s}: T={len(q_traj)-1:>3d} steps  '
               f'q6 range=[{q_traj[:, JOINT_IDX].min():.3f}, '
               f'{q_traj[:, JOINT_IDX].max():.3f}]')
+
+    # Save the full 7-joint trajectories (one array per mode, possibly
+    # different lengths) plus task metadata, for hardware replay (franky).
+    npz_path = out_dir / f'fig04_traj_task{T}.npz'
+    save_kw = {}
+    for mode, (q_traj, urlt) in captured.items():
+        save_kw[f'{mode}_q'] = q_traj.astype(np.float32)          # (T+1, 7)
+        save_kw[f'{mode}_using_rl'] = urlt.astype(bool)           # (T+1,)
+    np.savez(
+        npz_path,
+        task=np.int64(T),
+        q0_seed=dp.astype(np.float32),      # start config (= traj[0] of all modes)
+        cs_p0=p0, cs_line_dir=d, cs_n_target=nt,
+        tau_enter=np.float32(te), tau_exit=np.float32(tx),
+        joint_lo=env.kin.lmt_lo.detach().cpu().numpy().astype(np.float32),
+        joint_hi=env.kin.lmt_up.detach().cpu().numpy().astype(np.float32),
+        modes=np.array(list(captured.keys()), dtype='<U16'),
+        **save_kw,
+    )
+    print(f'wrote {npz_path}  (modes: {", ".join(captured.keys())})')
 
     # Shared y-range fixed at [Y_LO, Y_HI] = [0.5, 1.0] (focused on the
     # lower part of q6 where the rho thresholds live).

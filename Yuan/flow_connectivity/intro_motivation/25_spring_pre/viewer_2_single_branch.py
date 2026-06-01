@@ -25,7 +25,6 @@ for _p in (str(_REPO), str(_HERE)):
 
 import argparse  # noqa: E402
 
-import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from _shared import DEFAULT_SEED, build_or_load  # noqa: E402
@@ -60,8 +59,9 @@ def main():
     closed = bool(d['branch_closed'][args.branch])
     arc = float(np.sum(np.linalg.norm(np.diff(traj, axis=0), axis=1)))
 
-    cmap = plt.get_cmap('tab10')
-    rgb = tuple(float(c) for c in cmap(args.branch % 10)[:3])
+    # Match viewer_1's default-arm look: keep the FR3 renderer's own
+    # color (rgb=None) instead of coloring by branch index.
+    rgb = None
 
     print(f'\nseed={args.seed}, isolated br{args.branch}: '
           f'T={traj.shape[0]}, arc={arc:.2f} rad, '
@@ -70,7 +70,7 @@ def main():
     print(f'  arc ghosts = {args.n_ghosts}  alpha = {args.alpha:.2f}')
 
     base = make_world(task_path)
-    add_task_path(base, task_path, plane_normal)
+    add_task_path(base, task_path, plane_normal, draw_plane=False)
 
     for k in sample_arc_indices(traj.shape[0], args.n_ghosts):
         make_ghost_arm(base, traj[int(k)], rgb, args.alpha)

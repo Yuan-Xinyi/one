@@ -62,12 +62,18 @@ def subset(es, idx, T_all):
             for k, v in es.items()}
 
 
-def roll(seeds_T7, p0, d, n, *, env, controller, classical, agent, tdm, prefix=''):
-    """Roll one seed per task (T,7); return L (T,)."""
+def roll(seeds_T7, p0, d, n, *, env, controller, classical, agent, tdm,
+         tau_enter=None, tau_exit=None, prefix=''):
+    """Roll one seed per task (T,7); return L (T,).
+    tau_enter/tau_exit default to the single-threshold TAU constant when omitted,
+    so callers that target the *adopted* hybrid setting must pass (0.98, 0.94)
+    explicitly."""
     T = seeds_T7.shape[0]
+    te = TAU if tau_enter is None else float(tau_enter)
+    tx = TAU if tau_exit  is None else float(tau_exit)
     res = rollout_seeds_batched(
         seeds_T7.astype(np.float32), p0, d, n, env=env, controller=controller,
-        classical=classical, agent=agent, tau_enter=TAU, tau_exit=TAU,
+        classical=classical, agent=agent, tau_enter=te, tau_exit=tx,
         target_distance_m=tdm,
         progress_every_chunks=max(1, (T // env.n_envs) // 8), progress_prefix=prefix)
     return res['L'].astype(np.float32)

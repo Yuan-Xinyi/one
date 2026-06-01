@@ -133,6 +133,8 @@ def main():
     results = {'meta': {'T': T, 'w_list': w_list, 'tdm': tdm,
                         'gains': [classical_best.manip_gain, classical_best.jl_gain,
                                   classical_best.angle_boundary_gain],
+                        'tau_enter': float(cfg['rl_controller']['tau_enter']),
+                        'tau_exit':  float(cfg['rl_controller']['tau_exit']),
                         'seed_policy': 'DP lazy newton; retry until IK valid; batch 32'},
                'cfg': {}}
     for w in w_list:
@@ -141,8 +143,11 @@ def main():
             es, w, ckpt_path=ckpt, use_ema=use_ema, kin=env.kin, device=dev, q0_fallback=q0)
         t_seed = time.time() - t0
         t0 = time.time()
+        te = float(cfg['rl_controller']['tau_enter'])
+        tx = float(cfg['rl_controller']['tau_exit'])
         L = roll(seeds, p0, d, n, env=env, controller='hybrid_variantB',
-                 classical=classical_best, agent=agent, tdm=tdm, prefix=f'[cfg w={w}] ')
+                 classical=classical_best, agent=agent, tdm=tdm,
+                 tau_enter=te, tau_exit=tx, prefix=f'[cfg w={w}] ')
         s = stats(L * tdm, l_oracle)
         t_seed_per_task_ms = 1000.0 * t_seed / max(T, 1)
         results['cfg'][f'{w}'] = {**s, 't_seed_s': t_seed, 't_roll_s': time.time() - t0,

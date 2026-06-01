@@ -23,6 +23,7 @@
 % ---- Self-defined packages
 \usepackage{xcolor}
 \usepackage{CJKutf8}
+\definecolor{darkgreen}{rgb}{0.0, 0.65, 0.0}
 \definecolor{awesome}{rgb}{1.0, 0.13, 0.32}
 \newcommand{\wan}[1]{{\color{awesome}\begin{CJK*}{UTF8}{gkai}\small#1\end{CJK*}}}
 \newcommand{\wanattention}[1]{{\color{purple}\begin{CJK*}{UTF8}{gkai}\small#1\end{CJK*}}}
@@ -32,6 +33,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage[hidelinks]{hyperref}
+\usepackage[normalem]{ulem}
 
 % ---- Graphics search path ----
 \graphicspath{{figures/}}
@@ -60,8 +62,8 @@
 % Title and Authors
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\title{Learning-Based Joint-Limit-Aware Redundancy Resolution for Straight-Line Path Following}
-\titlerunning{Redundancy Resolution for Straight-Line Path Following}
+\title{Extreme Motion Generation for Straight-Line Path Following via Reinforcement Learning}
+\titlerunning{Extreme Motion Generation}
 
 \author{Xinyi Yuan
         \and Weiwei Wan$^{*}$
@@ -69,7 +71,7 @@
 \authorrunning{Yuan et al.}
 \tocauthor{Xinyi Yuan,Weiwei Wan,Kensuke Harada}
 
-\institute{Graduate School of Engineering Science, The University of Osaka, Osaka, Japan.}
+\institute{Graduate School of Engineering Science, The University of Osaka, Japan.}
 
 \maketitle
 %%%各章のおもな文
@@ -78,264 +80,237 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \begin{abstract}
-\xinyi{老师文字我都还没改，现在都是AI生成的，等我把图画完就去写。}\wan{不应该从redundant manipulator说起，容易让人误以为是面向7轴及以上机械臂的研究。另外，你这个写法完全没有考虑到我讲的extreme motion generation的问题？上来开篇明义：本文研究extreme motion genereation，顾名思义，就是研究如何让机械臂在工作空间中移动出最大的距离，从而可以走出更长的轨迹。这在实际中意义非凡，可以让小机械臂完成大型涂布，焊接等操作，发挥极致性能。再jiang}
+% \xinyitodo{有一个图需要改；高清的图明天统一截图插入jpg；已ai检查，明天再通读一遍。今天就先这样了。}\wan{辛苦，定位为纯理论paper？没真机实验？或者真机跑一下拍两个视频？明早讨论}\xinyi{容易修改的我都先修改了。如果明天还有时间的话可以尝试一下真机，但是感觉时间有点紧张）}\wanextra{ros接上就可以跑，不过Redwa这两天一直在做实验，不确定能否设置环境。另外，如何做对比？速度加速度走ruckig设置么？也同时思考一下将来的工作，比如拓展成journal考虑与使用工具相结合，比如用刷子刷平面，这样框架可以放在我的使用工具的研究费框架下。}\xinyi{好的。后面的更新批注我看到了，等我把图改完就去改。}
+This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length along a pre-defined trajectory within the manipulator's workspace. This objective is important in industry as long path-following is fundamental to a large variety of tasks such as surface coating and welding. More critically, extreme motion enables a fixed-base manipulator to exploit the kinematic capability under limited reachability. However, such exploitation is challenging in practice, as the manipulator must actively avoid the safety boundary through execution, which is inherently a long-horizon problem. Accordingly, we claim that long-horizon decision-making should be delegated to a learning-based policy to maximize exploitation, while a classical model-based controller covers the near-boundary region, where the learning policy degrades sharply due to sparse data coverage. In detail, our proposed method is a step-level hybrid controller that switches between an RL-based and a model-based controller according to the normalized joint-limit distance. The initial joint configuration is sampled through conditional diffusion-based sampling, which improves the achievable path length based on the learned motion prior. We evaluate the proposed framework on 10,000 straight-line path-following tasks with a 7-DoF Franka FR3, extending the average rollout length by 27\% over the model-based baseline. Notably, certain tasks yield a pronounced extension toward the motion extreme, as reflected in the maximum improvement reported in the statistical results.
 
-\rev{Redundant manipulators admit infinitely many joint configurations for a given end-effector pose, and how this redundancy is resolved is decisive for long-horizon tasks such as following a straight-line Cartesian path, where the arm must sustain motion without violating joint limits, leaving the tool-orientation tolerance cone, or crossing kinematic singularities. Learning-based redundancy resolvers capture the multi-modal inverse-kinematics distribution, but because they are trained by density sampling, configurations near the boundary of the feasible set---precisely those that govern when a task terminates---are underrepresented and handled poorly. We present a joint-limit-aware redundancy-resolution framework whose core is a \emph{step-level hybrid controller}: at every control step a hysteresis rule monitors the proximity to the joint limits and delegates boundary regions to a certified classical null-space controller, while granting the unconstrained interior to a reinforcement-learning policy trained to maximize the path-following length. A diffusion-based seed selector complements the controller by initializing the arm on a robust branch of the self-motion manifold. On a held-out set of $10{,}000$ stratified straight-line tasks for a 7-DoF Franka~FR3, evaluated through length ratios against a reference length, the proposed system extends the path-following length by \rev{$1.26\times$} over a classical null-space baseline and recovers \rev{$90.6\%$} of the reference length.}
-
-\keywords{joint-limit avoidance, reinforcement learning, diffusion models}
+\keywords{extreme motion generation, reinforcement learning}
 \end{abstract}
 
 \section{Introduction}
-Straight-line Cartesian path following is a motion primitive shared by a wide range of industrial manipulation tasks, such as arc welding, deburring, and surface inspection. In these tasks, the end-effector must translate along a prescribed line while keeping the tool axis within a tolerance cone about the target surface normal. For a redundant manipulator, the extra degrees of freedom (DoFs) admit an infinite set of joint configurations that realize the same end-effector pose. By exploiting this redundancy to avoid joint limits, the arm can sustain the prescribed motion longer. \rev{The redundancy-resolution strategy therefore determines how far a manipulator of a given size can follow the path.}
+Consider a compact, fixed-base manipulator executing a coating or welding operation over a large work surface. Given a starting position and a motion direction, intuition would suggest that the maximum reachable point is determined by the reachable workspace. However, the motion is continuous and strictly constrained by safety boundaries such as joint limits and tool-orientation tolerance along each waypoint. Therefore, the practical bottleneck is that one of those safety constraints is violated and causes termination long before the end-effector approaches the edge of the reachable workspace. Consequently, the practically achievable path length is influenced by how long the safety boundaries can be deferred from being met during the motion execution process. We refer to this problem as \textit{extreme motion generation} that maximizes the Cartesian path length along a pre-defined trajectory within the manipulator's workspace. This is particularly important in industrial automation, where the length of a single continuous motion directly limits the area a manipulator can process in one setup. Rather than scaling up the manipulator or repeatedly relocating the base, simply exploiting the extreme motion offers a solution to enlarge the effective working range.
 
+However, extreme motion generation, especially under precise path-following, is challenging in practice. The joint motion at the current step may gradually steer the subsequent motion toward a safety boundary, ultimately forcing it to terminate. Therefore, the problem is inherently a long-term decision-making problem, as each step must account for its consequences over the entire motion. Unfortunately, current motion generation tools have certain drawbacks with respect to the requirement of both robustness and exploitation. On the one hand, a classical controller optimizes an instantaneous secondary objective while realizing the desired end-effector motion. Such controllers are myopic, optimizing an instantaneous surrogate and overlooking its long-horizon consequences. Yet near the joint limits, their behavior is robust and predictable by design. On the other hand, the learning-based policy is designed to have the foresight suitable for exploitation. However, the learning paradigm is based on probabilistic distribution approximation, and near-boundary configurations are rarely sampled. As a result, the derived policy is particularly fragile near the boundary regions that are most critical to extreme motion generation.
 
+Motivated by this complementarity, we delegate the long-horizon decision-making in the well-sampled interior to a Reinforcement-Learning (RL) policy, where foresight can be trusted. The near-boundary region is handled by the classical controller, whose robustness is guaranteed by construction. The two regimes are coordinated at every control step by a hysteresis rule on the normalized joint-limit distance, ensuring that each model operates within the region where it is most reliable. In addition, a conditional diffusion model initializes the manipulator on a robust starting configuration prior to execution of the hybrid controller.
 
-
-\rev{Classical redundancy resolution exploits this freedom through task decomposition: a primary task velocity realizes the desired end-effector motion, while a null-space term optimizes a secondary objective. Such controllers are myopic---they optimize an instantaneous surrogate and overlook its long-horizon consequences---yet near the joint limits their behavior is robust and predictable by design. Learning-based resolvers instead capture the multi-modal IK distribution and can act with foresight; however, because they are trained by density sampling, near-boundary configurations are rarely observed, so a learned policy is least reliable in exactly the region the classical controller handles best. The two paradigms are thus reliable in complementary regions: the learning-based resolver in the well-sampled interior, where foresight is most rewarded, and the classical controller near the boundary, where robustness is guaranteed by construction.}
-
-\rev{Motivated by this observation, we argue that reliability requirements are not uniform over the configuration space, and that a single policy need not be reliable everywhere. We therefore partition control responsibility by proximity to the joint-limit boundary, assigning each region to the paradigm that is reliable within it. In the well-sampled interior, a reinforcement-learning (RL) policy resolves the redundancy to maximize the path-following length. Because it acts while the arm is still far from any limit, it can exploit long-horizon foresight to shape the configuration in advance, precisely where training data are dense and such foresight is reliable. As the arm approaches a joint limit, control is handed to a classical null-space controller, whose graceful and predictable behavior is guaranteed by construction. The two regimes are switched at the level of individual control steps by a hysteresis rule on the normalized distance to the nearest joint limit, which suppresses chattering. In this way, the RL policy is never required to act in the under-sampled boundary region, and the classical controller is never required to plan over a long horizon.}
-
-\rev{The hybrid controller governs motion once the path is underway. However, the achievable path-following length is also fixed before the first control step, by the configuration in which the arm begins. The inverse-kinematics preimage of the initial constraint is a one-dimensional self-motion manifold, so a poor choice of starting branch can commit the arm to an early joint-limit encounter, regardless of how the redundancy is subsequently resolved. To address this, we introduce a conditional diffusion model that, conditioned on the task specification, samples initial configurations from branches that are robust to task perturbations. The two components are complementary in time: the diffusion model selects a favorable starting branch at $t=0$, while the hybrid controller sustains motion along it thereafter.}
-
-
-\rev{This paper makes the following contributions:
-\begin{itemize}
-\item A step-level hybrid null-space controller that arbitrates between an RL policy and a classical controller through a hysteresis rule keyed on the normalized joint-limit proximity, together with a length-maximizing RL formulation that uses a progress-only reward and no terminal penalty so that survival is the sole return signal.
-\item As an enabling component, a conditional diffusion model trained on self-motion-manifold labels initializes the arm on a robust starting branch, providing the hybrid controller with a sound starting configuration; this initializer is not claimed to be a general-purpose seed selector, only to outperform hand-designed heuristics on the present task family.
-\item A factorial seed-by-controller evaluation protocol on $10{,}000$ stratified straight-line tasks for a 7-DoF FR3, reported through length ratios against a reference length rather than absolute success rates, which isolates the contribution of each component.
-\end{itemize}}
+We evaluate the proposed framework on a large set of straight-line path-following tasks for a 7-DoF Franka FR3, measuring performance as the achieved path length relative to a per-task reference length. The contribution of each component is then analyzed through the seed-by-controller protocol. For the initial joint configuration, the diffusion-based selection is compared against several hand-designed heuristic seeds; for the controller, the hybrid framework is compared against the classical and the learning-based controllers in isolation. We further conduct ablation studies on the guidance scale, the number of diffusion sampling steps, and the hysteresis switching thresholds, providing practical insights into the effect of each design choice.
 
 \section{Related Work}
-\subsection{Inverse Kinematics Redundancy Resolution}
-
-\rev{Inverse-kinematics (IK) methods fall into analytical, numerical, and learning-based families; redundancy resolution is particularly critical for high-DoF systems.}
-
-\rev{Analytical IK solvers transform the non-unique mapping into deterministic closed-form equations \cite{wu2021t}. Numerical approaches instead rely on iterative optimization to minimize the distance between the manipulator's current and target end-effector poses \cite{beeson2015trac}.} The core of numerical-IK methods for redundant manipulators is to utilize the null space in their Jacobian matrix to achieve secondary tasks, such as joint limit avoidance \cite{ananthanarayanan2015real} and task constraint satisfaction. For example, \cite{taghirad2011analytic} leveraged null space projection within an analytical-iterative framework to ensure cable tension for a parallel manipulator. To further mitigate singularities in the Jacobian matrix, \cite{wang2024hierarchical} proposed the Hierarchical Incremental Model Predictive Control (HIMPC) framework, where task priorities are maintained through equality constraints.
-
-\rev{Redundancy stems from the one-to-many mapping between Cartesian task space and joint space. Unlike the explicit resolution of classical methods, this structure aligns naturally with learning-based methods, which capture the multi-modal distribution over the feasible solution space.} Prior work includes reinforcement learning-based methods \cite{malik2022deep} and generative approaches such as IKFlow \cite{ames2022ikflow} and IKDiffuser \cite{zhang2025ikdiffuser}.
-
-Nevertheless, existing IK solvers primarily optimize local surrogate objectives. While preserving static feasibility, they do not explicitly consider long-horizon path-following execution. Consequently, identifying an appropriate candidate configuration that facilitates stable downstream motion remains challenging, particularly for task-space path-following with joint-space constraints. To address this issue, our proposed method explicitly integrates long-horizon motion expectation into the redundancy resolution process.
 
 \subsection{Manipulability and Reachability}
-Manipulability and reachability describe local instantaneous motion dexterity and global spatial feasibility, respectively.
+Extreme motion generation is essentially related to the manipulator's reachable workspace and local motion dexterity during motion execution. Manipulability and reachability describe local instantaneous motion dexterity and global spatial feasibility, respectively.
 
-Specifically, the manipulability ellipsoid \cite{yoshikawa1985manipulability} characterizes the relationship between joint and task-space velocities via the Jacobian. Building on this representation, directional capability can be evaluated by projecting the ellipsoid along a specified task-space direction. To utilize this measure online, \cite{jin2017manipulability} adopted a dynamic neural network to achieve inverse-free manipulability optimization. Recent studies have extended manipulability awareness to various motion planning structures. For example, \cite{shen2023adaptive} proposed a manipulability-aware $\text{RRT}^{\star}$ planner that integrated the measure into both the cost function and adaptive step size. Similarly, \cite{cai2025just} \rev{introduced} a motion performance module that balances path cost and manipulability during planning to mitigate singularities. To capture the dexterity of human experts, \cite{jaquier2021geometry} treated manipulability ellipsoids as geometric descriptors to learn from expert manipulability patterns.
+The manipulability ellipsoid \cite{yoshikawa1985manipulability} characterizes the relationship between joint and task-space velocities via the Jacobian, and its projection along a task direction quantifies directional capability. To exploit this measure online, Jin et al.~\cite{jin2017manipulability} adopted a dynamic neural network for inverse-free manipulability optimization. Recent work integrates manipulability into planning: Shen et al.~\cite{shen2023adaptive} proposed a manipulability-aware $\text{RRT}^{\star}$ that embeds the measure into both cost and step size, and Cai et al.~\cite{cai2025just} balanced path cost against manipulability to mitigate singularities during planning. The above studies can effectively keep the manipulator away from singular configurations but act only on the instantaneous state and overlook the long-horizon consequences of the current motion.
 
-Complementary to local dexterity, reachability analysis defines the global spatial boundaries. Early works by \cite{yang2009placement} and \cite{makhal2018reuleaux} established geometric and voxel-based reachability maps to automate base placement without exhaustive IK computations. To enhance task quality, \cite{yao2023enhanced} and \cite{chen2018dexterous} integrated whole-body dexterity and visual manipulability to optimize configurations in the \rev{null space} for dexterous grasping. Moving toward dynamic intelligence, \cite{feng2025predictive} introduced predictive reachability via world models for embodiment selection, while \cite{jauhri2022robot} utilized reachability priors to accelerate RL-based control policy learning. To bridge the gap between performance and safety, \cite{selim2022safe} proposed a Black-box Reachability-based Safety Layer (BRSL) using differentiable polytope collision checks, ensuring formal safety guarantees under unknown dynamics.
+Complementary to local dexterity, reachability analysis delineates the global spatial limit that bounds how far any motion can extend. Early studies established geometric \cite{yang2009placement} and voxel-based \cite{makhal2018reuleaux} reachability maps to automate base placement without exhaustive IK. Moving toward dynamic settings, Feng et al.~\cite{feng2025predictive} introduced predictive reachability via world models for embodiment selection, while Jauhri et al.~\cite{jauhri2022robot} used reachability priors to accelerate RL-based control, and Selim et al.~\cite{selim2022safe} proposed a reachability-based safety layer with formal guarantees. These methods characterized the reachable space with a static, precomputed envelope. However, they do not address how to actively defer the safety boundaries during execution so that the end-effector approaches this envelope as closely as possible. Bridging this gap is precisely the goal of extreme motion generation.
 
-Despite these achievements, a critical gap remains between local instantaneous dexterity and global spatial feasibility. \rev{Owing to redundancy, the choice of configuration is critical for the subsequent motion, both for singularity avoidance and for maintaining reachability.} Current manipulability-related techniques effectively avoid local singularity but lack foresight, while reachability-based methods only provide static spatial priors.
+\subsection{Learning-based Motion Generation}
+In contrast to optimizing an instantaneous objective, learning-based methods capture the multi-modal distribution of feasible configurations and enable long-horizon motion generation. For example, Reinforcement Learning (RL) has been applied to redundancy resolution \cite{malik2022deep}, and generative solvers such as IKFlow \cite{ames2022ikflow} and IKDiffuser \cite{zhang2025ikdiffuser} modeled the full solution manifold rather than a single solution. The related study DiffusionSeeder \cite{huang2024diffusionseeder} utilized generative models to seed downstream motion to produce multi-modal trajectory initializations, and Yoon et al.~\cite{yoon2023learning} proposed an RL-based initialization generator.
 
-% \subsection{Generative Priors and Preference Alignment}
-% % 这一段的视角是如何借助生成模型得到机器人物理可行的信息。有两种方法，前者是后接优化，然后后者讨论一下梯度引导的技术和应用。
-% Generative models are notable for capturing multi-modal distributions within the expert dataset. To further obtain physically feasible motion for robots via those models, researchers either rely on post-hoc optimization, modify the denoising trajectory during inference, or perform post-sampling candidate evaluation and selection.
+Such learned priors supply the foresight that manipulability- and reachability-based methods lack. However, the data used to train these policies is sparsely distributed near the kinematic boundaries. Consequently, the resulting policies are most fragile in exactly the near-boundary region that is most critical to extreme motion generation. This complementarity between learned foresight in the well-sampled region and classical robustness near the boundary motivates the proposed hybrid framework.
 
-% The first regime regards generated samples as high-quality initializations to accelerate downstream optimization. For example, DiffusionSeeder \cite{huang2024diffusionseeder} generated multi-modal collision-free trajectory initializations in clutter environments. Similarly, the earlier work \cite{yoon2023learning} proposed an RL-based initialization generator with null-space projected imitation reward. While effective, the decoupling between generation and optimization can leave downstream motion quality to be resolved only after sampling. For example, \cite{carvalho2025motion} demonstrated that naively performing post-hoc optimization often fails to adapt to new obstacles.
+\subsection{Combining Learning- and Model-based Control}
+To address the aforementioned issues, the solution could be to combine a learned policy with a model-based controller. One line of work combines the output actions additively: residual RL keeps a fixed classical controller and learns a corrective action added on top of that \cite{johannink2019residual,silver2018residual}. Another line of research switches between different controllers by safety criteria or pre-defined regions. For example, Mehmood et al.~\cite{mehmood2022black} switched to a verified backup controller under runtime reachability checks. Similarly, Alshiekh et al.~\cite{alshiekh2018safe} proposed to override unsafe learned actions whenever the agent approaches the boundary. Likewise, Kurtz et al.~\cite{kurtz2021control} continuously filtered the nominal action to keep it within a safe set, as in control-barrier-function safety filters for manipulators.
 
-
-% Another line of work modifies the denoising process itself. Early research mainly adopted Classifier-Guidance (CG) \cite{dhariwal2021diffusion} from pre-trained discriminators. For example, \cite{janner2022planning,ajay2022conditional} steered diffusion-based planners toward high-value trajectories through test-time alignment. To eliminate the training of an external classifier, \cite{ho2022classifier} proposed the Classifier-Free Guidance (CFG). However, it requires from-scratch training when adapting to new labels \cite{bansal2023universal}.
+Generally, our framework follows the switching rather than the additive paradigm. Similar to the safety-driven methods above, we trigger the backup classical controller near the safety boundary. However, our motivation is not merely to stay safe but to keep advancing the motion toward its kinematic limit, which is the core objective of extreme motion generation. Accordingly, we partition the configuration space by proximity to the joint-limit boundary and assign each region to the controller most reliable there.
 
 
-% Despite their efficacy, aligning generative priors with robotic constraints while preserving multi-modality remains challenging. While preference-based fine-tuning methods like Direct Preference Optimization (DPO) \cite{rafailov2023direct} provided a flexible offline alignment framework, such approaches often suffer from reward over-optimization and mode collapse. In this work, instead of modifying the reverse trajectory with gradient guidance, we keep the diffusion sampler unchanged and use a learned preference model for post-sampling candidate scoring, selection, and screening.
 
-% Consequently, our framework preserves the multimodality of redundant IK solutions while keeping inference-time control simple and modular for diverse industrial applications.
+% \section{Preliminaries}
+\section{Problem Formulation}
+\xinyi{While extreme motion generation applies broadly to constrained path following, we here specify it as extreme straight-line path following. Specifically, a fixed-base manipulator advances its end-effector along the line with a tool-orientation constraint. As illustrated in Fig.~\ref{overview}, solving this problem requires first determining the initial joint configuration from which the motion starts and then generating the motion that maximizes the achievable path length.}
 
-\section{Preliminaries}
-\subsection{Problem Formulation}
-Consider a redundant manipulator with $n$ degrees of freedom, where $\mathbf{q} \in \mathbb{R}^{n}$ denotes the joint configuration. Let $\mathbf{p}(\mathbf{q}) \in \mathbb{R}^{3}$ denote the end-effector position. A straight-line path-following task is specified by the condition vector:
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\linewidth]{imgs/system_overview.JPG}
+    \caption{Overview of the two-stage framework for extreme motion generation.\wan{突然从一个宽泛得了理论具体到这么一个特殊的任务上，很唐突。考虑在3讲本文具化到这个图中的任务进行研究。然后详细给出具化后的问题。}\xinyi{有点没理解。}}
+    \label{overview}
+\end{figure}
+
+\xinyi{We formalize the above task as follows.} Consider a manipulator with $n$ degrees of freedom, where $\mathbf{q} \in \mathbb{R}^{n}$ denotes the joint configuration. Let $\mathbf{p}(\mathbf{q}) \in \mathbb{R}^{3}$ denote the end-effector position and $\mathbf{z}(\mathbf{q}) \in \mathbb{R}^{3}$ denote the TCP local $z$-axis. A straight-line path-following task is specified by the condition vector:
 \begin{equation}
 \label{cond}
-\mathbf{c} = [\mathbf{p}_{0}; \mathbf{d}; \mathbf{n}] \in \mathbb{R}^{9},
+\mathbf{c} = [\mathbf{p}_{0}, \mathbf{d}, \mathbf{n}] \in \mathbb{R}^{9},
 \end{equation}
+\wan{这里为什么用分号分开}\xinyi{改成逗号是正确的吗？}\wanextra{不确定，但分号看上去以为是数组三列，或者是条件参数（方括号明显不是）}\xinyi{我改成逗号吧。}
 where $\mathbf{p}_{0}$ denotes the starting position, and $\mathbf{d}$ and $\mathbf{n}$ are unit vectors representing the desired motion direction and task-plane normal, respectively. 
 
-The objective is to advance the end-effector along the prescribed line as far as possible. Starting from an initial configuration $\mathbf{q}_{0}^{*}$, the policy $\pi$ resolves the redundancy at every control step to maximize the path-following length, producing a joint trajectory $\{\mathbf{q}_{t}^{*}\}_{t=0}^{T}$ initialized at $\mathbf{q}_{0}^{*}$.
-
-The above task can be formalized as a constrained optimization problem as:
+Starting from an initial configuration $\mathbf{q}_{0}^{*}$, the policy $\pi$ determines the joint motion at every control step to maximize the path-following length, producing a joint trajectory $\{\mathbf{q}_{t}^{*}\}_{t=0}^{T}$ initialized at $\mathbf{q}_{0}^{*}$, where $T$ is the termination step at which any safety constraint is first violated. This task can be formalized as a constrained optimization problem as:
 \begin{align}
 \max_{\mathbf{q}_{0}^{*},\,\pi} \quad & \mathcal{L}(\mathbf{q}^{*}_{0},\,\pi;\,\mathbf{p}_{0}, \mathbf{d}, \mathbf{n}) \\
 \text{s.t.} \quad & \|\mathbf{p}(\mathbf{q}_{t}^{*}) - \mathbf{p}_{t}\| \leq \epsilon_{\text{pos}}, \\
 & \arccos\!\left( \mathbf{z}(\mathbf{q}_{t}^{*})^{\top} \mathbf{n} \right) \leq \theta_{\max}, \label{eq:ori_constraint} \\
 & \mathbf{q}_{\min} \preceq \mathbf{q}_{t}^{*} \preceq \mathbf{q}_{\max}, \label{eq:jl_constraint}
 \end{align}
-where $\mathcal{L}$ denotes the path-following length, $\mathbf{q}_0^*$ and $\pi$ are the initial configuration and the redundancy-resolution policy to be optimized, and $(\mathbf{p}_0, \mathbf{d}, \mathbf{n})$ specify the task conditions as above. The $\epsilon_{\text{pos}}$, $\theta_{\max}$, and $[\mathbf{q}_{\min}, \mathbf{q}_{\max}]$ are the position tolerance, orientation tolerance, and joint limits, respectively\footnote{The detailed thresholds can be found in the Appendix.}. All the constraints should be satisfied for the whole trajectory.
+where $\mathcal{L}$ denotes the path-following length, $\mathbf{q}_0^*$ and $\pi$ are the initial configuration and the control policy to be optimized, and $(\mathbf{p}_0, \mathbf{d}, \mathbf{n})$ specify the task conditions as above. The $\epsilon_{\text{pos}}$, $\theta_{\max}$, and $[\mathbf{q}_{\min}, \mathbf{q}_{\max}]$ are the position tolerance, orientation tolerance, and joint limits, respectively.
 
-\subsection{Task Optimization via Null-Space Control}
-\label{sec:baseline}
-% here to state how is the joint velocity be decomposed, and how is the null space been improved via gradient asent. List the fomulars. the detailed formulas can be put in the appendix
-For a redundant arm the position Jacobian $\mathbf{J}(\mathbf{q})=\partial\mathbf{p}/\partial\mathbf{q}\in\mathbb{R}^{3\times n}$ has a non-trivial null space, so the joint velocity that realizes a desired end-effector motion is not unique. The classical resolver decomposes the commanded joint velocity into a task term and a null-space term,
+\xinyi{During this process, since only the $3$-DoF end-effector position must be precisely tracked, the remaining freedom makes the manipulator kinematically redundant for $n>3$. This redundancy is resolved in the null space of the position Jacobian, which decomposes the commanded joint velocity into a task term and a null-space term，
 \begin{equation}
 \label{eq:nullspace}
-\dot{\mathbf{q}} = \mathbf{J}^{+}\dot{\mathbf{x}} + \big(\mathbf{I}-\mathbf{J}^{+}\mathbf{J}\big)\,\boldsymbol{\xi},
+\dot{\mathbf{q}} = \mathbf{J}^{+}\dot{\mathbf{x}} + (\mathbf{I}-\mathbf{J}^{+}\mathbf{J})\,\boldsymbol{\xi}，
 \end{equation}
-where $\mathbf{J}^{+}=\mathbf{J}^{\top}(\mathbf{J}\mathbf{J}^{\top}+\lambda^{2}\mathbf{I})^{-1}$ is the damped pseudo-inverse with a Nakamura--Hanafusa adaptive damping $\lambda$ that grows only as the smallest singular value of $\mathbf{J}$ drops below a threshold, and $\mathbf{I}-\mathbf{J}^{+}\mathbf{J}$ projects the secondary command $\boldsymbol{\xi}$ onto the null space. The task velocity $\dot{\mathbf{x}}=v\,\mathbf{d}+\mathbf{K}_{P}(\mathbf{p}_{\mathrm{ref}}-\mathbf{p})$ advances the end-effector along the line at speed $v$ while a proportional term rejects lateral drift from the reference point $\mathbf{p}_{\mathrm{ref}}$ on the line. The secondary command performs gradient ascent on a weighted sum of redundancy objectives,
+where $\mathbf{J}^{+}$ is the damped pseudo-inverse and $(\mathbf{I}-\mathbf{J}^{+}\mathbf{J})$ projects the secondary command $\boldsymbol{\xi}$ onto the null space. Within this null space, several secondary objectives can be pursued without disturbing the end-effector position:
 \begin{equation}
 \label{eq:secondary}
 \boldsymbol{\xi}=k_{\mu}\,\nabla_{\mathbf{q}}w_{\mathbf{d}}(\mathbf{q})\;-\;k_{\mathrm{jl}}\,\frac{\mathbf{q}-\mathbf{q}_{\mathrm{mid}}}{\mathbf{q}_{\max}-\mathbf{q}_{\min}}\;+\;k_{\theta}\,g(\theta)\,\nabla_{\mathbf{q}}\!\big(\mathbf{z}(\mathbf{q})^{\top}\mathbf{n}\big),
 \end{equation}
-combining a directional-manipulability term $w_{\mathbf{d}}$ that retreats from singularities along $\mathbf{d}$, a centering term that pulls each joint toward the middle $\mathbf{q}_{\mathrm{mid}}$ of its range, and a cone term gated by $g(\theta)$ that activates only as the tool axis approaches the $\theta_{\max}$ boundary. The detailed weights and gradient expressions are given in the Appendix.
+where the secondary command $\boldsymbol{\xi}$ combines a directional-manipulability term $w_{\mathbf{d}}$ that retreats from singularities along $\mathbf{d}$, a centering term that pulls each joint toward the middle $\mathbf{q}_{\mathrm{mid}}$ of its range, and a cone term gated by $g(\theta)$ that activates only as the tool axis approaches the $\theta_{\max}$ boundary. All subsequent controllers share this task decomposition, differing only in the strategy used to generate the secondary command $\boldsymbol{\xi}$.}
 
-\section{Boundary-Aware Null-Space Control}
-% here first quickly introduce the whole framework. we first select the intial joint configuration through cfg-guided inference. This ensure that the initial seed is based on an motion prior and with a likelihood to derive a long path. Then we divide the whole configuration space into the near-boundary region and interior region. For different region we use different policy.
-\rev{The framework acts in two temporal stages. At $t=0$, before any motion, a conditional diffusion model maps the task specification $\mathbf{c}$ to an initial configuration $\mathbf{q}_{0}^{*}$ drawn from a robust branch of the self-motion manifold, so the arm does not begin on a branch that is committed to an early termination. For $t>0$, the redundancy is resolved online by a hybrid null-space controller that partitions the configuration space by proximity to the joint-limit boundary: the well-sampled interior is governed by a reinforcement-learning (RL) policy that exploits long-horizon foresight, whereas the near-boundary region is delegated to the classical controller of Section~\ref{sec:baseline}, whose behavior is predictable by construction. The two regimes are arbitrated at every control step by a hysteresis rule introduced below. The two components are complementary in time: the diffusion model selects a favorable starting branch, and the hybrid controller sustains motion along it. We detail the three components in turn.}
+% \subsection{Task Optimization via Null-Space Control}
+% \wan{零空间控制属于常识，有必要做前提知识吗？}\xinyi{可删除章节。}\wan{把下一节开头的任务具化放在这里，具化完后简单讲一下零空间。}
+% \label{sec:baseline}
+% % here to state how is the joint velocity be decomposed, and how is the null space been improved via gradient asent. List the fomulars. the detailed formulas can be put in the appendix
+% For a manipulator, the position Jacobian $\mathbf{J}(\mathbf{q})=\partial\mathbf{p}/\partial\mathbf{q}\in\mathbb{R}^{3\times n}$ has a non-trivial null space, so the joint velocity that realizes a desired end-effector motion is not unique. The classical controller decomposes the commanded joint velocity into a task term and a null-space term,
+% \begin{equation}
+% \label{eq:nullspace}
+% \dot{\mathbf{q}} = \mathbf{J}^{+}\dot{\mathbf{x}} + \big(\mathbf{I}-\mathbf{J}^{+}\mathbf{J}\big)\,\boldsymbol{\xi},
+% \end{equation}
+% where $\mathbf{J}^{+}=\mathbf{J}^{\top}(\mathbf{J}\mathbf{J}^{\top}+\lambda^{2}\mathbf{I})^{-1}$ is the damped pseudo-inverse with a Nakamura--Hanafusa adaptive damping $\lambda$ that grows only as the smallest singular value of $\mathbf{J}$ drops below a threshold, and $\mathbf{I}-\mathbf{J}^{+}\mathbf{J}$ projects the secondary command $\boldsymbol{\xi}$ onto the null space. 
 
-\begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=\linewidth]{imgs/system_overview.JPG}
-    \caption{blank}
-    \label{workflow}
-\end{figure}
+% For the straight-line path following task in this study, the task velocity $\dot{\mathbf{x}}=v\,\mathbf{d}+\mathbf{K}_{P}(\mathbf{p}_{\mathrm{ref}}-\mathbf{p})$ advances the end-effector along the line at speed $v$ while a proportional term rejects lateral drift from the reference point $\mathbf{p}_{\mathrm{ref}}$ on the line\footnote{In the ideal case, the task decomposition in Eq.~(\ref{eq:nullspace}) keeps the end-effector exactly on the primary task. In practice, however, accumulated numerical errors cause gradual drift, which the proportional term $\mathbf{K}_{P}(\mathbf{p}_{\mathrm{ref}}-\mathbf{p})$ corrects.}. The secondary command performs gradient ascent on a weighted sum of redundancy objectives,
+% \begin{equation}
+% \label{eq:secondary}
+% \boldsymbol{\xi}=k_{\mu}\,\nabla_{\mathbf{q}}w_{\mathbf{d}}(\mathbf{q})\;-\;k_{\mathrm{jl}}\,\frac{\mathbf{q}-\mathbf{q}_{\mathrm{mid}}}{\mathbf{q}_{\max}-\mathbf{q}_{\min}}\;+\;k_{\theta}\,g(\theta)\,\nabla_{\mathbf{q}}\!\big(\mathbf{z}(\mathbf{q})^{\top}\mathbf{n}\big),
+% \end{equation}
+% combining a directional-manipulability term $w_{\mathbf{d}}$ that retreats from singularities along $\mathbf{d}$, a centering term that pulls each joint toward the middle $\mathbf{q}_{\mathrm{mid}}$ of its range, and a cone term gated by $g(\theta)$ that activates only as the tool axis approaches the $\theta_{\max}$ boundary.
+
+
+
+\section{Extreme Motion Generation}
+\xinyi{Following the two-stage framework illustrated in Fig.~\ref{overview}, this section provides detailed explanations of each stage. Before execution ($t=0$), a conditional diffusion model samples the initial configuration $\mathbf{q}_{0}^{*}$ from the task condition $\mathbf{c}$. During execution ($t>0$), a hybrid controller generates the motion online, switching between an RL controller in the interior and the classical controller near the joint-limit boundary.}
+
+% To achieve the extreme motion generation, the proposed framework is divided into two temporal stages. Before motion execution ($t=0$), a conditional diffusion model samples the initial joint configuration $\mathbf{q}_{0}^{*}$ by task conditions $\mathbf{c}$. Starting from that ($t>0$), the joint motion is generated online through a hybrid controller. Specifically, as shown in Fig.~\ref{overview}, the configuration space is partitioned by proximity to the joint-limit boundary: the interior region is governed by a farsighted RL controller, while the near-boundary region is delegated to the robust classical controller. At every step, a boundary check on the current joint configuration $\mathbf{q}_{t}$ determines the active controller, and a hysteresis rule on the switching thresholds coordinates the transition between the two regimes to suppress chattering. The detailed design of each module is elaborated in the following subsections.
+
+
 
 \subsection{Initial Joint Configuration Selection}
-\subsubsection{Dataset Generation}
 % quick state that the smm shows that the infinte joint configurations are actually in disconnected branchs. so this module is to ensure that the derived framework doesn't start from an invalid initalizing joint angle.(detailed analysis of the smm put in the appendix). Then introduce the generation process.
 
-\rev{A favorable starting branch cannot be obtained by sampling the inverse-kinematics preimage by density alone. For a fixed end-effector constraint this preimage is a one-dimensional self-motion manifold (SMM), and an SMM analysis shows that it generally splits into several \emph{disconnected} branches: configurations on different branches cannot be connected without violating the constraint, and they differ sharply in how far the subsequent path can be followed. The label-generation process is therefore designed for branch coverage rather than density. For each task $\mathbf{c}$ we (i) enumerate candidate configurations by cone-constrained IK, sampling tool orientations inside the $\theta_{\max}$ cone and solving damped IK from many seeds so that distinct branches are reached; (ii) walk the one-dimensional SMM around each candidate and group nearby solutions into branches; (iii) sample arc-length-uniform points along each branch so the manifold is covered evenly; (iv) score every sample by a clean rollout under the classical controller of Section~\ref{sec:baseline}, recording the achieved path-following length $\mathcal{L}$; and (v) re-evaluate the survivors under small task perturbations and retain only those whose length stays above a fixed fraction of its unperturbed value, so the kept labels are robust rather than brittle. The top-scoring robust configurations across all branches form the training labels, covering the distinct disconnected branches of the SMM. A full description of the SMM and the enumeration is given in the Appendix.}
+For many tasks, the achievable path length is largely determined by the initial joint configuration even before motion begins. For example, for a 7-DoF arm, a fixed end-effector pose constrains 6-DoF, and the remaining one forms a one-dimensional self-motion manifold (SMM). However, this does not imply that the arm can move freely along the manifold, as the joint limits split it into several disconnected branches. As shown in Fig.~\ref{smm}, configurations on different branches share the same pose but differ sharply in joint space and in reachable path length.
 
 \begin{figure}[!htbp]
     \centering
     \includegraphics[width=\linewidth]{imgs/smm.JPG}
-    \caption{blank}
+    \caption{Self-motion manifold for a fixed end-effector pose. (a) The continuous manifold without joint-limit constraints; (b)--(d) Configurations from the disconnected branches induced by the joint limits, sharing the same pose but differing sharply in joint space and reachable path length. \xinyi{(e) Joint trajectories of the three branches in b--d along the arc length, with circles marking the joint at its limit: branch~b bounded by $\mathbf{q}_{1}$ and $\mathbf{q}_{7}$, branch~c by $\mathbf{q}_{1}$, and $\mathbf{q}_{2}$ branch~d by $q_{2}$ and $\mathbf{q}_{3}$.}\wan{这些branches中间真的没有tunnel吗？}\xinyi{从理论上来说关节极限会把流形分成disconnected的分支。然后这个图里的例子只剩一个自由度，所以流形是一维曲线，每个分支两端都分别有关节极限，所以要连接两个分支需要跨过极限。但是如果问真的没有tunnel吗我也不了解更多了...这个要怎么调查呢。}\wan{b和d看不出区别？另外，每个分支都是哪几个关节标清？}\xinyi{加了说明性的图片，标明了关节极限范围。}}
     \label{smm}
 \end{figure}
 
-\subsubsection{Training and Conditional-Guided Inference}\label{sec:dp_inference}
-% introduce the training, condition inference (cfg)
+Therefore, this selection module aims to provide the hybrid controller with an initial joint configuration within a favorable branch. Consequently, the learned motion prior should incorporate configurations from various branches that yield a sufficient path length. For each task, we enumerate configurations across branches by cone-constrained IK solved by IKSel \cite{yuan2026iksel}, score each by a clean rollout under the classical controller, and retain the top-$K'$ scoring candidates ($K'{=}6$) that remain length-stable under small task perturbations as training labels.
 
-% adjust the following paragraph into the real model we use
-The proposed framework utilizes Denoising Diffusion Probabilistic Models (DDPM) \cite{ho2020denoising} with U-net and Transformer backbone. DDPM starts by adding Gaussian noise to the original data stepwise and uses the neural network to learn the inverse denoising process. During the forward process, Gaussian noise will be added gradually to the original data:
-\begin{equation}
-    q(\mathbf{x}_t|\mathbf{x}_{t-1}) = \mathcal{N}(\mathbf{x}_t; \sqrt{1-\beta_t}\mathbf{x}_{t-1}, \beta_t\textbf{I}),
-\end{equation}
-where $\beta_t$ is the variance scheduler, $\mathbf{x}_t$ and $\mathbf{x}_{t-1}$ are samples from two adjacent diffusion steps.
-
-During the reverse chain, the model starts from the pure Gaussian noise $\mathbf{x}_T$ and gradually extracts the noise to derive $\mathbf{x}_{T-1}$ ... $\mathbf{x}_0$. DDPM uses $p_\theta(\mathbf{x}_{t-1}|\mathbf{x}_{t})$ to approximate the conditional denoising distribution:
-\begin{equation}
-\begin{aligned}
-p_\theta(\mathbf{x}_{t-1} \vert \mathbf{x}_t) = \mathcal{N}(\mathbf{x}_{t-1}; \boldsymbol{\mu}_\theta(\mathbf{x}_t, t), \boldsymbol{\Sigma}_\theta(\mathbf{x}_t, t)).
-\end{aligned}
-\end{equation}
-
-\rev{In our instantiation the data $\mathbf{x}=\mathbf{q}_{0}$ is a $7$-dimensional joint configuration and the network is conditioned on the task vector $\mathbf{c}=[\mathbf{p}_{0};\mathbf{d};\mathbf{n}]$. The denoiser embeds $\mathbf{c}$ through a multilayer perceptron and the diffusion step through a sinusoidal embedding, adds them to the embedding of the noisy sample, and processes the sum with a stack of residual blocks; it is trained with the $\mathbf{v}$-prediction objective under a cosine noise schedule. To enable conditional guidance, the condition is replaced by a learnable null token $\varnothing$ with probability $p_{\mathrm{drop}}$ during training, so that a single network represents both the conditional and the unconditional score. At inference we sample with DDIM under classifier-free guidance,
+The distribution of these initial joint configurations is approximated with a conditional DDPM~\cite{ho2020denoising}, where a residual-MLP denoiser generates a $7$-dimensional joint configuration $\mathbf{q}_{0}$ conditioned on the task vector $\mathbf{c}=[\mathbf{p}_{0};\mathbf{d};\mathbf{n}]$, trained under Classifier-Free Guidance (CFG) \cite{ho2022classifier} by dropping the condition with probability $p_{\mathrm{drop}}$. At inference, the guidance scale $w$ in
 \begin{equation}
 \label{eq:cfg}
-\mathbf{v} = \mathbf{v}_{\theta}(\mathbf{x}_{t},t,\varnothing) + w\big(\mathbf{v}_{\theta}(\mathbf{x}_{t},t,\mathbf{c}) - \mathbf{v}_{\theta}(\mathbf{x}_{t},t,\varnothing)\big),
+\mathbf{v} = \mathbf{v}_{\theta}(\mathbf{x}_{t},t,\varnothing) + w\big(\mathbf{v}_{\theta}(\mathbf{x}_{t},t,\mathbf{c}) - \mathbf{v}_{\theta}(\mathbf{x}_{t},t,\varnothing)\big)
 \end{equation}
-where $w$ is the guidance scale: $w=1$ recovers conditional sampling and $w>1$ amplifies the task signal. At deployment we sample from the exponential-moving-average network in batches of $4$ and refine each candidate onto the start manifold---the exact $(\mathbf{p}_{0},\mathbf{n})$ pose---by Newton's method. Candidates are projected sequentially and the first IK-valid configuration is retained as the selected seed $\mathbf{q}_{0}^{*}$; if a batch contains no valid candidate, a fresh batch is drawn, up to a cap of $32$ attempts in total. In the rare event that all attempts fail we fall back to the task's generating configuration $\mathbf{q}_{0}^{\mathrm{seed}}$, which is always legal by construction. The procedure guarantees that $\mathbf{q}_{0}^{*}$ is legal but does not select among legal samples by downstream quality, keeping inference cost on the order of one Newton solve per task in the typical case.}
-
+controls the task signal, where $w=1$ recovers conditional sampling and $w>1$ amplifies it. Each sampled candidate is then projected onto the exact $(\mathbf{p}_{0},\mathbf{n})$ pose by Newton's method, and the first IK-valid one is retained as the seed $\mathbf{q}_{0}^{*}$, falling back to $\mathbf{q}_{0}^{\mathrm{seed}}$ (the configuration that generated the task) if none succeeds after maximum 32 trials.
 
 \subsection{RL-based Null-Space Controller}
-\subsubsection{Policy}
-% Proximal Policy Optimization
-\rev{The interior policy $\pi$ is trained with Proximal Policy Optimization (PPO). The actor and critic are separate multilayer perceptrons that map the observation to, respectively, the mean of a diagonal Gaussian over the action and a scalar state value, with a learned state-independent action standard deviation. Training runs on a large batch of parallel line-following environments with generalized advantage estimation, advantage normalization, and the clipped surrogate objective; full hyperparameters are listed in the Appendix.}
+The interior policy $\pi$ is trained with Proximal Policy Optimization (PPO). The observation $\mathbf{o}_{t}\in\mathbb{R}^{31}$ exposes only the quantities needed to resolve the redundancy:
+\begin{equation}
+\label{eq:obs}
+\mathbf{o}_{t}=\big[\,\bar{\mathbf{q}};\ \bar{\mathbf{q}}^{\odot 2};\ \mathbf{d};\ \mathbf{n};\ \mathbf{z}(\mathbf{q});\ \mathbf{z}(\mathbf{q})^{\top}\mathbf{n};\ \mathbf{z}(\mathbf{q})\times\mathbf{n};\ \mathbf{a}_{t-1}\,\big],
+\end{equation}
+where $\bar{\mathbf{q}}$ is the joint configuration normalized to $[-1,1]$, whose element-wise square $\bar{\mathbf{q}}^{\odot 2}$ makes the proximity to either limit directly visible, and the tool-axis terms $\mathbf{z}(\mathbf{q})$, $\mathbf{z}(\mathbf{q})^{\top}\mathbf{n}$, and $\mathbf{z}(\mathbf{q})\times\mathbf{n}$ encode the orientation error relative to the cone. The end-effector position is deliberately excluded, as lateral tracking is handled by the controller rather than the policy.
 
-\subsubsection{States}
-\rev{The observation at each step is a $31$-dimensional vector that exposes only the quantities the policy needs in order to resolve redundancy. It concatenates the joint configuration normalized to $[-1,1]$ by the joint range and its element-wise square, so proximity to either limit is directly visible; the task direction $\mathbf{d}$ and plane normal $\mathbf{n}$; the current tool axis $\mathbf{z}(\mathbf{q})$ together with its alignment $\mathbf{z}(\mathbf{q})^{\top}\mathbf{n}$ and the cross product $\mathbf{z}(\mathbf{q})\times\mathbf{n}$, which encode the orientation error relative to the cone; and the previous action. The end-effector position is deliberately excluded, because lateral tracking along the line is handled by the controller rather than the policy.}
+The policy outputs a $4$-dimensional action $\mathbf{a}\in[-1,1]^{4}$ whose entries are coordinates in a task-aligned null-space basis $\mathbf{B}(\mathbf{q})\in\mathbb{R}^{7\times 4}$. The basis is constructed by Gram--Schmidt: the three projected gradients of the redundancy objectives in Eq.~\eqref{eq:secondary} are orthonormalized first, and the remaining one-dimensional orthogonal complement within the $4$-dimensional null space is appended to complete the basis. The resulting command $\dot{\mathbf{q}}_{\mathrm{null}}=\mathbf{B}(\mathbf{q})\,(a_{\max}\mathbf{a})$ is added to the same task term as the classical controller in Eq.~\eqref{eq:nullspace}, so that the two regimes share one parameterization and are directly interchangeable at switching time.
 
-\subsubsection{Actions}
-% Task-Aligned Null-Space Basis Construction
-\rev{Rather than command joint velocities directly, the policy outputs a $4$-dimensional action $\mathbf{a}\in[-1,1]^{4}$ whose entries are coordinates in a task-aligned null-space basis. At each step we construct an orthonormal basis $\mathbf{B}(\mathbf{q})\in\mathbb{R}^{n\times 4}$ of the position null space by modified Gram--Schmidt on the projected gradients of the redundancy objectives---directional manipulability, cone alignment, and joint-limit centering---completed by the remaining null direction, with an SVD fallback when a gradient is degenerate. The null-space command is $\dot{\mathbf{q}}_{\mathrm{null}}=\mathbf{B}(\mathbf{q})\,(a_{\max}\mathbf{a})$, where $a_{\max}$ scales the action to a joint-velocity magnitude, and it is added to the same task term used by the classical resolver in Eq.~\eqref{eq:nullspace}. Aligning the action with interpretable redundancy directions keeps the search compact---$4$ dimensions instead of $n$---and shares the same parameterization as the classical controller, which makes the two regimes directly interchangeable at switching time.}
-
-\subsubsection{Rewards}
-\rev{Consistent with the objective of maximizing the path-following length, the reward is progress-only:
+Since the objective is simply to maximize the path length, the reward needs no elaborate shaping and is purely progress-based:
 \begin{equation}
 \label{eq:reward}
 r_{t} = w_{p}\,\mathrm{clip}\!\left(\frac{(\mathbf{p}_{t+1}-\mathbf{p}_{t})^{\top}\mathbf{d}}{v\,\Delta t},\,0,\,1\right)\in[0,\,w_{p}],
 \end{equation}
-that is, the per-step end-effector advance along $\mathbf{d}$ normalized by its maximum attainable value. No terminal penalty is applied: a collision, a cone violation, or a joint-limit violation simply ends the episode with no further reward. Because every surviving step contributes almost equally and termination only stops the accrual, the return is monotonically tied to the survival time, so the policy is rewarded purely for sustaining the motion rather than for optimizing any instantaneous surrogate.}
+the per-step advance along $\mathbf{d}$ normalized by its maximum attainable value. With no terminal penalty, any violation simply ends the episode, so the return reduces to the survival time, and the policy is rewarded solely for sustaining the motion.
 
 \subsection{Null-Space Policies Coordination}\label{sec:coordination}
-% how do we devide the whole configuration space
-% how to switch
-\rev{The two controllers are combined at the level of individual control steps. We measure proximity to the joint-limit boundary by the normalized distance
+The two controllers are combined at the level of individual control steps. We measure proximity to the joint-limit boundary by the normalized distance
 \begin{equation}
 \label{eq:rho}
 \rho(\mathbf{q}) = \max_{i}\,\frac{|q_{i}-q_{\mathrm{mid},i}|}{(q_{\max,i}-q_{\min,i})/2}\in[0,1],
 \end{equation}
-which is $0$ at the center of the joint range and $1$ at a limit. The interior $\{\rho<\tau\}$ is assigned to the RL policy and the near-boundary shell $\{\rho\ge\tau\}$ to the classical controller. To suppress chattering when $\rho$ hovers near the threshold, switching follows a hysteresis rule with two thresholds $\tau_{\mathrm{enter}}\ge\tau_{\mathrm{exit}}$: while the RL policy is active it is retained until $\rho\ge\tau_{\mathrm{enter}}$, at which point control passes to the classical controller; once classical, control returns to the RL policy only after $\rho$ falls back below $\tau_{\mathrm{exit}}$. An episode whose seed already lies inside the boundary shell, $\rho(\mathbf{q}_{0}^{*})\ge\tau_{\mathrm{enter}}$, begins under the classical controller. In this way the RL policy never acts in the under-sampled boundary region, and the classical controller is never required to plan over a long horizon.}
+which is $0$ at the center of the joint range and $1$ at a limit. The RL policy governs the interior and the classical controller the near-boundary shell, with switching following a hysteresis rule with two thresholds $\tau_{\mathrm{enter}}\ge\tau_{\mathrm{exit}}$ to reduce chattering: while the RL policy is active, control passes to the classical controller once $\rho\ge\tau_{\mathrm{enter}}$, and returns to the RL policy only after $\rho$ falls back below $\tau_{\mathrm{exit}}$. An episode whose seed already lies in the boundary shell, $\rho(\mathbf{q}_{0}^{*})\ge\tau_{\mathrm{enter}}$, begins under the classical controller.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Experiments and Analysis}
 \rev{\label{sec:exp}}
-All experiments were conducted using the One robotic system\footnote{https://github.com/wanweiwei07/one}, on the 7-DoF Franka Research~3 (FR3) with a pen-shaped tool attached to the end-effector. The evaluation set comprises $10{,}000$ tasks, each specified by a starting position $\mathbf{p}_0$, a desired line direction $\mathbf{d}$, and a target work surface normal $\mathbf{n}$, sampled within the FR3 work range from the same task population used to train the diffusion model.
+All experiments were conducted using the \textit{One} robotic system\footnote{https://github.com/wanweiwei07/one}, on the 7-DoF Franka Research 3 (FR3) with a pen-shaped tool attached to the end-effector. The evaluation set comprises $10{,}000$ tasks, each specified by a starting position $\mathbf{p}_0$, a desired line direction $\mathbf{d}$, and a task-plane normal $\mathbf{n}$, sampled within the FR3 work range. These tasks are drawn from the same population as the diffusion training data, with $10\%$ held out as unseen during training to assess generalization.
 
-Unless otherwise specified, experiments use the default setting: (1) a diffusion-based initial configuration generator using DDIM with 50 denoising steps and CFG scale $w=1.5$; (2) each generated sample seeds the downstream SelIK solver, retaining the first valid one within at most 32 trials; (3) hybrid switching thresholds $\tau_{\mathrm{enter}},\tau_{\mathrm{exit}}$ of $0.98,0.94$; (4) classical secondary-objective weights $k_{\mu},k_{\mathrm{jl}},k_{\theta}$ of $0.8,0.4,0.2$.
+Unless otherwise specified, experiments use the default setting: (1) a diffusion-based initial configuration generator using DDIM with 50 denoising steps and CFG scale $w=1.5$; (2)the diffusion-based initialization runs at most 32 trials, or falls back to the predefined seed $\mathbf{q}_0^{\mathrm{seed}}$ if none succeeds; (3) hybrid switching thresholds $\tau_{\mathrm{enter}},\tau_{\mathrm{exit}}$ of $0.98,0.94$; (4) classical secondary-objective weights $k_{\mu},k_{\mathrm{jl}},k_{\theta}$ of $0.8,0.4,0.2$.
 
 For each evaluation task, we generate seed candidates following the procedure of Section~4.1 (up to $6$ seeds per task) and roll out every candidate under the deployed hybrid controller. We denote the longest rollout length as the \emph{reference length} ($\ell^{\mathrm{ref}}$) and utilize it for subsequent percentage comparison.
 
 \subsection{Results Analysis}
 \subsubsection{Evaluation Set Analysis}
-We partition the evaluation set into difficulty levels by the absolute reference length $\ell^{\mathrm{ref}}$: Easy ($\ell^{\mathrm{ref}}\ge 0.80$\,m, $n{=}2642$), Medium ($0.45\le\ell^{\mathrm{ref}}<0.80$\,m, $n{=}4795$), and Difficult ($\ell^{\mathrm{ref}}<0.45$\,m, $n{=}2563$). Intuitively, harder tasks exhibit a shorter best achievable path, reflected in a smaller reference length.
-
-Fig. \ref{fig:eval_dist} (a) shows the distribution of $\ell^{\mathrm{ref}}$ of the complete evaluation set.
+We partition the evaluation set into difficulty levels by the absolute reference length $\ell^{\mathrm{ref}}$: Easy ($\ell^{\mathrm{ref}}\ge 0.80$\,m, $n{=}2642$), Medium ($0.45\le\ell^{\mathrm{ref}}<0.80$\,m, $n{=}4795$), and Difficult ($\ell^{\mathrm{ref}}<0.45$\,m, $n{=}2563$). Intuitively, harder tasks exhibit a shorter best achievable path, reflected in a smaller reference length. Fig. \ref{fig:eval_dist} (a) shows the distribution of $\ell^{\mathrm{ref}}$ of the complete evaluation set.
 
 \begin{figure}[!htbp]
     \centering
     \includegraphics[width=\linewidth]{imgs/task_distribution.JPG}
-    \caption{\rev{Joint distribution of the reference length $\ell^{\mathrm{ref}}$ and the seed length $L_{\mathrm{seed}}$ over the $10{,}000$ evaluation tasks (placeholder).}}
+    \caption{(a) Distribution of the reference length $\ell^{\mathrm{ref}}$ over the $10{,}000$ evaluation tasks. The dashed grey line marks the task-difficulty threshold.}
     \label{fig:eval_dist}
 \end{figure}
 
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=\linewidth]{imgs/main_results.JPG}
+    \caption{Qualitative comparison on a representative task: executed motion (top) and joint~6 trajectory (bottom), with color denoting the active controller. The dashed grey lines mark the $\tau_{\mathrm{enter}}/\tau_{\mathrm{exit}}$ thresholds mapped to the joint~6 limits.}
+    \label{fig:main_result}
+\end{figure}
+
 \subsubsection{System Integration}
-\rev{Table~\ref{tab:lnetresult} reports the path-following length $l$ (m) and its per-task ratio to the reference length $\ell^{\mathrm{ref}}$ (defined in Section~\ref{sec:ablate}) for the three controllers under the proposed diffusion seed (DP). Tasks are bucketed by $\ell^{\mathrm{ref}}$ into \emph{Easy} ($\ge 0.80$\,m), \emph{Medium} ($0.45$--$0.80$\,m), and \emph{Difficult} ($<0.45$\,m). Three observations stand out. (i) Hybrid recovers the largest fraction of the reference in every bucket. (ii) The gap between RL and Classical inverts across the difficulty axis: RL outperforms Classical on Easy and Medium tasks (where there is interior room to exploit foresight), whereas Classical outperforms RL on Difficult tasks (where the trajectory spends most of its time near the joint-limit boundary, the under-sampled regime). (iii) Hybrid inherits the better of the two in every bucket, validating the boundary-aware partitioning of Section~\ref{sec:coordination}.}
+Table~\ref{tab:lnetresult} reports the path-following length $l$ (m) and its per-task ratio to the reference length $\ell^{\mathrm{ref}}$ for the three controllers under diffusion-prior seed (denoted as DP), with results bucketed by task difficulty as defined above. The occasional ratios exceeding $100\%$ arise where the DP seed reaches a more favorable branch than any of the reference seeds. The results further verify that the foresight advantage of RL diminishes as the interior margin shrinks with task difficulty: RL outperforms on Easy and Medium tasks where the margin remains, but matches Classical on Difficult ones near the boundary. Across all buckets, Hybrid attains the best of the three, recovering the largest fraction of the reference length. Fig.~\ref{fig:main_result} provides a representative illustration.
+
 \begin{table*}[!htbp]
 \centering
-\setlength{\tabcolsep}{7.5pt}
-\caption{Performance of the Proposed Framework on 10,000 Random Evaluation Tasks.}
+\setlength{\tabcolsep}{6pt}
+\caption{Path-Following Performance of the Three Controllers across Difficulty Buckets on 10,000 Evaluation Tasks.\wan{标题的首字母大小写要一致，后续同}}
 \label{tab:lnetresult}
 \begin{threeparttable}
 \begin{tabular}{lllcc}
 \toprule
 Test-set & $\textbf{q}_{0}^*$ & $\pi$ 
-& \shortstack{$l$ (m)\\ {\scriptsize Mean / Std / Min / Max}} 
-& \shortstack{$\%$\\ {\scriptsize Mean / Std / Min / Max}} \\
+& \shortstack{\xinyi{Path length} (m)\\ {\scriptsize Mean / Std / Min / Max}} 
+& \shortstack{\xinyi{Ratio to reference} ($\%$)\\ {\scriptsize Mean / Std / Min / Max}} \\
 \midrule
-\multirow{3}{*}{\shortstack{All\\{\scriptsize $n{=}10000$}}}
-& DP & Classical & 0.45 / 0.18 / 0.01 / 1.25 & 76.1 / 26.9 / 0.8 / 601.3 \\
+\multirow{3}{*}{\shortstack{All\\{\scriptsize ($n{=}10000$)}}}
+& DP & Classical & \pinkbox{0.45} / 0.18 / 0.01 / 1.25 & \pinkbox{76.1} / 26.9 / 0.8 / \phantom{0}601.3 \\
 & DP & RL        & 0.53 / 0.26 / 0.01 / 1.45 & 85.0 / 28.8 / 0.8 / 1017.6 \\
-& DP & Hybrid    & 0.57 / 0.25 / 0.01 / 1.45 & 90.6 / 23.1 / 0.8 / 1000.8 \\
+& DP & Hybrid    & \limebox{0.57} / 0.25 / 0.01 / 1.45 & \limebox{90.6} / 23.1 / 0.8 / 1000.8 \\
 \midrule
-\multirow{3}{*}{\shortstack{Easy\\{\scriptsize $n{=}2642$}}}
-& DP & Classical & 0.53 / 0.25 / 0.01 / 1.25 & 55.0 / 27.3 / 0.8 / 111.1 \\
-& DP & RL        & 0.74 / 0.32 / 0.01 / 1.45 & 75.7 / 31.4 / 0.8 / 143.5 \\
-& DP & Hybrid    & 0.81 / 0.28 / 0.01 / 1.45 & 82.4 / 26.2 / 0.8 / 143.5 \\
+\multirow{3}{*}{\shortstack{Easy\\{\scriptsize ($n{=}2642$)}}}
+& DP & Classical & \pinkbox{0.53} / 0.25 / 0.01 / 1.25 & \pinkbox{55.0} / 27.3 / 0.8 / \phantom{0}111.1 \\
+& DP & RL        & 0.74 / 0.32 / 0.01 / 1.45 & 75.7 / 31.4 / 0.8 / \phantom{0}143.5 \\
+& DP & Hybrid    & \limebox{0.81} / 0.28 / 0.01 / 1.45 & \limebox{82.4} / 26.2 / 0.8 / \phantom{0}143.5 \\
 \midrule
-\multirow{3}{*}{\shortstack{Medium\\{\scriptsize $n{=}4795$}}}
-& DP & Classical & 0.48 / 0.13 / 0.01 / 1.11 & 79.1 / 19.6 / 1.3 / 176.6 \\
-& DP & RL        & 0.53 / 0.17 / 0.01 / 1.26 & 87.2 / 24.9 / 1.2 / 243.2 \\
-& DP & Hybrid    & 0.57 / 0.14 / 0.01 / 1.26 & 92.3 / 16.9 / 1.2 / 235.3 \\
+\multirow{3}{*}{\shortstack{Medium\\{\scriptsize ($n{=}4795$)}}}
+& DP & Classical & \pinkbox{0.48} / 0.13 / 0.01 / 1.11 & \pinkbox{79.1} / 19.6 / 1.3 / \phantom{0}176.6 \\
+& DP & RL        & 0.53 / 0.17 / 0.01 / 1.26 & 87.2 / 24.9 / 1.2 / \phantom{0}243.2 \\
+& DP & Hybrid    & \limebox{0.57} / 0.14 / 0.01 / 1.26 & \limebox{92.3} / 16.9 / 1.2 / \phantom{0}235.3 \\
 \midrule
-\multirow{3}{*}{\shortstack{Difficult\\{\scriptsize $n{=}2563$}}}
-& DP & Classical & 0.32 / 0.08 / 0.01 / 1.14 & 92.3 / 24.4 / 2.3 / 601.3 \\
-& DP & RL        & 0.32 / 0.11 / 0.01 / 1.28 & 90.5 / 30.5 / 2.2 / 1017.6 \\
-& DP & Hybrid    & 0.33 / 0.09 / 0.01 / 1.28 & 95.7 / 27.2 / 2.4 / 1000.8 \\
+\multirow{3}{*}{\shortstack{Difficult\\{\scriptsize ($n{=}2563$)}}}
+& DP & Classical & \pinkbox{0.32} / 0.08 / 0.01 / 1.14 & 92.3 / 24.4 / 2.3 / \phantom{0}601.3 \\
+& DP & RL        & \pinkbox{0.32} / 0.11 / 0.01 / 1.28 & \pinkbox{90.5} / 30.5 / 2.2 / 1017.6 \\
+& DP & Hybrid    & \limebox{0.33} / 0.09 / 0.01 / 1.28 & \limebox{95.7} / 27.2 / 2.4 / 1000.8 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-    \item[Note 1] \emph{Classical} is the baseline null-space controller introduced in Section \ref{sec:baseline}; \emph{RL} is the learned policy; \emph{Hybrid} is the proposed step-level switching controller. \emph{DP} (diffusion prior) is sampled per the deployment policy of Section~\ref{sec:dp_inference}: candidates are drawn in batches of $4$ and Newton-projected, retaining the first IK-valid configuration; if no valid configuration is found within $32$ attempts the seed falls back to $\mathbf{q}_{0}^{\mathrm{seed}}$.
-\end{tablenotes}
 \end{threeparttable}
 \end{table*}
 
-\begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=\linewidth]{imgs/main_results.JPG}
-    \caption{\rev{Per-bucket performance of the three controllers under the DP seed (placeholder).}}
-    \label{fig:main_result}
-\end{figure}
 
 \subsubsection{Initial Configuration Selection}
-\rev{Table~\ref{tab:seedsel} isolates the contribution of the seed-selection module by holding the controller fixed and varying $\mathbf{q}_{0}^{*}$ across three sources: a manipulability-maximizing seed, a joint-limit-centering seed, and the proposed DP seed. The two heuristic seeds are obtained by null-space gradient ascent on the respective objective starting from $\mathbf{q}_{0}^{\mathrm{seed}}$, so all three seeds satisfy the constraint $\mathrm{FK}(\mathbf{q})=(\mathbf{p}_{0},\mathbf{R}_{\mathrm{target}})$ by construction. Each block fixes one of the three controllers (Classical, RL, Hybrid) so the comparison is on equal terms. Under every controller DP outperforms both heuristics by $10$--$18$\,pp; the learned seed provides a better starting branch than the hand-designed heuristics on this task family, which is sufficient for our purposes.}
+Table~\ref{tab:seedsel} isolates the seed-selection module by fixing the controller and varying $\mathbf{q}_{0}^{*}$ across three sources: a manipulability seed, a joint-limit-centering seed, and the proposed DP seed. The two heuristics share one procedure, differing only in objective: null-space gradient ascent from $\mathbf{q}_{0}^{\mathrm{seed}}$ with periodic Newton re-projection onto the exact pose. As the ascent stays within the null space, both remain confined to the SMM branch of $\mathbf{q}_{0}^{\mathrm{seed}}$ and cannot cross to another, whereas DP samples a multi-modal distribution spanning multiple branches. Under every controller, DP leads both heuristics by $10$--$18$\,pp at comparable seed-generation cost ($\sim$45\,ms), confirming that the learned prior reaches a more favorable starting branch than branch-bound heuristic refinement. Fig.~\ref{fig:diversity} visualizes the multi-modal seeds the diffusion model samples on a representative task.
 
 \begin{figure}[!htbp]
     \centering
     \includegraphics[width=\linewidth]{imgs/diversity.JPG}
-    \caption{\rev{Multi-modal initial configurations sampled by the diffusion model for a representative task (placeholder).}}
+    \caption{Multi-modal initial configurations sampled by the diffusion model. The dashed grey line denotes the actual motion direction, while the solid lines are laterally offset for clearer visualization.}
     \label{fig:diversity}
 \end{figure}
 
+
+
 \begin{table*}[!htbp]
 \centering
-% \setlength{\tabcolsep}{4.5pt}
+\setlength{\tabcolsep}{6pt}
 \caption{Performance of the Proposed Initial Configuration Selection Method Compared with Heuristic Designs.}
 \label{tab:seedsel}
 \begin{threeparttable}
@@ -343,27 +318,28 @@ Test-set & $\textbf{q}_{0}^*$ & $\pi$
 \toprule
 $\pi$ & $\textbf{q}_{0}^*$ 
 & $t$ (ms)
-& \shortstack{$l$ (m)\\ {\scriptsize Mean / Std / Min / Max}} 
-& \shortstack{$\%$\\ {\scriptsize Mean / Std / Min / Max}} \\
+& \shortstack{\xinyi{Path Length} (m)\\ {\scriptsize Mean / Std / Min / Max}} 
+& \shortstack{\xinyi{Ratio to reference} ($\%$)\\ {\scriptsize Mean / Std / Min / Max}} \\
 \midrule
 \multirow{3}{*}{Classical}
-& Manipulability         & 47.40 & 0.36 / 0.16 / 0.01 / 1.14 & 61.3 / 28.8 / 0.8 / 555.4 \\
-& \pinkbox{Joint-Limit}  & 44.10 & \pinkbox{0.34} / 0.18 / $-$0.01 / 1.14 & \pinkbox{58.6} / 30.4 / $-$0.8 / 404.6 \\
-& \limebox{DP}           & 45.20 & \limebox{0.45} / 0.18 / 0.01 / 1.25 & \limebox{76.1} / 26.9 / 0.8 / 601.3 \\
+& $\mathbf{q}_{\mu}$         & 47.40 & 0.36 / 0.16 / 0.01 / 1.14 & 61.3 / 28.8 / 0.8 / \phantom{0}555.4 \\
+& $\mathbf{q}_{\mathrm{jl}}$  & 44.10 & \pinkbox{0.34} / 0.18 / 0.00 / 1.14 & \pinkbox{58.6} / 30.4 / 0.0 / \phantom{0}404.6 \\
+& DP           & 45.20 & \limebox{0.45} / 0.18 / 0.01 / 1.25 & \limebox{76.1} / 26.9 / 0.8 / \phantom{0}601.3 \\
 \midrule
 \multirow{3}{*}{RL}
-& \pinkbox{Manipulability} & 47.40 & \pinkbox{0.45} / 0.26 / 0.01 / 1.50 & \pinkbox{73.0} / 33.7 / 0.8 / 1058.3 \\
-& Joint-Limit              & 44.10 & 0.46 / 0.26 / $-$0.01 / 1.68 & 74.1 / 36.6 / $-$0.8 / 928.0 \\
-& \limebox{DP}             & 45.20 & \limebox{0.53} / 0.26 / 0.01 / 1.45 & \limebox{85.0} / 28.8 / 0.8 / 1017.6 \\
+& $\mathbf{q}_{\mu}$ & 47.40 & \pinkbox{0.45} / 0.26 / 0.01 / 1.50 & \pinkbox{73.0} / 33.7 / 0.8 / 1058.3 \\
+& $\mathbf{q}_{\mathrm{jl}}$              & 44.10 & 0.46 / 0.26 / 0.00 / 1.68 & 74.1 / 36.6 / 0.0 / \phantom{0}928.0 \\
+& DP             & 45.20 & \limebox{0.53} / 0.26 / 0.01 / 1.45 & \limebox{85.0} / 28.8 / 0.8 / 1017.6 \\
 \midrule
 \multirow{3}{*}{Hybrid}
-& Manipulability         & 47.40 & 0.48 / 0.24 / 0.01 / 1.50 & 77.6 / 29.4 / 0.8 / 602.2 \\
-& \pinkbox{Joint-Limit}  & 44.10 & \pinkbox{0.48} / 0.26 / $-$0.01 / 1.68 & \pinkbox{77.1} / 35.0 / $-$0.8 / 928.0 \\
-& \limebox{DP}           & 45.20 & \limebox{0.57} / 0.25 / 0.01 / 1.45 & \limebox{90.6} / 23.1 / 0.8 / 1000.8 \\
+& $\mathbf{q}_{\mu}$         & 47.40 & 0.48 / 0.24 / 0.01 / 1.50 & 77.6 / 29.4 / 0.8 / \phantom{0}602.2 \\
+& $\mathbf{q}_{\mathrm{jl}}$  & 44.10 & \pinkbox{0.48} / 0.26 / 0.00 / 1.68 & \pinkbox{77.1} / 35.0 / 0.0 / \phantom{0}928.0 \\
+& DP           & 45.20 & \limebox{0.57} / 0.25 / 0.01 / 1.45 & \limebox{90.6} / 23.1 / 0.8 / 1000.8 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-    \item[Note 1] \rev{$\%$ normalized by $\ell^{\mathrm{ref}}$ (Section~\ref{sec:ablate}); $t$ is per-task seed-generation time. Per-block highlights mark the best (lime) and worst (pink) seed under each controller.}
+    \item[Note 1] $t$ is per-task seed-generation time.
+    \item[Note 2] $\mathbf{q}_{\mu}$: manipulability-maximizing seed; $\mathbf{q}_{\mathrm{jl}}$: joint-limit-centering seed.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
@@ -371,117 +347,118 @@ $\pi$ & $\textbf{q}_{0}^*$
 
 
 
-\subsection{Ablation Study}\label{sec:ablate}
+\subsection{Ablation Study}
 
-\rev{Unless noted otherwise, every ablation uses the full system---the diffusion seed $\mathbf{q}_{0}^{*}$ under the hybrid controller---and varies a single hyperparameter. All numbers are reported on the full $10{,}000$-task set with the two metrics of Table~\ref{tab:lnetresult}: the absolute path-following length $l$ (m) and its per-task ratio $\%=100\,l/\ell^{\mathrm{ref}}$ to a reference length $\ell^{\mathrm{ref}}$, defined per task as the longest length obtained by rolling \emph{every} configuration in the SMM candidate pool through the hybrid controller. The reference is a strong but non-binding benchmark---values above $100\%$ are admissible whenever a configuration outside the pool yields a longer rollout.}
+Unless otherwise specified, each ablation study uses the diffusion-based initial configuration under the hybrid controller with the default parameters introduced at the beginning of the experiment section.
 
 \subsubsection{Classical Null-Space Controller Hyperparameters}
-\rev{Table~\ref{tab:ablate_classical} isolates the three secondary objectives of Eq.~\eqref{eq:secondary} and then sweeps their weighted combination. We use the task's generating configuration $\mathbf{q}_{0}^{\mathrm{seed}}$ as the initialization (always IK-valid by construction) so that the table reflects the controller alone, independent of the seed-selection module. The first three rows activate one objective at a time (gain $1.0$); the next four trace a representative path through the $(k_{\mu},k_{\mathrm{jl}})$ plane. The cone term $k_{\theta}$ is inert on this task distribution---the gate $g(\theta)$ rarely activates---so its value is immaterial and we fix $k_{\theta}{=}0.4$ for the sweep with no loss of generality. The last row is the grid optimum over the full $4{\times}3{\times}3$ sweep; it lies within $0.8$\,pp of the top three mixed combinations and within $0.3$\,pp of the absolute $\%$-maximum at $(0.8,0.2,0.4)$, confirming that the adopted weights sit on the flat top of the landscape.}
+
+Table~\ref{tab:ablate_classical} isolates the three secondary objectives of Eq.~\eqref{eq:secondary} and then sweeps their weighted combination.  The full sweep covers a $4\times3\times3$ grid of $(k_{\mu},k_{\mathrm{jl}},k_{\theta})$ plus three single-objective settings ($39$ in total), of which the table lists a representative subset. We use the task's generating configuration $\mathbf{q}_{0}^{\mathrm{seed}}$ as the initialization for simplicity. The first three rows activate one objective at a time (gain $1.0$); the next rows increase $k_{\mu}$ at near-fixed $k_{\mathrm{jl}}$. Single objectives are uniformly weak ($58.7$--$62.3\%$), and any mixed combination surpasses them, indicating that the secondary objectives are complementary rather than redundant. Nonetheless, while tuned mixed-weight settings may help on individual tasks, no combination yields a meaningful improvement across the full evaluation set.
+
 \begin{table*}[!htbp]
 \centering
 \setlength{\tabcolsep}{8pt}
-\caption{\rev{Contribution of the Classical Secondary Objectives.}}
+\caption{Ablation of the Classical Secondary-Objective Weights.}
 \label{tab:ablate_classical}
 \begin{threeparttable}
-\rev{\begin{tabular}{ccccc}
+\begin{tabular}{ccccc}
 \toprule
 $k_{\mu}$ & $k_{\mathrm{jl}}$ & $k_{\theta}$
-& \shortstack{$l$ (m)\\ {\scriptsize Mean / Std / Min / Max}}
-& \shortstack{$\%$\\ {\scriptsize Mean / Std / Min / Max}} \\
+& \shortstack{\xinyi{Path Length} (m)\\ {\scriptsize Mean / Std / Min / Max}}
+& \shortstack{\xinyi{Ratio to reference} ($\%$)\\ {\scriptsize Mean / Std / Min / Max}} \\
 \midrule
 1.0 & ---        & ---        & 0.36 / 0.15 / 0.01 / 1.15 & 62.3 / 29.5 / 0.8 / 1027.8 \\
----        & \pinkbox{1.0} & ---        & \pinkbox{0.34} / 0.17 / 0.02 / 1.28 & \pinkbox{58.7} / 28.5 / 3.5 / 521.9 \\
----        & ---        & 1.0 & 0.35 / 0.13 / 0.01 / 1.14 & 60.6 / 28.0 / 0.9 / 945.8 \\
+---        & \pinkbox{1.0} & ---        & \pinkbox{0.34} / 0.17 / 0.02 / 1.28 & \pinkbox{58.7} / 28.5 / 3.5 / \phantom{0}521.9 \\
+---        & ---        & 1.0 & 0.35 / 0.13 / 0.01 / 1.14 & 60.6 / 28.0 / 0.9 / \phantom{0}945.8 \\
 \midrule
-0.2 & 0.1 & 0.4 & 0.36 / 0.13 / 0.01 / 1.12 & 62.6 / 26.6 / 1.9 / 675.8 \\
-0.4 & 0.2 & 0.4 & 0.37 / 0.14 / 0.02 / 1.16 & 63.7 / 26.7 / 2.5 / 675.9 \\
-0.6 & 0.2 & 0.4 & 0.37 / 0.14 / 0.03 / 1.17 & 64.2 / 28.4 / 3.7 / 985.9 \\
-0.8 & 0.2 & 0.4 & 0.37 / 0.15 / 0.03 / 1.17 & \limebox{64.5} / 28.8 / 3.2 / 986.3 \\
-0.8 & 0.4 & 0.2 & 0.37 / 0.15 / 0.04 / 1.14 & 64.2 / 27.1 / 7.0 / 651.0 \\
+0.2 & 0.1 & 0.4 & 0.36 / 0.13 / 0.01 / 1.12 & 62.6 / 26.6 / 1.9 / \phantom{0}675.8 \\
+0.4 & 0.2 & 0.4 & 0.37 / 0.14 / 0.02 / 1.16 & 63.7 / 26.7 / 2.5 / \phantom{0}675.9 \\
+0.6 & 0.2 & 0.4 & 0.37 / 0.14 / 0.03 / 1.17 & 64.2 / 28.4 / 3.7 / \phantom{0}985.9 \\
+0.8 & 0.2 & 0.4 & 0.37 / 0.15 / 0.03 / 1.17 & \limebox{64.5} / 28.8 / 3.2 / \phantom{0}986.3 \\
+0.8 & 0.4 & 0.2 & 0.37 / 0.15 / 0.04 / 1.14 & 64.2 / 27.1 / 7.0 / \phantom{0}651.0 \\
 \bottomrule
-\end{tabular}}
+\end{tabular}
 \begin{tablenotes}
-    \item[Note 1] \rev{Seed is $\mathbf{q}_{0}^{\mathrm{seed}}$; controller is classical; $\%$ is normalized by $\ell^{\mathrm{ref}}$ (Section~\ref{sec:ablate}). Adopted: $(k_{\mu},k_{\mathrm{jl}},k_{\theta})=(0.8,0.4,0.2)$.}
+    \item[Note 1] The cone gate $g(\theta)$ is rarely activated due to the conservativeness of the classical controller, so varying $k_{\theta}$ has little effect on performance.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
 
 \subsubsection{Classifier-Free Guidance Scale}
-\rev{Table~\ref{tab:ablate_cfg} varies the guidance scale $w$ of Eq.~\eqref{eq:cfg}, where $w=0$ ignores the task condition and larger $w$ amplifies it.}
+
+Table~\ref{tab:ablate_cfg} varies the guidance scale $w$ of Eq.~\eqref{eq:cfg}, where $w=0$ ignores the task condition and larger $w$ amplifies it. The results show that performance peaks at $w=1.5$ ($90.6\%$), degrading under both unconditional sampling ($w=0$, $80.8\%$) and over-guidance ($w=3.0$, $84.2\%$). The seed-generation time $t$ is likewise lowest near $w=1.5$ and rises sharply at both ends ($133$\,ms at $w=0$, $94$\,ms at $w=3.0$, versus $\sim$46\,ms), as poorly conditioned samples need more sampling-and-projection retries to reach an IK-valid pose.
+
 \begin{table*}[!htbp]
 \centering
 \setlength{\tabcolsep}{8pt}
-\caption{\rev{Effect of the Classifier-Free Guidance Scale $w$.}}
+\caption{Effect of the Guidance Scale $w$ on Path Length and Seed-Generation Cost.}
 \label{tab:ablate_cfg}
 \begin{threeparttable}
-\rev{\begin{tabular}{lccc}
+\begin{tabular}{lccc}
 \toprule
 $w$
 & $t$ (ms)
-& \shortstack{$l$ (m)\\ {\scriptsize Mean / Std / Min / Max}}
-& \shortstack{$\%$\\ {\scriptsize Mean / Std / Min / Max}} \\
+& \shortstack{\xinyi{Path Length} (m)\\ {\scriptsize Mean / Std / Min / Max}}
+& \shortstack{\xinyi{Ratio to reference} ($\%$)\\ {\scriptsize Mean / Std / Min / Max}} \\
 \midrule
-\pinkbox{0.0} & \pinkbox{131.10} & \pinkbox{0.50} / 0.25 / 0.01 / 1.49 & \pinkbox{81.2} / 29.7 / 0.8 / 566.5 \\
-1.0 & \phantom{0}45.80 & 0.56 / 0.25 / 0.01 / 1.48 & 89.5 / 22.4 / 0.7 / 491.8 \\
-1.5 & \phantom{0}\limebox{45.20} & \limebox{0.57} / 0.25 / 0.01 / 1.45 & \limebox{90.7} / 22.7 / 0.8 / 1002.2 \\
-2.0 & \phantom{0}48.80 & 0.56 / 0.25 / 0.01 / 1.46 & 89.6 / 23.1 / 0.8 / 666.4 \\
-3.0 & \phantom{0}91.00 & 0.52 / 0.24 / 0.01 / 1.40 & 84.4 / 26.2 / 0.8 / 475.5 \\
+0.0 & \pinkbox{133.50} & \pinkbox{0.50} / 0.25 / 0.01 / 1.49 & \pinkbox{80.8} / 29.3 / 0.8 / \phantom{0}566.5 \\
+1.0 & \phantom{0}46.90 & 0.56 / 0.25 / 0.01 / 1.48 & 89.4 / 22.9 / 0.7 / \phantom{0}562.7 \\
+1.5 & \phantom{0}\limebox{46.40} & \limebox{0.57} / 0.25 / 0.01 / 1.45 & \limebox{90.6} / 23.1 / 0.8 / 1000.8 \\
+2.0 & \phantom{0}50.20 & 0.56 / 0.25 / 0.01 / 1.45 & 89.5 / 23.3 / 0.8 / \phantom{0}666.4 \\
+3.0 & \phantom{0}94.00 & 0.52 / 0.24 / 0.01 / 1.40 & 84.2 / 26.2 / 0.8 / \phantom{0}506.0 \\
 \bottomrule
-\end{tabular}}
-\begin{tablenotes}
-    \item[Note 1] \rev{Seed sampled per Section~\ref{sec:dp_inference}; $t$ is per-task seed-generation time (DDIM + Newton projection). $w=0$ samples unconditionally. Adopted: $w=1.5$.}
-\end{tablenotes}
+\end{tabular}
 \end{threeparttable}
 \end{table*}
 
 \subsubsection{Number of Diffusion Sampling Steps}
-\rev{Table~\ref{tab:ablate_steps} varies the number of DDIM sampling steps used to draw each seed, trading inference cost against seed quality. Across the swept range ($10$--$100$ steps), the metric is flat to within $1$\,pp, indicating that the result is essentially insensitive to the step count; we adopt $50$ as a conservative default.}
+
+Table~\ref{tab:ablate_steps} examines the influence of the DDIM sampling steps on both time cost and seed quality. The results indicate that both metrics remain flat across the step range $10$--$100$. We therefore conclude that the result is essentially insensitive to the number of sampling steps, and we adopt $50$ as the default. The underlying reason may be that the seed quality is retained within a few denoising steps, as it largely depends on the SMM branch. Moreover, regarding time cost, although more sampling steps increase the sampling time, the dominant bottleneck of seed generation is the number of re-projection retries, which also depends on the seed quality.
+
 \begin{table*}[!htbp]
 \centering
 \setlength{\tabcolsep}{8pt}
-\caption{\rev{Effect of the Number of DDIM Sampling Steps.}}
+\caption{Effect of the DDIM Sampling Steps on Seed Quality and Time Cost.}
 \label{tab:ablate_steps}
 \begin{threeparttable}
-\rev{\begin{tabular}{lccc}
+\begin{tabular}{lccc}
 \toprule
 DDIM steps
 & $t$ (ms)
-& \shortstack{$l$ (m)\\ {\scriptsize Mean / Std / Min / Max}}
-& \shortstack{$\%$\\ {\scriptsize Mean / Std / Min / Max}} \\
+& \shortstack{\xinyi{Path Length} (m)\\ {\scriptsize Mean / Std / Min / Max}}
+& \shortstack{\xinyi{Ratio to reference} ($\%$)\\ {\scriptsize Mean / Std / Min / Max}} \\
 \midrule
-\phantom{0}10  & \pinkbox{48.50} & \limebox{0.574} / 0.247 / 0.010 / 1.447 & \limebox{90.8} / 21.5 / 0.9 / 659.0 \\
-\phantom{0}20  & \limebox{46.80} & 0.571 / 0.245 / 0.010 / 1.487 & 90.7 / 22.9 / 0.8 / 683.3 \\
-\phantom{0}50  & 47.30 & 0.572 / 0.247 / 0.010 / 1.448 & 90.7 / 22.7 / 0.8 / 1002.2 \\
-100 & 47.90 & \pinkbox{0.570} / 0.248 / 0.010 / 1.590 & \pinkbox{90.3} / 22.1 / 0.8 / 567.4 \\
+\phantom{0}10  & \pinkbox{48.80} & \limebox{0.572} / 0.245 / 0.010 / 1.448 & \limebox{90.6} / 20.9 / 0.9 / \phantom{0}659.0 \\
+\phantom{0}20  & \limebox{46.40} & 0.570 / 0.244 / 0.010 / 1.487 & 90.5 / 22.1 / 0.8 / \phantom{0}683.3 \\
+\phantom{0}50  & 46.50 & 0.571 / 0.246 / 0.010 / 1.448 & 90.6 / 23.1 / 0.8 / 1000.8 \\
+100 & 47.30 & \pinkbox{0.569} / 0.247 / 0.010 / 1.590 & \pinkbox{90.2} / 21.9 / 0.8 / \phantom{0}567.4 \\
 \bottomrule
-\end{tabular}}
-\begin{tablenotes}
-    \item[Note 1] \rev{Guidance scale ($w=1.5$) fixed; controller is hybrid with $\tau=(0.98,0.98)$; seed sampled per Section~\ref{sec:dp_inference}. Substituting the adopted $\tau=(0.98,0.94)$ shifts each row by less than $0.5$\,pp (see Table~\ref{tab:ablate_switch}). Adopted: $50$ steps.}
-\end{tablenotes}
+\end{tabular}
 \end{threeparttable}
 \end{table*}
 
 
 
 \subsubsection{Hybrid Switching Hyperparameters}
-\rev{Table~\ref{tab:ablate_switch} varies the switching thresholds of Eq.~\eqref{eq:rho}. The top block sweeps a single threshold $\tau_{\mathrm{enter}}=\tau_{\mathrm{exit}}\in\{0.85,0.90,0.95,0.97,0.98,0.99\}$, tracing how the RL/classical division changes as the boundary shell widens or shrinks. The bottom block introduces a hysteresis gap with $\tau_{\mathrm{enter}}>\tau_{\mathrm{exit}}$, and the \emph{switches} column reports the mean number of RL$\leftrightarrow$classical transitions per episode, a direct proxy for chattering. The adopted setting $(0.98,0.94)$ cuts the switching rate from $1.43$ to $0.44$ ($-69\%$) at a cost of only $0.4$\,pp in length, validating the chattering-suppression role of hysteresis described in Section~\ref{sec:coordination}.}
+
+Table~\ref{tab:ablate_switch} varies the switching thresholds of Eq.~\eqref{eq:rho}. The top rows sweep a single threshold $\tau_{\mathrm{enter}}=\tau_{\mathrm{exit}}\in\{0.85,0.90,0.95,\\0.97,0.98,0.99\}$, tracing the performance comparison as the boundary region widens or shrinks. The bottom rows, in contrast, introduce a hysteresis gap with $\tau_{\mathrm{enter}}>\tau_{\mathrm{exit}}$, and the \emph{switches} column reports the mean number of transitions per episode. Results show that introducing the hysteresis gap largely reduces the number of switches compared with the single-threshold setting. We therefore adopt $(0.98,0.94)$ as the default, as it achieves a balanced performance between path-following length and switching stability.
 
 
 \begin{table*}[!htbp]
 \centering
 \setlength{\tabcolsep}{4.8pt}
-\caption{\rev{Effect of the Switching Thresholds $(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})$.}}
+\caption{Ablation of the Switching Thresholds $(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})$.}
 \label{tab:ablate_switch}
 \begin{threeparttable}
-\rev{\begin{tabular}{lccc}
+\begin{tabular}{lccc}
 \toprule
 $(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})$
 & \shortstack{switches\\ {\scriptsize mean / episode}}
-& \shortstack{$l$ (m)\\ {\scriptsize Mean / Std / Min / Max}}
-& \shortstack{$\%$\\ {\scriptsize Mean / Std / Min / Max}} \\
+& \shortstack{\xinyi{Path Length} (m)\\ {\scriptsize Mean / Std / Min / Max}}
+& \shortstack{\xinyi{Ratio to reference} ($\%$)\\ {\scriptsize Mean / Std / Min / Max}} \\
 \midrule
-$(0.85,\,0.85)$ & \pinkbox{2.50} & \pinkbox{0.534} / 0.231 / 0.010 / 1.427 & \pinkbox{86.1} / 24.3 / 0.8 / 601.3 \\
-$(0.90,\,0.90)$ & 2.49 & 0.556 / 0.239 / 0.010 / 1.437 & 88.8 / 22.9 / 0.8 / 601.3 \\
+$(0.85,\,0.85)$ & \pinkbox{2.50} & \pinkbox{0.534} / 0.231 / 0.010 / 1.427 & \pinkbox{86.1} / 24.3 / 0.8 / \phantom{0}601.3 \\
+$(0.90,\,0.90)$ & 2.49 & 0.556 / 0.239 / 0.010 / 1.437 & 88.8 / 22.9 / 0.8 / \phantom{0}601.3 \\
 $(0.95,\,0.95)$ & 1.97 & 0.571 / 0.244 / 0.010 / 1.437 & 90.7 / 23.7 / 0.8 / 1001.2 \\
 $(0.97,\,0.97)$ & 1.65 & \limebox{0.573} / 0.246 / 0.010 / 1.448 & \limebox{90.9} / 23.1 / 0.8 / 1001.9 \\
 $(0.98,\,0.98)$ & 1.43 & 0.572 / 0.247 / 0.010 / 1.448 & 90.7 / 22.7 / 0.8 / 1002.2 \\
@@ -490,25 +467,23 @@ $(0.99,\,0.99)$ & 0.99 & 0.563 / 0.253 / 0.010 / 1.448 & 89.3 / 24.8 / 0.8 / 101
 $(0.98,\,0.94)$ & 0.44 & 0.571 / 0.246 / 0.010 / 1.448 & 90.6 / 23.1 / 0.8 / 1000.8 \\
 $(0.99,\,0.93)$ & \limebox{0.32} & 0.567 / 0.247 / 0.010 / 1.448 & 90.0 / 23.9 / 0.8 / 1017.6 \\
 \bottomrule
-\end{tabular}}
+\end{tabular}
 \begin{tablenotes}
-    \item[Note 1] \rev{Per-column highlights mark the best (lime) and worst (pink) value. Adopted: $(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})=(0.98,0.94)$.}
+    \item[Note 1] Only representative swept hysteresis combinations are listed.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Conclusion}
+\section{Conclusions and Future Work}
 \label{sec:conclusion}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\rev{We presented a joint-limit-aware redundancy-resolution framework for straight-line Cartesian path following. Its core is a step-level hybrid null-space controller that, guided by a hysteresis rule on the normalized joint-limit distance $\rho(\mathbf{q})$, assigns the well-sampled interior to a length-maximizing reinforcement-learning policy and delegates the boundary shell to a certified classical controller. A conditional diffusion model serves as an enabling component, initializing the arm on a robust branch of the self-motion manifold at $t{=}0$. On $10{,}000$ held-out straight-line tasks for a 7-DoF FR3 the hybrid system extends the path-following length by $1.26\times$ over the classical baseline and recovers $90.6\%$ of a controller-aware reference, with the boundary-aware partitioning supported by the controller-wise inversion across difficulty buckets in Table~\ref{tab:lnetresult}: RL outperforms classical control on Easy and Medium tasks (interior-dominated trajectories) but loses to it on Difficult tasks (boundary-dominated trajectories), and the hybrid inherits the better of the two in every bucket. The design is further validated by the post-hoc termination breakdown over the $10{,}000$-task evaluation: joint-limit overshoot, the failure mode the hybrid coordination is designed to suppress, accounts for only $11.6\%$ of terminations, with cone violation ($65.9\%$), lateral drift ($19.8\%$), and self-collision ($2.8\%$) making up the rest.}
+In this paper, we developed a framework for extreme motion generation that advances a fixed-base manipulator along a prescribed straight line as far as possible. The framework adopts a step-level hybrid null-space controller, which delegates the well-sampled interior to an RL policy for length maximization and the near-boundary region to a robust classical controller through a hysteresis switching rule. Prior to execution, a conditional diffusion model initializes the manipulator on a favorable branch of the SMM. Experimental results demonstrated a longer path-following length than both the classical and learning-based controllers and showed that the hysteresis switching rule achieves a favorable balance between length and switching stability. Since our controller works entirely in the null space, it can naturally incorporate additional customized task constraints into the extreme motion process, similar to conventional null-space methods. By deferring contact with the kinematic boundaries that would otherwise terminate the motion prematurely, the framework enlarges the effective working range without scaling up the hardware or relocating the base. We are interested in exploring this direction further in future work.
 
-\rev{Two limitations remain. First, tool-orientation cone violation is the dominant residual failure mode; the classical cone-term gain $k_{\theta}$ is inert on this task distribution (Section~\ref{sec:ablate}), so neither sub-controller actively tracks orientation while the tool axis is still inside the cone. Integrating an active cone-tracking term---rather than the boundary-gated $g(\theta)$ used here---into either the classical or the RL action would directly address this. Second, the deployment-time IK fallback affects roughly $4\%$ of tasks and is responsible for a sizeable share of the Easy-bucket gap to the reference ($17.6$\,pp, Table~\ref{tab:lnetresult}), because the seed-selection policy returns the first IK-valid sample without searching for the longest-rollout one whereas the reference is computed over the entire candidate pool; a closed-loop seed generator that conditions on the failure of the previous Newton step is a natural fix. We also leave to future work the transfer to other line-following primitives and to different kinematic chains.}
-
-%--- Optional acknowledgement -----------------------------------------
-\paragraph{Acknowledgements.}
-\rev{This work was supported in part by [TODO: funding source(s)].}
+% %--- Optional acknowledgement -----------------------------------------
+% \paragraph{Acknowledgements.}
+% \rev{This work was supported in part by [TODO: funding source(s)].}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % References

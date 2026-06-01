@@ -51,7 +51,7 @@ DEFAULT_EVAL_NPZ = 'Yuan/system_eval/runs/eval_10k_systematic/eval_set_10k.npz'
 COLOR_BLACK = (0.05, 0.05, 0.05)
 COLOR_PLANE = (0.55, 0.65, 0.75)   # cool grey-blue
 COLOR_CONE  = (0.85, 0.55, 0.30)   # warm orange
-COLOR_ARM   = (0.55, 0.70, 0.85)   # paper teal/blue
+COLOR_ARM   = None   # None -> FR3 default renderer colour
 
 CONE_HALF_ANGLE_DEG = 30.0
 
@@ -198,8 +198,11 @@ def main():
     if args.show_arm:
         arm, _ = make_fr3_with_pen(use_pen_tcp=True)
         arm.attach_to(base.scene)
-        attach_pen_visual(arm, rgb=COLOR_ARM, alpha=float(args.arm_alpha))
-        arm.rgb = COLOR_ARM
+        if COLOR_ARM is not None:
+            attach_pen_visual(arm, rgb=COLOR_ARM, alpha=float(args.arm_alpha))
+            arm.rgb = COLOR_ARM
+        else:
+            attach_pen_visual(arm, alpha=float(args.arm_alpha))
         arm.alpha = float(args.arm_alpha)
         arm.fk(qs=q0_seed)
 

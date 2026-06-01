@@ -1,0 +1,120 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldcontentsline\contentsline
+\gdef\contentsline#1#2#3#4{\oldcontentsline{#1}{#2}{#3}}
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\contentsline\oldcontentsline
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\@writefile{toc}{\contentsline {title}{Extreme Motion Generation for Straight-Line Path Following via Reinforcement Learning}{1}{chapter.1}\protected@file@percent }
+\@writefile{toc}{\authcount {3}}
+\@writefile{toc}{\contentsline {author}{Xinyi Yuan,Weiwei Wan,Kensuke Harada}{1}{chapter.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1.1}\protected@file@percent }
+\citation{yoshikawa1985manipulability}
+\citation{jin2017manipulability}
+\citation{shen2023adaptive}
+\citation{cai2025just}
+\citation{yang2009placement}
+\citation{makhal2018reuleaux}
+\citation{feng2025predictive}
+\citation{jauhri2022robot}
+\citation{selim2022safe}
+\citation{malik2022deep}
+\citation{ames2022ikflow}
+\citation{zhang2025ikdiffuser}
+\citation{huang2024diffusionseeder}
+\citation{yoon2023learning}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{3}{section.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Manipulability and Reachability}{3}{subsection.1.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Learning-based Motion Generation}{3}{subsection.1.2.2}\protected@file@percent }
+\citation{johannink2019residual,silver2018residual}
+\citation{mehmood2022black}
+\citation{alshiekh2018safe}
+\citation{kurtz2021control}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Combining Learning- and Model-based Control}{4}{subsection.1.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Problem Formulation}{4}{section.1.3}\protected@file@percent }
+\newlabel{cond}{{1}{4}{Problem Formulation}{equation.1.3.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Overview of the two-stage framework for extreme motion generation.{\color  {awesome}\begin  {CJK*}{UTF8}{gkai}\relax \fontsize  {9}{11}\selectfont  \abovedisplayskip 8.5\p@ plus3\p@ minus4\p@ \abovedisplayshortskip \z@ plus2\p@ \belowdisplayshortskip 4\p@ plus2\p@ minus2\p@ \def \leftmargin \leftmargini \parsep 0\p@ plus1\p@ minus\p@ \topsep 8\p@ plus2\p@ minus4\p@ \itemsep 0\p@ {\leftmargin \leftmargini \parsep 0\p@ plus1\p@ minus\p@ \topsep 8\p@ plus2\p@ minus4\p@ \itemsep 0\p@ }\belowdisplayskip \abovedisplayskip 突然从一个宽泛得了理论具体到这么一个特殊的任务上，很唐突。考虑在3讲本文具化到这个图中的任务进行研究。然后详细给出具化后的问题。\end  {CJK*}}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}有点没理解。\end  {CJK*}}}}{5}{figure.1.1}\protected@file@percent }
+\newlabel{overview}{{1}{5}{Overview of the two-stage framework for extreme motion generation.\wan {突然从一个宽泛得了理论具体到这么一个特殊的任务上，很唐突。考虑在3讲本文具化到这个图中的任务进行研究。然后详细给出具化后的问题。}\xinyi {有点没理解。}}{figure.1.1}{}}
+\newlabel{eq:ori_constraint}{{4}{5}{Problem Formulation}{equation.1.3.4}{}}
+\newlabel{eq:jl_constraint}{{5}{5}{Problem Formulation}{equation.1.3.5}{}}
+\newlabel{eq:nullspace}{{6}{5}{Problem Formulation}{equation.1.3.6}{}}
+\newlabel{eq:secondary}{{7}{5}{Problem Formulation}{equation.1.3.7}{}}
+\citation{yuan2026iksel}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Extreme Motion Generation}{6}{section.1.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Initial Joint Configuration Selection}{6}{subsection.1.4.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Self-motion manifold for a fixed end-effector pose. (a) The continuous manifold without joint-limit constraints; (b)--(d) Configurations from the disconnected branches induced by the joint limits, sharing the same pose but differing sharply in joint space and reachable path length. {\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}(e) Joint trajectories of the three branches in b--d along the arc length, with circles marking the joint at its limit: branch\nobreakspace  {}b bounded by $\mathbf  {q}_{1}$ and $\mathbf  {q}_{7}$, branch\nobreakspace  {}c by $\mathbf  {q}_{1}$, and $\mathbf  {q}_{2}$ branch\nobreakspace  {}d by $q_{2}$ and $\mathbf  {q}_{3}$.\end  {CJK*}}{\color  {awesome}\begin  {CJK*}{UTF8}{gkai}\relax \fontsize  {9}{11}\selectfont  \abovedisplayskip 8.5\p@ plus3\p@ minus4\p@ \abovedisplayshortskip \z@ plus2\p@ \belowdisplayshortskip 4\p@ plus2\p@ minus2\p@ \def \leftmargin \leftmargini \parsep 0\p@ plus1\p@ minus\p@ \topsep 8\p@ plus2\p@ minus4\p@ \itemsep 0\p@ {\leftmargin \leftmargini \parsep 0\p@ plus1\p@ minus\p@ \topsep 8\p@ plus2\p@ minus4\p@ \itemsep 0\p@ }\belowdisplayskip \abovedisplayskip 这些branches中间真的没有tunnel吗？\end  {CJK*}}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}从理论上来说关节极限会把流形分成disconnected的分支。然后这个图里的例子只剩一个自由度，所以流形是一维曲线，每个分支两端都分别有关节极限，所以要连接两个分支需要跨过极限。但是如果问真的没有tunnel吗我也不了解更多了...这个要怎么调查呢。\end  {CJK*}}{\color  {awesome}\begin  {CJK*}{UTF8}{gkai}\relax \fontsize  {9}{11}\selectfont  \abovedisplayskip 8.5\p@ plus3\p@ minus4\p@ \abovedisplayshortskip \z@ plus2\p@ \belowdisplayshortskip 4\p@ plus2\p@ minus2\p@ \def \leftmargin \leftmargini \parsep 0\p@ plus1\p@ minus\p@ \topsep 8\p@ plus2\p@ minus4\p@ \itemsep 0\p@ {\leftmargin \leftmargini \parsep 0\p@ plus1\p@ minus\p@ \topsep 8\p@ plus2\p@ minus4\p@ \itemsep 0\p@ }\belowdisplayskip \abovedisplayskip b和d看不出区别？另外，每个分支都是哪几个关节标清？\end  {CJK*}}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}加了说明性的图片，标明了关节极限范围。\end  {CJK*}}}}{6}{figure.1.2}\protected@file@percent }
+\newlabel{smm}{{2}{6}{Self-motion manifold for a fixed end-effector pose. (a) The continuous manifold without joint-limit constraints; (b)--(d) Configurations from the disconnected branches induced by the joint limits, sharing the same pose but differing sharply in joint space and reachable path length. \xinyi {(e) Joint trajectories of the three branches in b--d along the arc length, with circles marking the joint at its limit: branch~b bounded by $\mathbf {q}_{1}$ and $\mathbf {q}_{7}$, branch~c by $\mathbf {q}_{1}$, and $\mathbf {q}_{2}$ branch~d by $q_{2}$ and $\mathbf {q}_{3}$.}\wan {这些branches中间真的没有tunnel吗？}\xinyi {从理论上来说关节极限会把流形分成disconnected的分支。然后这个图里的例子只剩一个自由度，所以流形是一维曲线，每个分支两端都分别有关节极限，所以要连接两个分支需要跨过极限。但是如果问真的没有tunnel吗我也不了解更多了...这个要怎么调查呢。}\wan {b和d看不出区别？另外，每个分支都是哪几个关节标清？}\xinyi {加了说明性的图片，标明了关节极限范围。}}{figure.1.2}{}}
+\citation{ho2020denoising}
+\citation{ho2022classifier}
+\newlabel{eq:cfg}{{8}{7}{Initial Joint Configuration Selection}{equation.1.4.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}RL-based Null-Space Controller}{7}{subsection.1.4.2}\protected@file@percent }
+\newlabel{eq:obs}{{9}{7}{RL-based Null-Space Controller}{equation.1.4.9}{}}
+\newlabel{eq:reward}{{10}{7}{RL-based Null-Space Controller}{equation.1.4.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Null-Space Policies Coordination}{8}{subsection.1.4.3}\protected@file@percent }
+\newlabel{sec:coordination}{{4.3}{8}{Null-Space Policies Coordination}{subsection.1.4.3}{}}
+\newlabel{eq:rho}{{11}{8}{Null-Space Policies Coordination}{equation.1.4.11}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Experiments and Analysis}{8}{section.1.5}\protected@file@percent }
+\newlabel{sec:exp}{{5}{8}{Experiments and Analysis}{section.1.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Results Analysis}{8}{subsection.1.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{Evaluation Set Analysis}{8}{section*.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces (a) Distribution of the reference length $\ell ^{\mathrm  {ref}}$ over the $10{,}000$ evaluation tasks. The dashed grey line marks the task-difficulty threshold.}}{9}{figure.1.3}\protected@file@percent }
+\newlabel{fig:eval_dist}{{3}{9}{(a) Distribution of the reference length $\ell ^{\mathrm {ref}}$ over the $10{,}000$ evaluation tasks. The dashed grey line marks the task-difficulty threshold}{figure.1.3}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Qualitative comparison on a representative task: executed motion (top) and joint\nobreakspace  {}6 trajectory (bottom), with color denoting the active controller. The dashed grey lines mark the $\tau _{\mathrm  {enter}}/\tau _{\mathrm  {exit}}$ thresholds mapped to the joint\nobreakspace  {}6 limits.}}{9}{figure.1.4}\protected@file@percent }
+\newlabel{fig:main_result}{{4}{9}{Qualitative comparison on a representative task: executed motion (top) and joint~6 trajectory (bottom), with color denoting the active controller. The dashed grey lines mark the $\tau _{\mathrm {enter}}/\tau _{\mathrm {exit}}$ thresholds mapped to the joint~6 limits}{figure.1.4}{}}
+\@writefile{toc}{\contentsline {subsubsection}{System Integration}{10}{section*.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Path-Following Performance of the Three Controllers across Difficulty Buckets on 10,000 Evaluation Tasks.{\color  {awesome}\begin  {CJK*}{UTF8}{gkai}\relax \fontsize  {9}{11}\selectfont  \abovedisplayskip 8.5\p@ plus3\p@ minus4\p@ \abovedisplayshortskip \z@ plus2\p@ \belowdisplayshortskip 4\p@ plus2\p@ minus2\p@ \def \leftmargin \leftmargini \parsep 0\p@ plus1\p@ minus\p@ \topsep 8\p@ plus2\p@ minus4\p@ \itemsep 0\p@ {\leftmargin \leftmargini \parsep 0\p@ plus1\p@ minus\p@ \topsep 8\p@ plus2\p@ minus4\p@ \itemsep 0\p@ }\belowdisplayskip \abovedisplayskip 标题的首字母大小写要一致，后续同\end  {CJK*}}}}{10}{table.1.1}\protected@file@percent }
+\newlabel{tab:lnetresult}{{1}{10}{Path-Following Performance of the Three Controllers across Difficulty Buckets on 10,000 Evaluation Tasks.\wan {标题的首字母大小写要一致，后续同}}{table.1.1}{}}
+\@writefile{toc}{\contentsline {subsubsection}{Initial Configuration Selection}{10}{section*.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Multi-modal initial configurations sampled by the diffusion model. The dashed grey line denotes the actual motion direction, while the solid lines are laterally offset for clearer visualization.}}{11}{figure.1.5}\protected@file@percent }
+\newlabel{fig:diversity}{{5}{11}{Multi-modal initial configurations sampled by the diffusion model. The dashed grey line denotes the actual motion direction, while the solid lines are laterally offset for clearer visualization}{figure.1.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Performance of the Proposed Initial Configuration Selection Method Compared with Heuristic Designs.}}{11}{table.1.2}\protected@file@percent }
+\newlabel{tab:seedsel}{{2}{11}{Performance of the Proposed Initial Configuration Selection Method Compared with Heuristic Designs}{table.1.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Ablation Study}{12}{subsection.1.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{Classical Null-Space Controller Hyperparameters}{12}{section*.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Ablation of the Classical Secondary-Objective Weights.}}{12}{table.1.3}\protected@file@percent }
+\newlabel{tab:ablate_classical}{{3}{12}{Ablation of the Classical Secondary-Objective Weights}{table.1.3}{}}
+\@writefile{toc}{\contentsline {subsubsection}{Classifier-Free Guidance Scale}{12}{section*.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{Number of Diffusion Sampling Steps}{12}{section*.7}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Effect of the Guidance Scale $w$ on Path Length and Seed-Generation Cost.}}{13}{table.1.4}\protected@file@percent }
+\newlabel{tab:ablate_cfg}{{4}{13}{Effect of the Guidance Scale $w$ on Path Length and Seed-Generation Cost}{table.1.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Effect of the DDIM Sampling Steps on Seed Quality and Time Cost.}}{13}{table.1.5}\protected@file@percent }
+\newlabel{tab:ablate_steps}{{5}{13}{Effect of the DDIM Sampling Steps on Seed Quality and Time Cost}{table.1.5}{}}
+\@writefile{toc}{\contentsline {subsubsection}{Hybrid Switching Hyperparameters}{13}{section*.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Conclusions and Future Work}{13}{section.1.6}\protected@file@percent }
+\newlabel{sec:conclusion}{{6}{13}{Conclusions and Future Work}{section.1.6}{}}
+\bibstyle{unsrt}
+\bibdata{references}
+\bibcite{yoshikawa1985manipulability}{1}
+\bibcite{jin2017manipulability}{2}
+\bibcite{shen2023adaptive}{3}
+\bibcite{cai2025just}{4}
+\bibcite{yang2009placement}{5}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Ablation of the Switching Thresholds $(\tau _{\mathrm  {enter}},\tau _{\mathrm  {exit}})$.}}{14}{table.1.6}\protected@file@percent }
+\newlabel{tab:ablate_switch}{{6}{14}{Ablation of the Switching Thresholds $(\tau _{\mathrm {enter}},\tau _{\mathrm {exit}})$}{table.1.6}{}}
+\bibcite{makhal2018reuleaux}{6}
+\bibcite{feng2025predictive}{7}
+\bibcite{jauhri2022robot}{8}
+\bibcite{selim2022safe}{9}
+\bibcite{malik2022deep}{10}
+\bibcite{ames2022ikflow}{11}
+\bibcite{zhang2025ikdiffuser}{12}
+\bibcite{huang2024diffusionseeder}{13}
+\bibcite{yoon2023learning}{14}
+\bibcite{johannink2019residual}{15}
+\bibcite{silver2018residual}{16}
+\bibcite{mehmood2022black}{17}
+\bibcite{alshiekh2018safe}{18}
+\bibcite{kurtz2021control}{19}
+\bibcite{ho2022classifier}{20}
+\gdef \@abspage@last{15}

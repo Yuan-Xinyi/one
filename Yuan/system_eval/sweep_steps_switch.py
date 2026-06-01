@@ -89,7 +89,9 @@ def main():
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     results = {'meta': {'T': T, 'cfg_w': CFG_W, 'tdm': tdm,
                         'gains': [classical.manip_gain, classical.jl_gain,
-                                  classical.angle_boundary_gain]},
+                                  classical.angle_boundary_gain],
+                        'tau_enter_steps': float(cfg['rl_controller']['tau_enter']),
+                        'tau_exit_steps':  float(cfg['rl_controller']['tau_exit'])},
                'steps': {}, 'switch': {}}
 
     # ===== DDIM steps sweep =====
@@ -107,8 +109,11 @@ def main():
                 scfg.DDIM_STEPS = old
             t_seed = time.time() - t0
             t_seed_ms = 1000.0 * t_seed / max(T, 1)
+            te = float(cfg['rl_controller']['tau_enter'])
+            tx = float(cfg['rl_controller']['tau_exit'])
             L = roll(seeds, p0, d, n, env=env, controller='hybrid_variantB',
-                     classical=classical, agent=agent, tdm=tdm, prefix=f'[steps={s}] ')
+                     classical=classical, agent=agent, tdm=tdm,
+                     tau_enter=te, tau_exit=tx, prefix=f'[steps={s}] ')
             sst = stats(L * tdm, l_oracle)
             results['steps'][f'{s}'] = {**sst, 't_seed_per_task_ms': t_seed_ms,
                                         'avg_newton_calls_per_task': avg_n,
@@ -147,8 +152,23 @@ def main():
                   f'(max {sw_max}, zero {100*sw_zero_frac:.1f}%) | '
                   f'l(m)={fmt(sst["l"])} | %={fmt(sst["pct"])}', flush=True)
 
-    (out_dir / 'steps_switch_results.json').write_text(json.dumps(results, indent=2))
-    print(f'\n[steps+switch] wrote {out_dir/"steps_switch_results.json"}', flush=True)
+    # Merge with any existing JSON so --skip-steps / --skip-switch reruns do
+    # not clobber the half that wasn't recomputed.
+    out_json = out_dir / 'steps_switch_results.json'
+    if out_json.exists():
+        try:
+            prev = json.loads(out_json.read_text())
+            if args.skip_steps and 'steps' in prev:
+                results['steps'] = prev['steps']
+            if args.skip_switch and 'switch' in prev:
+                results['switch'] = prev['switch']
+            if 'meta' in prev:
+                merged_meta = dict(prev['meta']); merged_meta.update(results['meta'])
+                results['meta'] = merged_meta
+        except Exception as e:
+            print(f'[steps+switch] WARN could not merge existing JSON: {e}', flush=True)
+    out_json.write_text(json.dumps(results, indent=2))
+    print(f'\n[steps+switch] wrote {out_json}', flush=True)
 
     if not args.skip_steps:
         print('\n==== DDIM STEPS TABLE ====')

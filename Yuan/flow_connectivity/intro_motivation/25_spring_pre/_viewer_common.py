@@ -42,12 +42,16 @@ def make_world(task_path: np.ndarray) -> ovw.World:
 
 def add_task_path(base: ovw.World, task_path: np.ndarray,
                   plane_normal: np.ndarray,
-                  max_length: float | None = MAX_VISIBLE_TASK_LEN) -> None:
+                  max_length: float | None = MAX_VISIBLE_TASK_LEN,
+                  draw_plane: bool = True) -> None:
     """Draw the task line, the paper plane, start (green) and end (red) markers.
 
     If max_length is set, the visible line is truncated to that many meters
     from the start so the rendered geometry stays close to the rollout region
     instead of the full 1.5 m extension used internally.
+
+    If draw_plane is False the gray paper plane is skipped (line + markers
+    only).
     """
     if max_length is not None and len(task_path) > 1:
         seg = np.linalg.norm(np.diff(task_path, axis=0), axis=1)
@@ -56,13 +60,14 @@ def add_task_path(base: ovw.World, task_path: np.ndarray,
             idx = int(np.searchsorted(cum, max_length, side='right'))
             idx = min(max(idx, 2), len(task_path))
             task_path = task_path[:idx]
-    plane_center = task_path.mean(axis=0).astype(np.float32)
-    path_len = float(np.linalg.norm(task_path[-1] - task_path[0]))
-    plane_size = max(0.6, path_len + 0.3)
-    ossop.plane(pos=tuple(plane_center),
-                normal=tuple(plane_normal.astype(np.float32)),
-                size=(plane_size, plane_size), thickness=2e-3,
-                rgb=(0.82, 0.82, 0.86), alpha=0.25).attach_to(base.scene)
+    if draw_plane:
+        plane_center = task_path.mean(axis=0).astype(np.float32)
+        path_len = float(np.linalg.norm(task_path[-1] - task_path[0]))
+        plane_size = max(0.6, path_len + 0.3)
+        ossop.plane(pos=tuple(plane_center),
+                    normal=tuple(plane_normal.astype(np.float32)),
+                    size=(plane_size, plane_size), thickness=2e-3,
+                    rgb=(0.82, 0.82, 0.86), alpha=0.25).attach_to(base.scene)
     segs = np.stack([task_path[:-1], task_path[1:]], axis=1)
     ossop.linsegs(segs=segs, radius=0.0015,
                   srgbs=np.array([0.08, 0.08, 0.08]),

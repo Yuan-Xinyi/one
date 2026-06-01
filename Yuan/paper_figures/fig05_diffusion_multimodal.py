@@ -54,10 +54,10 @@ COLOR_DP = (142/255, 207/255, 201/255)        # #8ECFC9  (paper's DP colour)
 
 DEFAULT_EVAL_NPZ = 'Yuan/system_eval/runs/eval_10k_systematic/eval_set_10k.npz'
 
-task_lists = [5721,2676,1777,2452,7572,7012]
+task_lists = [5721,2676,1777,7572,7012]
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument('--task', type=int, default=7012, help='eval-set task index')
+    p.add_argument('--task', type=int, default=2676, help='eval-set task index')
     p.add_argument('--n-samples', type=int, default=32,
                    help='Number of diffusion samples to draw (pool size).')
     p.add_argument('--n-representatives', type=int, default=4,
@@ -217,7 +217,10 @@ def main():
     print(f'[fig05] L per representative (m): '
           + '  '.join(f'{v:.3f}' for v in L_per_rep))
 
-    body_rgb = _hex_to_rgb(args.color) if args.color else COLOR_DP
+    # Arm body keeps the FR3 default renderer colour unless --color is given;
+    # the length-stick cylinders default to dark grey (overridable by --color).
+    arm_rgb = _hex_to_rgb(args.color) if args.color else None
+    stick_rgb = _hex_to_rgb(args.color) if args.color else (0.15, 0.15, 0.15)
     stick_alpha = min(1.0, args.alpha + 0.5)
 
     # Perpendicular direction in the rolling plane for laying out the
@@ -234,8 +237,11 @@ def main():
     for j, s in enumerate(rep_idx):
         arm, _ = make_fr3_with_pen(use_pen_tcp=True)
         arm.attach_to(base.scene)
-        attach_pen_visual(arm, rgb=body_rgb, alpha=args.alpha)
-        arm.rgb = body_rgb
+        if arm_rgb is not None:
+            attach_pen_visual(arm, rgb=arm_rgb, alpha=args.alpha)
+            arm.rgb = arm_rgb
+        else:
+            attach_pen_visual(arm, alpha=args.alpha)
         arm.alpha = args.alpha
         arm.fk(qs=refined[int(s)])
         # Parallel length stick: solid cylinder along d, length = L (m),
@@ -246,7 +252,7 @@ def main():
             spos = p0 + perp * (centred[j] * float(args.stick_spacing))
             ossop.cylinder(
                 spos=spos, epos=spos + d * L_m,
-                radius=0.004, rgb=body_rgb, alpha=stick_alpha,
+                radius=0.004, rgb=stick_rgb, alpha=stick_alpha,
             ).attach_to(base.scene)
     print(f'[fig05] viewer ready. Close the window to exit.')
     base.run()

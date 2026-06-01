@@ -132,7 +132,7 @@ def main():
     cmap = plt.get_cmap('tab10')
 
     base = make_world(task_path)
-    add_task_path(base, task_path, plane_normal)
+    add_task_path(base, task_path, plane_normal, draw_plane=False)
 
     no_jl_limit_mult = float(d['meta'].get('no_jl_limit_mult', 5.0))
     mode = 'raw (unwrapped)' if args.raw else 'closed-period'

@@ -79,6 +79,23 @@ def resample_savgol(q_smooth: np.ndarray, n_out: int) -> np.ndarray:
                      for j in range(q_smooth.shape[1])], axis=1).astype(np.float32)
 
 
+def pin_endpoints(sm: np.ndarray, raw: np.ndarray) -> np.ndarray:
+    """Force sm[0]==raw[0] and sm[-1]==raw[-1] via a linear correction.
+
+    Adds a per-joint linear ramp between the two endpoint deviations. A
+    linear term has zero second derivative, so the acceleration profile
+    (and thus the franky-safety we smoothed for) is unchanged, while the
+    start/terminal joint configs are preserved exactly.
+    """
+    n = len(sm)
+    if n < 2:
+        return sm
+    d0 = raw[0] - sm[0]
+    d1 = raw[-1] - sm[-1]
+    t = np.linspace(0.0, 1.0, n)[:, None]
+    return (sm + d0[None, :] * (1.0 - t) + d1[None, :] * t).astype(np.float32)
+
+
 def discontinuity_stats(q: np.ndarray) -> tuple[float, float]:
     """Max |1st diff| (velocity proxy) and max |2nd diff| (accel proxy), rad."""
     v = np.abs(np.diff(q, axis=0)).max() if len(q) > 1 else 0.0
@@ -131,6 +148,9 @@ def parse_args():
                    help='spline smoothing penalty (default: GCV auto)')
     p.add_argument('--resample', type=int, default=0,
                    help='resample each trajectory to N points (0 = keep length)')
+    p.add_argument('--no-pin-ends', action='store_true',
+                   help='do NOT pin the start/terminal config to the raw '
+                        'trajectory (by default both endpoints are preserved)')
     p.add_argument('--out-dir', default=None,
                    help='where to write comparison figures (default: NPZ dir)')
     p.add_argument('--dpi', type=int, default=180)
@@ -165,11 +185,17 @@ def main():
         else:
             sm = smooth_spline(raw, args.lam, n_out)
 
+        end_dev_before = float(np.abs(sm[-1] - raw[-1]).max())
+        if not args.no_pin_ends:
+            sm = pin_endpoints(sm, raw)
+        end_dev = float(np.abs(sm[-1] - raw[-1]).max())
+
         v0, a0 = discontinuity_stats(raw)
         v1, a1 = discontinuity_stats(sm)
         print(f'{mode:9s}: {len(raw)}->{len(sm)} pts | '
               f'max|Δq| {v0:.4f}->{v1:.4f} rad | '
-              f'max|Δ²q| {a0:.4f}->{a1:.4f} rad')
+              f'max|Δ²q| {a0:.4f}->{a1:.4f} rad | '
+              f'end-dev {end_dev_before:.4f}->{end_dev:.4f} rad')
 
         out[key] = sm.astype(np.float32)
         out[f'{mode}_q_raw'] = raw                       # keep original for ref

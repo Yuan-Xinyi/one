@@ -55,7 +55,7 @@ def parse_args():
                         'smoothed <mode>_q, to compare the motion')
     p.add_argument('--speed', type=float, default=1.0,
                    help='trajectory frames advanced per tick')
-    p.add_argument('--n-ghosts', type=int, default=8,
+    p.add_argument('--n-ghosts', type=int, default=0,
                    help='# of faint static trail ghosts (0 = none)')
     p.add_argument('--ghost-alpha', type=float, default=0.12)
     p.add_argument('--alpha', type=float, default=0.95,
@@ -65,6 +65,9 @@ def parse_args():
     p.add_argument('--ping-pong', action='store_true',
                    help='sweep forward then backward (default: restart at 0)')
     p.add_argument('--target-distance-m', type=float, default=1.5)
+    p.add_argument('--no-plane', action='store_true',
+                   help='do not draw the task (paper) plane')
+    p.add_argument('--plane-alpha', type=float, default=0.25)
     return p.parse_args()
 
 
@@ -107,6 +110,15 @@ def main():
     ossop.frame().attach_to(base.scene)
 
     line_len = float(args.target_distance_m)
+    # Task (paper) plane: thin disk perpendicular to n_target, spanning the
+    # drawn line. The line lies in this plane (d is perpendicular to nt).
+    if not args.no_plane:
+        plane_center = (p0 + d * (line_len / 2.0)).astype(np.float32)
+        radius = float(line_len) / 2.0 + 0.15
+        ossop.cylinder(spos=plane_center - nt * 1e-3,
+                       epos=plane_center + nt * 1e-3,
+                       radius=radius, rgb=(0.55, 0.65, 0.75),
+                       alpha=float(args.plane_alpha)).attach_to(base.scene)
     ossop.dashed_cylinder(spos=p0, epos=p0 + d * line_len,
                           radius=0.003, rgb=(0.4, 0.4, 0.4),
                           alpha=0.85).attach_to(base.scene)

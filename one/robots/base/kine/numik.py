@@ -12,6 +12,17 @@ class NumIKSolver:
         # active subset mapping: chain-index -> active-index
         self._active_pos_in_chain = np.nonzero(
             chain.active_mask)[0].astype(np.int32)
+        # per active-joint revolute mask (only revolute joints are 2pi
+        # periodic and may be wrapped back into limits without changing FK)
+        self._active_revolute = np.array(
+            [self._jnts[k].jtype == ouc.JntType.REVOLUTE
+             for k in self._active_pos_in_chain], dtype=bool)
+        # ablation toggle: 2pi "limit rescue". When a Newton iterate reaches
+        # the pose target but a revolute joint sits just outside its limits,
+        # try q +/- 2*pi*n to pull it back in-range instead of discarding the
+        # solution. FK is invariant under a 2pi revolute offset, so this is a
+        # near-zero-cost recovery of otherwise-failed solves.
+        self.wrap_to_limits = True
 
     def fk(self, qs_active, root_tf):
         _, _, tip_tf = self._forward(qs_active, root_tf)
@@ -54,6 +65,12 @@ class NumIKSolver:
                 lmt_up = self._chain.lmt_up
                 if (np.any(qs < lmt_lo - 1e-5)
                         or np.any(qs > lmt_up + 1e-5)):
+                    if self.wrap_to_limits:
+                        qs_w = self._wrap_to_limits(qs, lmt_lo, lmt_up)
+                        if qs_w is not None:
+                            return qs_w, {"converged": True,
+                                          "iters": it, "err": delta_x,
+                                          "rescued": True}
                     return qs, {"converged": False,
                                 "iters": it, "err": delta_x,
                                 "reason": "joint_limits_exceeded"}
@@ -91,6 +108,29 @@ class NumIKSolver:
             # print(delta_x)
         return qs, {"converged": False, "iters": max_iter,
                     "err": delta_x, "reason": "max_iters_reached"}
+
+    def _wrap_to_limits(self, qs, lmt_lo, lmt_up, tol=1e-5):
+        """Try to pull an out-of-limit configuration back into the joint
+        limits by adding integer multiples of 2*pi to revolute joints.
+        Returns the wrapped config (FK-equivalent to ``qs``) if every joint
+        ends up in range, otherwise None. Only revolute joints are wrapped;
+        a prismatic joint out of range cannot be rescued."""
+        q = np.array(qs, dtype=qs.dtype)
+        two_pi = 2.0 * np.pi
+        for i in range(q.shape[0]):
+            if q[i] >= lmt_lo[i] - tol and q[i] <= lmt_up[i] + tol:
+                continue
+            if not self._active_revolute[i]:
+                return None
+            # smallest n s.t. q + 2*pi*n >= lmt_lo
+            n = np.ceil((lmt_lo[i] - q[i]) / two_pi)
+            cand = q[i] + two_pi * n
+            if cand <= lmt_up[i] + tol:
+                q[i] = cand
+            else:
+                # full revolution still doesn't fit inside the limit span
+                return None
+        return q
 
     def _forward(self, qs_active, root_tf, local_point=None):
         if qs_active.shape[0] != self._chain.n_active_jnts:

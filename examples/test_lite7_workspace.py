@@ -1,4 +1,4 @@
-"""Visualize Lite6 reachable workspace with self-collision filtering.
+"""Visualize XArm7 reachable workspace with self-collision filtering.
 
 Monte-Carlo samples joint configs within limits, rejects self-collided
 configs via MJCollider, colors each reachable TCP by manipulability
@@ -8,7 +8,7 @@ import numpy as np
 
 import one.collider.mj_collider as ocm
 import one.utils.constant as ouc
-from one import ovw, ossop, xarm_lite6
+from one import ovw, ossop, xarm7
 
 
 def compute_jacobian_and_tcp(robot, qs):
@@ -87,7 +87,7 @@ def map_colors(values, lo_clip=None, hi_clip=None):
 if __name__ == "__main__":
     base = ovw.World(cam_pos=(1.8, 1.8, 1.5),
                      cam_lookat_pos=(0.0, 0.0, 0.4))
-    robot = xarm_lite6.Lite6()
+    robot = xarm7.XArm7()
     robot.attach_to(base.scene)
 
     # build a self-collision checker (robot-only scene)
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     mjc.actors = [robot]
     mjc.compile(margin=0.0)
 
-    # full 3D envelope: all six joints free
+    # full 3D envelope: all seven joints free
     n_vol = 40000
     ok_pts, ok_w = sample_workspace(robot, mjc, n_vol, seed=1)
     if len(ok_pts):
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     keep_rgbs = map_colors(keep_w)
     ossop.point_cloud(keep_pts, keep_rgbs, alpha=0.6).attach_to(base.scene)
 
-    robot.fk(qs=np.zeros(6, dtype=np.float32))
+    robot.fk(qs=np.zeros(7, dtype=np.float32))
     ossop.frame(pos=(0, 0, 0),
                 rotmat=np.eye(3, dtype=np.float32)).attach_to(base.scene)
 

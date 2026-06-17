@@ -2,13 +2,14 @@ import numpy as np
 import one.utils.math as oum
 import one.utils.constant as ouc
 import one.geom.geometry as ogg
+import one.geom.fitting as ogf
 import one.scene.render_model as osrm
 
 
 class CollisionShape:
     def __init__(self, rotmat=None, pos=None):
-        self._tf = oum.tf_from_rotmat_pos(
-            rotmat, pos)
+        self._tf = oum.tf_from_pos_rotmat(
+            pos, rotmat)
         self._geom = None  # lazy geom cache
         self._aabb = None
 
@@ -171,6 +172,67 @@ class CapsuleCollisionShape(CollisionShape):
         return min_corner, max_corner
 
 
+class CylinderCollisionShape(CollisionShape):
+    """A flat-ended cylinder (MuJoCo native ``cylinder`` geom). Same fit as the
+    capsule but the half-length is the full axial half-extent (no rounded caps),
+    so it matches a real cylinder mesh exactly and rests/stacks flat."""
+
+    @classmethod
+    def fit_from_geom(cls, geom, rotmat, pos):
+        vs = (rotmat @ geom.vs.T).T + pos
+        fs = geom.fs
+        mean, pcmat = oum.area_weighted_pca(vs, fs)
+        pc_ax = pcmat[:, -1]
+        proj = (vs - mean) @ pc_ax
+        mn = proj.min()
+        mx = proj.max()
+        center = mean + pc_ax * (mn + mx) * 0.5
+        d = vs - center
+        axial = d @ pc_ax
+        radial_sq = np.sum(d * d, axis=1) - axial * axial
+        radial_sq = np.maximum(radial_sq, 0.0)
+        radius = np.sqrt(radial_sq).max()
+        half_length = max((mx - mn) * 0.5, 0.001)   # flat ends: full half-extent
+        return cls(radius=radius, half_length=half_length,
+                   rotmat=pcmat, pos=center)
+
+    def __init__(self, radius, half_length, rotmat=None, pos=None):
+        super().__init__(rotmat=rotmat, pos=pos)
+        self._radius = radius
+        self._half_length = half_length
+
+    def clone(self):
+        return self.__class__(
+            radius=self._radius, half_length=self._half_length,
+            rotmat=self.rotmat, pos=self.pos)
+
+    def to_render_model(self):
+        return osrm.RenderModel(
+            geom=self.geom, rotmat=self.rotmat, pos=self.pos,
+            rgb=ouc.BasicColor.ORANGE, alpha=ouc.ALPHA.TRANSPARENT)
+
+    def _build_geom(self):
+        return ogg.gen_cylinder_geom(
+            length=2.0 * self._half_length, radius=self._radius)
+
+    @property
+    def radius(self):
+        return self._radius
+
+    @property
+    def half_length(self):
+        return self._half_length
+
+    @property
+    def aabb(self):
+        if self._aabb is not None:
+            return self._aabb
+        half = np.array([self._radius, self._radius, self._half_length],
+                        dtype=np.float32)
+        ext = np.abs(self.rotmat) @ half
+        return self.pos - ext, self.pos + ext
+
+
 class AABBCollisionShape(CollisionShape):
 
     @classmethod
@@ -220,7 +282,7 @@ class AABBCollisionShape(CollisionShape):
 
     def _build_geom(self):
         return ogg.gen_box_geom(
-            half_extents=self._half_extents)
+            xyz_lengths=self._half_extents * 2)
 
 
 class OBBCollisionShape(CollisionShape):
@@ -277,7 +339,7 @@ class OBBCollisionShape(CollisionShape):
 
     def _build_geom(self):
         return ogg.gen_box_geom(
-            half_extents=self._half_extents)
+            xyz_lengths=self._half_extents * 2)
 
 
 class PlaneCollisionShape(CollisionShape):
@@ -327,11 +389,11 @@ class PlaneCollisionShape(CollisionShape):
         return min_corner, max_corner
 
     def _build_geom(self):
-        half_extents = np.array(
-            [100.0, 100.0, 1e-3],
+        xyz_lengths = np.array(
+            [200.0, 200.0, 2e-3],
             dtype=np.float32)
         return ogg.gen_box_geom(
-            half_extents=half_extents)
+            xyz_lengths=xyz_lengths)
 
 
 class MeshCollisionShape(CollisionShape):
@@ -375,3 +437,17 @@ class MeshCollisionShape(CollisionShape):
         min_corner = transformed.min(axis=0)
         max_corner = transformed.max(axis=0)
         return min_corner, max_corner
+
+
+class CvxHullCollisionShape(MeshCollisionShape):
+
+    @classmethod
+    def fit_from_geom(cls, geom, rotmat, pos, file_path=None):
+        return cls(file_path=file_path,
+                   geom=ogf.convex_hull(geom),
+                   rotmat=rotmat, pos=pos)
+
+    def clone(self):
+        return self.__class__(
+            file_path=self._file_path, geom=self._geom,
+            rotmat=self.rotmat, pos=self.pos)

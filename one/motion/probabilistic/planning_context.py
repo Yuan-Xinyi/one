@@ -1,67 +1,59 @@
 import numpy as np
 import one.motion.probabilistic.state_space as ssp
 
+
 class PlanningContext:
+    """Collision + bounds oracle for sampling-based planners.
+
+    Thin and stateless w.r.t. the world: the caller owns the collider. The
+    mechanisms being planned are exactly ``collider.actors``; any other body
+    (static obstacles, a held gripper at a fixed width, etc.) is posed by the
+    caller directly on the collider via ``collider.set_mecba_qpos(...)``,
+    followed by ``clear_cache()`` so memoized collisions don't go stale.
+    """
 
     def __init__(self,
-                 collider,  # mj_collider instance
-                 planning_mecbas=None,  # TODO delete
-                 aux_mecbas=None,  # TODO delete
-                 joint_limits=None,  # autoinfer if None
-                 cd_step_size=np.pi / 180,  # edge collision check step size
-                 cache_size=10000):  # collision cache size
+                 collider,                  # mj_collider; collider.actors = planned mechanisms
+                 joint_limits=None,         # (low, high); autoinfer from actors if None
+                 cd_step_size=np.pi / 180,  # edge collision-check step size
+                 cache_size=10000):         # collision cache capacity
+        if not collider.actors:
+            raise ValueError("collider has no actors; set collider.actors first")
         self.collider = collider
-        if planning_mecbas is None:
-            if not collider.actors:
-                raise ValueError("No planning mecbas provided")
-            self.planning_mecbas = tuple(collider.actors)
-        else:
-            self.planning_mecbas = tuple(planning_mecbas)
-            collider.actors = list(self.planning_mecbas)
-        self.aux_mecbas = aux_mecbas or {}
         self.cd_step_size = cd_step_size
         if joint_limits is None:
-            lmt_low, lmt_high = self._infer_joint_limits()
-        else:
-            lmt_low, lmt_high = joint_limits
-        self.state_space = ssp.RealVectorStateSpace(lmt_low, lmt_high)
-        for mecba, qs in self.aux_mecbas.items():
-            collider.set_mecba_qpos(mecba, qs)
-        # cache for collision checking
+            joint_limits = self._infer_joint_limits()
+        self.state_space = ssp.RealVectorStateSpace(*joint_limits)
         self._collision_cache = {}
         self._cache_size = cache_size
 
     def _infer_joint_limits(self):
-        lmt_low_list = []
-        lmt_high_list = []
-        for mecba in self.planning_mecbas:
+        lows, highs = [], []
+        for mecba in self.collider.actors:
             compiled = mecba.structure.compiled
-            lmt_low_list.append(compiled.jlmt_low_by_idx)
-            lmt_high_list.append(compiled.jlmt_high_by_idx)
-        return np.concatenate(lmt_low_list), np.concatenate(lmt_high_list)
-
-    def set_aux_mecbas(self, mecba, qs):
-        if mecba in self.planning_mecbas:
-            raise ValueError("Cannot set state of planning mecba")
-        self.aux_mecbas[mecba] = qs
-        self.collider.set_mecba_qpos(mecba, qs)
-        self._collision_cache.clear()
+            lows.append(compiled.jlmt_low_by_idx)
+            highs.append(compiled.jlmt_high_by_idx)
+        return np.concatenate(lows), np.concatenate(highs)
 
     def is_state_valid(self, state):
+        if not self.state_space.satisfies_bounds(state):
+            return False
         return not self._is_collided(state)
 
     def is_motion_valid(self, state1, state2):
+        # Validate every interpolated step with is_state_valid (not _is_collided
+        # directly) so subclass overrides of is_state_valid -- e.g. extra
+        # constraints layered on top of collision -- also gate edges, not just
+        # nodes. is_state_valid already includes the bounds + collision checks.
+        if not self.is_state_valid(state1) or not self.is_state_valid(state2):
+            return False
         dist = self.state_space.distance(state1, state2)
-        if dist == 0.0:
-            return not self._is_collided(state1)
         if dist <= self.cd_step_size:
-            return not (self._is_collided(state1)
-                        or self._is_collided(state2))
+            return True
         n_steps = int(np.ceil(dist / self.cd_step_size))
-        for i in range(n_steps + 1):
-            t = i / n_steps
-            s = self.state_space.interpolate(state1, state2, t)
-            if self._is_collided(s):
+        for i in range(1, n_steps):
+            s = self.state_space.interpolate(state1, state2, i / n_steps)
+            if not self.is_state_valid(s):
                 return False
         return True
 
@@ -87,7 +79,6 @@ class PlanningContext:
         key = self._state_to_key(state)
         if key in self._collision_cache:
             return self._collision_cache[key]
-        # TODO joint range check?
         collided = self.collider.is_collided(state)
         if len(self._collision_cache) >= self._cache_size:
             self._collision_cache.clear()

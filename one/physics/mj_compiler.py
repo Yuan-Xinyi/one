@@ -79,10 +79,9 @@ class MJCFCompiler:
             i = ET.SubElement(body_el, "inertial")
             i.set("mass", str(node.inertial.mass))
             self.set_vec3(i, "pos", node.inertial.com)
-            I = node.inertial.inertia
-            Ixx, Ixy, Ixz = I[0]
-            Iyx, Iyy, Iyz = I[1]
-            Izx, Izy, Izz = I[2]
+            Ixx, Ixy, Ixz = node.inertial.inertia[0]
+            Iyx, Iyy, Iyz = node.inertial.inertia[1]
+            Izx, Izy, Izz = node.inertial.inertia[2]
             is_diag = (abs(Ixy) < 1e-10 and abs(Ixz) < 1e-10 and
                        abs(Iyx) < 1e-10 and abs(Iyz) < 1e-10 and
                        abs(Izx) < 1e-10 and abs(Izy) < 1e-10)
@@ -99,6 +98,10 @@ class MJCFCompiler:
             self.compile_body(c, body_el)
 
     def compile_joint(self, j, parent_el):
+        if j.jtype_str == "fixed":
+            # MuJoCo has no 'fixed' joint type: a body with no joint element is
+            # already rigidly fixed to its parent, so emit nothing.
+            return
         if j.jtype_str == "free":
             ET.SubElement(parent_el, "freejoint")
             return
@@ -117,12 +120,12 @@ class MJCFCompiler:
 
     def compile_geom(self, g, parent_el):
         ge = ET.SubElement(parent_el, "geom")
-        # ge.set("name", g.name) # name is optional for geom
+        ge.set("name", g.name)
         ge.set("type", g.gtype)
         # size depends on type
         if g.gtype == "sphere":
             ge.set("size", f"{g.size[0]}")
-        elif g.gtype == "capsule":
+        elif g.gtype in ("capsule", "cylinder"):   # both take (radius, half_len)
             ge.set("size", f"{g.size[0]} {g.size[1]}")
         else:
             ge.set("size", f"{g.size[0]} {g.size[1]} {g.size[2]}")

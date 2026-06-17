@@ -1,5 +1,4 @@
 import numpy as np
-from OpenGL.wrapper import none_or_pass
 
 import one.geom.fitting as ogf
 import one.geom.surface as ogs
@@ -11,7 +10,9 @@ from one import oum, ouc, ovw, ossop, osso, khi_rs007l, or_2fg7
 from one import omppc, ompp
 
 base = ovw.World(
-    cam_pos=(2, 2, 1.5), cam_lookat_pos=(0, 0, 0.75), toggle_auto_cam_orbit=False
+    cam_pos=(2, 2, 1.5),
+    cam_lookat_pos=(0, 0, 0.75),
+    toggle_auto_cam_orbit=False
 )
 ossop.frame().attach_to(base.scene)
 
@@ -20,7 +21,7 @@ robot.attach_to(base.scene)
 
 gripper = or_2fg7.OR2FG7()
 gripper.attach_to(base.scene)
-robot.engage(gripper)
+robot.mount(gripper, robot.runtime_lnks[-1], update=True)
 
 # load bunny1
 bunny = osso.SceneObject.from_file(
@@ -83,7 +84,7 @@ print(f"Selected stable pose for bunny1: seg={seg_id}, ratio={ratio:.6f}")
 pos += np.array([-0.5, 0.0, 0.0], dtype=np.float32)
 bunny.pos = pos
 bunny.rotmat = rotmat
-tf_bunny = oum.tf_from_rotmat_pos(rotmat, pos)
+tf_bunny = oum.tf_from_pos_rotmat(pos, rotmat)
 
 # place bunny2 with random offset
 pos2, rotmat2, seg_id2, ratio2, _ = stable_poses[0]
@@ -92,7 +93,7 @@ pos2 += np.array([0.3, 0.3, 0.0], dtype=np.float32)
 rotmat2 = oum.rotmat_from_euler(0, 0, np.deg2rad(45.0)) @ rotmat2
 bunny2.pos = pos2
 bunny2.rotmat = rotmat2
-tf_bunny2 = oum.tf_from_rotmat_pos(rotmat2, pos2)
+tf_bunny2 = oum.tf_from_pos_rotmat(pos2, rotmat2)
 
 # dump all pre-grasp candidates for standalone IK diagnosis
 pre_pose_pos_list = []
@@ -110,8 +111,8 @@ if len(pre_pose_pos_list) > 0:
         pre_rot=np.asarray(pre_pose_rot_list, dtype=np.float32),
         jaw_width=np.asarray(jaw_width_list, dtype=np.float32),
     )
-    print(
-        f"Saved {len(pre_pose_pos_list)} candidates to rs007l_grasp_candidates.npz")
+    print(f"Saved {len(pre_pose_pos_list)} candidates to"
+          f"rs007l_grasp_candidates.npz")
 
 # --- solve IK for each grasp and visualize ---
 n_solved = 0
@@ -123,11 +124,12 @@ for pose, pre_pose, jaw_width, score in grasps:
     gl_pre_pose = tf_bunny @ pre_pose
     pre_tgt_rotmat = gl_pre_pose[:3, :3]
     pre_tgt_pos = gl_pre_pose[:3, 3]
-    qs = robot.ik_tcp_nearest(tgt_rotmat=pre_tgt_rotmat, tgt_pos=pre_tgt_pos)
+    _s = robot.ik(pre_tgt_pos, pre_tgt_rotmat, tcp=gripper.tcp('grasp_center'), max_solutions=1)
+    qs = _s[0] if _s else None
     if qs is None:
         continue
     mjc.set_mecba_qpos(gripper, (jaw_width / 2, jaw_width / 2))
-    pln_ctx.set_aux_mecbas(gripper, qs=(jaw_width / 2, jaw_width / 2))
+    pln_ctx.clear_cache()
     if not pln_ctx.is_state_valid(qs):
         continue
 
@@ -221,8 +223,8 @@ def move_bunny_once():
     if moved:
         bunny.pos = pos
         bunny2.pos = pos2
-        tf_bunny[:] = oum.tf_from_rotmat_pos(bunny.rotmat, bunny.pos)
-        tf_bunny2[:] = oum.tf_from_rotmat_pos(bunny2.rotmat, bunny2.pos)
+        tf_bunny[:] = oum.tf_from_pos_rotmat(bunny.pos, bunny.rotmat)
+        tf_bunny2[:] = oum.tf_from_pos_rotmat(bunny2.pos, bunny2.rotmat)
         need_replan = True
 
 
@@ -254,22 +256,22 @@ def tick(dt):
             pre_pose_world1 = tf_bunny @ pre_pose
             pre_rot1 = pre_pose_world1[:3, :3]
             pre_pos1 = pre_pose_world1[:3, 3]
-            qs_list1 = robot.ik_tcp(tgt_rotmat=pre_rot1, tgt_pos=pre_pos1)
+            qs_list1 = robot.ik(pre_pos1, pre_rot1, tcp=gripper.tcp('grasp_center'))
             if qs_list1:
                 qs1 = qs_list1[0]
-                pln_ctx.set_aux_mecbas(gripper, qs=(
-                    jaw_width / 2, jaw_width / 2))
+                mjc.set_mecba_qpos(gripper, (jaw_width / 2, jaw_width / 2))
+                pln_ctx.clear_cache()
                 if pln_ctx.is_state_valid(qs1):
                     feasible_bunny1[i] = (qs1, jaw_width)
 
             pre_pose_world2 = tf_bunny2 @ pre_pose
             pre_rot2 = pre_pose_world2[:3, :3]
             pre_pos2 = pre_pose_world2[:3, 3]
-            qs_list2 = robot.ik_tcp(tgt_rotmat=pre_rot2, tgt_pos=pre_pos2)
+            qs_list2 = robot.ik(pre_pos2, pre_rot2, tcp=gripper.tcp('grasp_center'))
             if qs_list2:
                 qs2 = qs_list2[0]
-                pln_ctx.set_aux_mecbas(gripper, qs=(
-                    jaw_width / 2, jaw_width / 2))
+                mjc.set_mecba_qpos(gripper, (jaw_width / 2, jaw_width / 2))
+                pln_ctx.clear_cache()
                 if pln_ctx.is_state_valid(qs2):
                     feasible_bunny2[i] = (qs2, jaw_width)
 
@@ -318,7 +320,8 @@ def tick(dt):
             pre_rot2 = pre_pose_world2[:3, :3]
             pre_pos2 = pre_pose_world2[:3, 3]
 
-            # Ensure: every shared (blue) grasp has corresponding feasible (green) robot poses.
+            # Ensure: every shared (blue) grasp has corresponding
+            # feasible (green) robot poses.
             qs1, _ = feasible_bunny1[i]
             qs2, _ = feasible_bunny2[i]
             if i in drawn_nodes_bunny1:
@@ -371,7 +374,8 @@ def tick(dt):
         need_replan = False
 
     if path is None:
-        pln_ctx.set_aux_mecbas(gripper, aux_qs)
+        mjc.set_mecba_qpos(gripper, aux_qs)
+        pln_ctx.clear_cache()
         path = planner.solve(start=state, goal=current_target)
         if not path:
             return

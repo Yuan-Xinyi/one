@@ -13,6 +13,16 @@ class AnaIKBase:
     ik(...) returns solutions in root frame.
     """
 
+    # sp1's default is_LS tolerance is a tight 1e-5, but the analytic
+    # decomposition of a real (float32) chain carries a ~7e-4 rad closure
+    # residual, so a geometrically-VALID roll branch gets wrongly flagged is_LS
+    # and dropped (false "no solution"). ik_all therefore passes this looser
+    # tol to sp1_run for the orientation (roll) subproblems -- above the float32
+    # noise floor, below any genuinely-bad branch. Position subproblems
+    # (sp2/sp3/sp4) keep their tight is_LS, so an unreachable target still
+    # yields no solution. (Tighten this only with a float64 analytic-IK path.)
+    sp1_tol = 1e-3
+
     def __init__(self, chain, joint_limits=None):
         self.chain = chain
         if joint_limits is None:
@@ -30,19 +40,42 @@ class AnaIKBase:
         ref_qs=None,
         **kwargs,
     ):
-        root_tf = oum.tf_from_rotmat_pos(root_rotmat, root_pos)
-        tgt_tf = oum.tf_from_rotmat_pos(tgt_rotmat, tgt_pos)
+        root_tf = oum.tf_from_pos_rotmat(root_pos, root_rotmat)
+        tgt_tf = oum.tf_from_pos_rotmat(tgt_pos, tgt_rotmat)
         tgt_tf_in_root = np.linalg.inv(root_tf) @ tgt_tf
         sols = self.ik_all(tgt_tf_in_root, **kwargs)
         if not sols:
             return []
         if ref_qs is not None:
             ref_qs = np.asarray(ref_qs, dtype=np.float32)
-            order = np.argsort([np.linalg.norm(q - ref_qs) for q in sols])
-            sols = [sols[i] for i in order]
+            # Rank by 2pi-wrapped (physical) joint distance so the "nearest"
+            # pick is the physically-closest branch, not whichever happens to
+            # be closest after each joint is snapped to [-pi, pi]. Then unwrap
+            # the returned values toward ref so the joint trajectory stays
+            # continuous (no spurious ~2pi jumps) where joint limits allow.
+            order = np.argsort([self._wrapped_dist(q, ref_qs) for q in sols])
+            sols = [self._unwrap_to_ref(sols[i], ref_qs) for i in order]
         if max_solutions is not None:
             sols = sols[:max_solutions]
         return sols
+
+    @staticmethod
+    def _wrapped_dist(q, ref_qs):
+        """Physical joint distance with each diff wrapped into [-pi, pi]."""
+        d = (q - ref_qs + np.pi) % (2.0 * np.pi) - np.pi
+        return float(np.linalg.norm(d))
+
+    def _unwrap_to_ref(self, q, ref_qs):
+        """Shift each joint of solution ``q`` by the multiple of 2*pi that
+        brings it closest to ``ref_qs`` (continuity), without crossing joint
+        limits. Prismatic joints (small values) are unaffected since
+        round(delta / 2pi) == 0 for them."""
+        qu = q + np.round((ref_qs - q) / (2.0 * np.pi)) * (2.0 * np.pi)
+        if self.joint_limits is not None:
+            lo, hi = self.joint_limits
+            out_of_range = (qu < lo) | (qu > hi)
+            qu = np.where(out_of_range, q, qu)
+        return qu.astype(np.float32)
 
     def ik_all(self, tgt_tf_in_root, **kwargs):
         raise NotImplementedError
@@ -72,35 +105,48 @@ class AnaIKBase:
 
 
 class S456X12(AnaIKBase):
-    def __init__(self, chain, joint_limits=None):
+    # Max allowed miss (m) for the wrist (axes 4,5,6 concurrent) and the
+    # shoulder (axes 1,2 intersecting). Above this the analytic decomposition
+    # only approximates the chain, so construction is rejected.
+    intersect_tol = 1e-6
+
+    def __init__(self, chain, joint_limits=None, intersect_tol=None):
         super().__init__(chain, joint_limits=joint_limits)
-        o1 = np.asarray(self.chain.origins[0], dtype=np.float32)
-        o2 = np.asarray(self.chain.origins[1], dtype=np.float32)
-        o3 = np.asarray(self.chain.origins[2], dtype=np.float32)
-        o4 = np.asarray(self.chain.origins[3], dtype=np.float32)
-        o5 = np.asarray(self.chain.origins[4], dtype=np.float32)
-        o6 = np.asarray(self.chain.origins[5], dtype=np.float32)
-        a4 = oum.unit_vec(self.chain.axes[3], return_length=False)
-        a5 = oum.unit_vec(self.chain.axes[4], return_length=False)
-        a6 = oum.unit_vec(self.chain.axes[5], return_length=False)
-        # ow = origin of wrist center (intersection of 456),
-        # compute it by least squares
-        A = np.zeros((3, 3), dtype=np.float32)
-        b = np.zeros(3, dtype=np.float32)
-        for a, o in [(a4, o4), (a5, o5), (a6, o6)]:
-            a = oum.unit_vec(a, return_length=False)
-            i_minus_aat = np.eye(3, dtype=np.float32) - np.outer(a, a)
-            A += i_minus_aat
-            b += i_minus_aat @ o
-        ow = np.linalg.solve(A, b)
+        tol = self.intersect_tol if intersect_tol is None else intersect_tol
+        o = [np.asarray(self.chain.origins[i], dtype=np.float32)
+             for i in range(6)]
+        a = [oum.unit_vec(self.chain.axes[i], return_length=False)
+             for i in range(6)]
+        # Relocate the joint origins onto the wrist center (intersection of axes
+        # 4,5,6) and shoulder center (intersection of axes 1,2). The sp3/sp2
+        # position decomposition below assumes joints 1,2 share an origin
+        # (p12 == 0): |p16| is measured from o1 but the sp3 magnitude is from o2,
+        # so any o1->o2 offset ALONG the axes leaks straight into the position
+        # error -- hence we solve for the true intersection rather than trusting
+        # the URDF origins. Reject chains that are not actually S456 (spherical
+        # wrist) + X12 (axes 1,2 meeting): there the "intersection" is a poor fit
+        # and the solution would be silently degraded.
+        ow, wrist_gap = oum.intersect_lines(
+            [(o[3], a[3]), (o[4], a[4]), (o[5], a[5])])
+        if ow is None or wrist_gap > tol:
+            raise ValueError(
+                f"S456X12: axes 4,5,6 are not concurrent (not a spherical "
+                f"wrist); gap = {wrist_gap * 1e3:.3f} mm > {tol * 1e3:.3f} mm")
+        shoulder = oum.closest_point_between_lines(o[0], a[0], o[1], a[1])
+        if shoulder is None or shoulder[1] > tol:
+            gap = float('inf') if shoulder is None else shoulder[1]
+            raise ValueError(
+                f"S456X12: axes 1 and 2 do not intersect (not X12); "
+                f"gap = {gap * 1e3:.3f} mm > {tol * 1e3:.3f} mm")
+        osh = shoulder[0].astype(np.float32)
         # paper-style vectors
-        self.p01 = o1.astype(np.float32)
-        self.p12 = (o2 - o1).astype(np.float32)  # 0,0,0
-        self.p23 = (o3 - o2).astype(np.float32)
-        self.p34 = (ow - o3).astype(np.float32)
+        self.p01 = osh.astype(np.float32)
+        self.p12 = np.zeros(3, dtype=np.float32)
+        self.p23 = (o[2] - osh).astype(np.float32)
+        self.p34 = (ow - o[2]).astype(np.float32)
         self.p45 = np.zeros(3, dtype=np.float32)
         self.p56 = np.zeros(3, dtype=np.float32)
-        self.p6t = (o6 - ow).astype(np.float32)
+        self.p6t = (o[5] - ow).astype(np.float32)
         self.h1 = self.chain.axes[0]
         self.h2 = self.chain.axes[1]
         self.h3 = self.chain.axes[2]
@@ -165,8 +211,10 @@ class S456X12(AnaIKBase):
                     p1 = oum.orth_vec(self.h6)
                     k = self.h6
                     p2 = R54 @ R43 @ R36 @ p1
-                    # compute q6 by sp1
-                    q6, is_ls = orbkisp1.sp1_run(p1, p2, k)
+                    # compute q6 by sp1 with the looser sp1_tol: the float32
+                    # closure residual trips the tight is_LS even for valid
+                    # branches (see sp1_tol).
+                    q6, is_ls = orbkisp1.sp1_run(p1, p2, k, tol=self.sp1_tol)
                     if is_ls:
                         continue
                     qs = np.array([q1, q2, q3, q4, q5, q6], dtype=np.float32)
@@ -175,33 +223,47 @@ class S456X12(AnaIKBase):
 
 
 class P234X56(AnaIKBase):
-    def __init__(self, chain, joint_limits=None):
+    # Structural tolerances. parallel_tol: max |sin| misalignment of axes
+    # 2,3,4 (P234). intersect_tol: max miss (m) of axes 5,6 (X56). Above
+    # these the analytic decomposition only approximates the chain.
+    parallel_tol = 1e-6
+    intersect_tol = 1e-6
+
+    def __init__(self, chain, joint_limits=None,
+                 parallel_tol=None, intersect_tol=None):
         super().__init__(chain, joint_limits=joint_limits)
-        o1 = np.asarray(self.chain.origins[0], dtype=np.float32)
-        o2 = np.asarray(self.chain.origins[1], dtype=np.float32)
-        o3 = np.asarray(self.chain.origins[2], dtype=np.float32)
-        o4 = np.asarray(self.chain.origins[3], dtype=np.float32)
-        o5 = np.asarray(self.chain.origins[4], dtype=np.float32)
-        o6 = np.asarray(self.chain.origins[5], dtype=np.float32)
-        a5 = oum.unit_vec(self.chain.axes[4], return_length=False)
-        a6 = oum.unit_vec(self.chain.axes[5], return_length=False)
-        # ow = origin of wrist center (intersection of 56)
-        A = np.zeros((3, 3), dtype=np.float32)
-        b = np.zeros(3, dtype=np.float32)
-        for a, o in [(a5, o5), (a6, o6)]:
-            a = oum.unit_vec(a, return_length=False)
-            i_minus_aat = np.eye(3, dtype=np.float32) - np.outer(a, a)
-            A += i_minus_aat
-            b += i_minus_aat @ o
-        o56 = np.linalg.solve(A, b)
+        ptol = self.parallel_tol if parallel_tol is None else parallel_tol
+        itol = self.intersect_tol if intersect_tol is None else intersect_tol
+        o = [np.asarray(self.chain.origins[i], dtype=np.float32)
+             for i in range(6)]
+        a = [oum.unit_vec(self.chain.axes[i], return_length=False)
+             for i in range(6)]
+        # Reject chains that are not actually P234 (axes 2,3,4 parallel -- the
+        # decomposition folds q2+q3+q4 into one rotation about their common
+        # axis) + X56 (axes 5,6 intersect at the wrist center o56). Unlike
+        # S456X12 this solver already uses the full link offsets (no origin
+        # relocation needed); it just silently assumes the structure, so guard.
+        par_gap = max(float(np.linalg.norm(np.cross(a[1], a[2]))),
+                      float(np.linalg.norm(np.cross(a[1], a[3]))))
+        if par_gap > ptol:
+            raise ValueError(
+                f"P234X56: axes 2,3,4 are not parallel; misalignment "
+                f"|sin| = {par_gap:.2e} > {ptol:.0e}")
+        wrist = oum.closest_point_between_lines(o[4], a[4], o[5], a[5])
+        if wrist is None or wrist[1] > itol:
+            gap = float('inf') if wrist is None else wrist[1]
+            raise ValueError(
+                f"P234X56: axes 5 and 6 do not intersect (not X56); "
+                f"gap = {gap * 1e3:.3f} mm > {itol * 1e3:.3f} mm")
+        o56 = wrist[0].astype(np.float32)
         # paper-style vectors
-        self.p01 = o1.astype(np.float32)
-        self.p12 = (o2 - o1).astype(np.float32)  # 0,0,0
-        self.p23 = (o3 - o2).astype(np.float32)
-        self.p34 = (o4 - o3).astype(np.float32)
-        self.p45 = (o56 - o4).astype(np.float32)
+        self.p01 = o[0].astype(np.float32)
+        self.p12 = (o[1] - o[0]).astype(np.float32)
+        self.p23 = (o[2] - o[1]).astype(np.float32)
+        self.p34 = (o[3] - o[2]).astype(np.float32)
+        self.p45 = (o56 - o[3]).astype(np.float32)
         self.p56 = np.zeros(3, dtype=np.float32)
-        self.p6t = (o6 - o56).astype(np.float32)
+        self.p6t = (o[5] - o56).astype(np.float32)
         self.h1 = self.chain.axes[0]
         self.h2 = self.chain.axes[1]
         self.h3 = self.chain.axes[2]
@@ -246,7 +308,7 @@ class P234X56(AnaIKBase):
                 k = self.h2  # assume all parallel axes have same direction as h2
                 p1 = R45 @ self.h6
                 p2 = R10 @ R06 @ self.h6
-                q234, is_ls = orbkisp1.sp1_run(p1, p2, k)
+                q234, is_ls = orbkisp1.sp1_run(p1, p2, k, tol=self.sp1_tol)
                 if is_ls:
                     continue
                 R14 = oum.rotmat_from_axangle(self.h2, q234)
@@ -256,7 +318,7 @@ class P234X56(AnaIKBase):
                 k = -self.h6
                 p1 = R45.T @ self.h2
                 p2 = R06.T @ R01 @ self.h2
-                q6, is_ls = orbkisp1.sp1_run(p1, p2, k)
+                q6, is_ls = orbkisp1.sp1_run(p1, p2, k, tol=self.sp1_tol)
                 if is_ls:
                     continue
                 # compute q3 by sp3
@@ -278,7 +340,7 @@ class P234X56(AnaIKBase):
                     p2 = rhs
                     p1 = self.p23 + R23 @ self.p34
                     k = self.h2
-                    q2, is_ls = orbkisp1.sp1_run(p1, p2, k)
+                    q2, is_ls = orbkisp1.sp1_run(p1, p2, k, tol=self.sp1_tol)
                     if is_ls:
                         continue
                     # compute q4 by subtraction
@@ -289,37 +351,3 @@ class P234X56(AnaIKBase):
                     qs = np.array([q1, q2, q3, q4, q5, q6], dtype=np.float32)
                     all_qs.append(qs)
         return all_qs
-
-# class P23X12X34X56(AnaIKBase):
-#     def __init__(self, chain, joint_limits=None):
-#         super().__init__(chain, joint_limits=joint_limits)
-#         o1 = np.asarray(self.chain.origins[0], dtype=np.float32)
-#         o2 = np.asarray(self.chain.origins[1], dtype=np.float32)
-#         o3 = np.asarray(self.chain.origins[2], dtype=np.float32)
-#         o4 = np.asarray(self.chain.origins[3], dtype=np.float32)
-#         o5 = np.asarray(self.chain.origins[4], dtype=np.float32)
-#         o6 = np.asarray(self.chain.origins[5], dtype=np.float32)
-#         a2 = oum.unit_vec(self.chain.axes[1], return_length=False)
-#         a4 = oum.unit_vec(self.chain.axes[3], return_length=False)
-#         a6 = oum.unit_vec(self.chain.axes[5], return_length=False)
-#         # ow2 = origin of second wrist center (intersection of 34),
-#         # ow1 = origin of first wrist center (intersection of 12),
-#         # compute them by least squares
-#         A2 = np.zeros((3, 3), dtype=np.float32)
-#         b2 = np.zeros(3, dtype=np.float32)
-#         for a, o in [(a2, o2), (a4, o4), (a6, o6)]:
-#             a = oum.unit_vec(a, return_length=False)
-#             i_minus_aat = np.eye(3, dtype=np.float32) - np.outer(a, a)
-#             A2 += i_minus_aat
-#             b2 += i_minus_aat @ o
-#         ow2 = np.linalg.solve(A2, b2)
-#         A1 = np.zeros((3, 3), dtype=np.float32)
-#         b1 = np.zeros(3, dtype=np.float32)
-#         for a, o in [(a2, o2), (a4, ow2), (a6, o6)]:
-#             a = oum.unit_vec(a, return_length=False)
-#             i_minus_aat = np.eye(3, dtype=np.float32) - np.outer(a, a)
-#             A1 += i_minus_aat
-#             b1 += i_minus_aat @ o
-#         ow1 = np.linalg.solve(A1, b1)
-#         # paper-style vectors
-#         self.p01 =

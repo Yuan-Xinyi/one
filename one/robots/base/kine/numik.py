@@ -12,17 +12,6 @@ class NumIKSolver:
         # active subset mapping: chain-index -> active-index
         self._active_pos_in_chain = np.nonzero(
             chain.active_mask)[0].astype(np.int32)
-        # per active-joint revolute mask (only revolute joints are 2pi
-        # periodic and may be wrapped back into limits without changing FK)
-        self._active_revolute = np.array(
-            [self._jnts[k].jtype == ouc.JntType.REVOLUTE
-             for k in self._active_pos_in_chain], dtype=bool)
-        # ablation toggle: 2pi "limit rescue". When a Newton iterate reaches
-        # the pose target but a revolute joint sits just outside its limits,
-        # try q +/- 2*pi*n to pull it back in-range instead of discarding the
-        # solution. FK is invariant under a 2pi revolute offset, so this is a
-        # near-zero-cost recovery of otherwise-failed solves.
-        self.wrap_to_limits = True
 
     def fk(self, qs_active, root_tf):
         _, _, tip_tf = self._forward(qs_active, root_tf)
@@ -38,12 +27,23 @@ class NumIKSolver:
         else:
             return [qs]
 
+    def ik_partial(self, root_rotmat, root_pos, tgt_pos=None,
+                   axis_constraints=None, loc_tf=None,
+                   qs_active_init=None, max_iter=50,
+                   return_infos=False, **kwargs):
+        qs, info = self._backward_partial(
+            root_rotmat, root_pos, tgt_pos, axis_constraints, loc_tf,
+            qs_active_init=qs_active_init, max_iter=max_iter, **kwargs)
+        if not info["converged"]:
+            return ([], [info]) if return_infos else []
+        return ([qs], [info]) if return_infos else [qs]
+
     def _backward(self, root_rotmat, root_pos, tgt_rotmat, tgt_pos,
                   qs_active_init=None, max_iter=50,
                   tol_pos=1e-4, tol_rot=1e-3, step_scale=1.0,
                   pos_err_max=0.1, rot_err_max=0.3):
-        root_tf = oum.tf_from_rotmat_pos(root_rotmat, root_pos)
-        tgt_tf = oum.tf_from_rotmat_pos(tgt_rotmat, tgt_pos)
+        root_tf = oum.tf_from_pos_rotmat(root_pos, root_rotmat)
+        tgt_tf = oum.tf_from_pos_rotmat(tgt_pos, tgt_rotmat)
         if qs_active_init is None:
             qs = (self._chain.lmt_lo + self._chain.lmt_up) * 0.5
         else:
@@ -65,12 +65,6 @@ class NumIKSolver:
                 lmt_up = self._chain.lmt_up
                 if (np.any(qs < lmt_lo - 1e-5)
                         or np.any(qs > lmt_up + 1e-5)):
-                    if self.wrap_to_limits:
-                        qs_w = self._wrap_to_limits(qs, lmt_lo, lmt_up)
-                        if qs_w is not None:
-                            return qs_w, {"converged": True,
-                                          "iters": it, "err": delta_x,
-                                          "rescued": True}
                     return qs, {"converged": False,
                                 "iters": it, "err": delta_x,
                                 "reason": "joint_limits_exceeded"}
@@ -109,28 +103,75 @@ class NumIKSolver:
         return qs, {"converged": False, "iters": max_iter,
                     "err": delta_x, "reason": "max_iters_reached"}
 
-    def _wrap_to_limits(self, qs, lmt_lo, lmt_up, tol=1e-5):
-        """Try to pull an out-of-limit configuration back into the joint
-        limits by adding integer multiples of 2*pi to revolute joints.
-        Returns the wrapped config (FK-equivalent to ``qs``) if every joint
-        ends up in range, otherwise None. Only revolute joints are wrapped;
-        a prismatic joint out of range cannot be rescued."""
-        q = np.array(qs, dtype=qs.dtype)
-        two_pi = 2.0 * np.pi
-        for i in range(q.shape[0]):
-            if q[i] >= lmt_lo[i] - tol and q[i] <= lmt_up[i] + tol:
-                continue
-            if not self._active_revolute[i]:
-                return None
-            # smallest n s.t. q + 2*pi*n >= lmt_lo
-            n = np.ceil((lmt_lo[i] - q[i]) / two_pi)
-            cand = q[i] + two_pi * n
-            if cand <= lmt_up[i] + tol:
-                q[i] = cand
-            else:
-                # full revolution still doesn't fit inside the limit span
-                return None
-        return q
+    def _backward_partial(self, root_rotmat, root_pos, tgt_pos=None,
+                          axis_constraints=None, loc_tf=None,
+                          qs_active_init=None, max_iter=50,
+                          tol_pos=1e-4, tol_axis=1e-3,
+                          step_scale=1.0, pos_err_max=0.1,
+                          axis_err_max=0.3, pos_weight=1.0,
+                          axis_weight=0.2):
+        if tgt_pos is None and axis_constraints is None:
+            raise ValueError("tgt_pos or axis_constraints must be provided")
+        root_tf = oum.tf_from_pos_rotmat(root_pos, root_rotmat)
+        loc_tf = oum.ensure_tf(loc_tf)
+        loc_pos = loc_tf[:3, 3]
+        loc_rotmat = loc_tf[:3, :3]
+        tgt_pos = None if tgt_pos is None else np.asarray(
+            tgt_pos, dtype=np.float32)
+        axis_constraints = oum.parse_axis_constraints(axis_constraints)
+        if qs_active_init is None:
+            qs = (self._chain.lmt_lo + self._chain.lmt_up) * 0.5
+        else:
+            qs = np.array(qs_active_init, dtype=np.float32)
+            assert qs.shape[0] == self._chain.n_active_jnts
+        lmt_lo = self._chain.lmt_lo
+        lmt_up = self._chain.lmt_up
+        delta_x = np.zeros(0, dtype=np.float32)
+        for it in range(int(max_iter)):
+            _, jacmat, cur_tip_tf = self._forward(qs, root_tf, local_point=loc_pos)
+            cur_pos = cur_tip_tf[:3, :3] @ loc_pos + cur_tip_tf[:3, 3]
+            cur_rotmat = cur_tip_tf[:3, :3] @ loc_rotmat
+            deltas = []
+            jac_rows = []
+            pos_err = 0.0
+            if tgt_pos is not None:
+                delta_p = tgt_pos - cur_pos
+                pos_err = np.linalg.norm(delta_p)
+                if pos_err > pos_err_max:
+                    delta_p = delta_p / pos_err * pos_err_max
+                deltas.append(pos_weight * delta_p)
+                jac_rows.append(pos_weight * jacmat[:3])
+            axis_err = 0.0
+            for local_axis, target_axis in axis_constraints:
+                cur_axis = oum.unit_vec(
+                    cur_rotmat @ local_axis, return_length=False)
+                angle = float(oum.axis_angle_error(cur_axis, target_axis))
+                axis_err = max(axis_err, angle)
+                delta_theta = np.cross(cur_axis, target_axis)
+                delta_norm = np.linalg.norm(delta_theta)
+                if delta_norm > axis_err_max:
+                    delta_theta = delta_theta / delta_norm * axis_err_max
+                deltas.append(axis_weight * delta_theta)
+                jac_rows.append(axis_weight * jacmat[3:6])
+            if pos_err <= tol_pos and axis_err <= tol_axis:
+                if (np.any(qs < lmt_lo - 1e-5)
+                        or np.any(qs > lmt_up + 1e-5)):
+                    return qs, {"converged": False,
+                                "iters": it, "err": delta_x,
+                                "reason": "joint_limits_exceeded",
+                                "pos_err": pos_err,
+                                "axis_err": axis_err}
+                return qs, {"converged": True,
+                            "iters": it, "err": delta_x,
+                            "pos_err": pos_err,
+                            "axis_err": axis_err}
+            delta_x = np.concatenate(deltas).astype(np.float32)
+            task_jac = np.vstack(jac_rows).astype(np.float32)
+            delta_q = np.linalg.lstsq(task_jac, delta_x, rcond=1e-4)[0]
+            qs = np.clip(qs + step_scale * delta_q, lmt_lo, lmt_up)
+        return qs, {"converged": False, "iters": max_iter,
+                    "err": delta_x, "reason": "max_iters_reached",
+                    "pos_err": pos_err, "axis_err": axis_err}
 
     def _forward(self, qs_active, root_tf, local_point=None):
         if qs_active.shape[0] != self._chain.n_active_jnts:

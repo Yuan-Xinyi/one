@@ -1,3 +1,5 @@
+"""Geometry container (vertices/faces/normals) and mesh-level helpers used
+throughout the scene/collision/grasp stack."""
 import numpy as np
 import one.utils.math as oum
 import one.utils.constant as ouc
@@ -20,10 +22,13 @@ def gen_geom_from_raw(vs, fs=None):
 
 
 def gen_cylinder_geom(length, radius=0.05, n_segs=8):
+    """Cylinder of total height ``length`` CENTERED on the origin along +Z
+    (spans [-length/2, +length/2]) -- matches the MuJoCo cylinder geom
+    convention. gen_cylinder_rmodel lifts it for the (0->length) primitives."""
     key = ("cylinder", radius, length, n_segs)
     if key in _geom_cache:
         return _geom_cache[key]
-    profile = [(radius, 0.0), (radius, length)]
+    profile = [(radius, -length / 2.0), (radius, length / 2.0)]
     verts, faces = osgo.revolve(profile, n_segs=n_segs)
     g = _Geom(vs=verts, fs=faces)
     _geom_cache[key] = g
@@ -87,8 +92,8 @@ def gen_arrow_geom(
     return g
 
 
-def gen_box_geom(half_extents=(0.05, 0.05, 0.05)):
-    hx, hy, hz = half_extents
+def gen_box_geom(xyz_lengths=(0.1, 0.1, 0.1)):
+    hx, hy, hz = xyz_lengths[0] / 2, xyz_lengths[1] / 2, xyz_lengths[2] / 2
     key = ("box", hx, hy, hz)
     if key in _geom_cache:
         return _geom_cache[key]

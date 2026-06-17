@@ -13,7 +13,7 @@ bunny.alpha = 0.4
 base = ovw.World(cam_pos=(3.5, 1, 3.5),
                  cam_lookat_pos=(0, 0, .5),
                  toggle_auto_cam_orbit=False)
-builtins.base = base
+setattr(builtins, "base", base)
 oframe.attach_to(base.scene)
 bunny.attach_to(base.scene)
 for i in np.linspace(5.5, 15.5, 1):
@@ -25,25 +25,25 @@ plane_bottom = ossop.plane()
 plane_bottom.toggle_render_collision = True
 plane_bottom.attach_to(base.scene)
 wall_left = ossop.box(pos=(.5, .35, .2),
-                      half_extents=(.355, .005, .2),
+                      xyz_lengths=(0.71, 0.01, 0.4),
                       collision_type=ouc.CollisionType.AABB,
                       alpha=ouc.ALPHA.TRANSPARENT,
                       is_free=False)
 wall_left.attach_to(base.scene)
 wall_right = ossop.box(pos=(.5, -.35, .2),
-                       half_extents=(.355, .005, .2),
+                       xyz_lengths=(0.71, 0.01, 0.4),
                        collision_type=ouc.CollisionType.AABB,
                        alpha=ouc.ALPHA.TRANSPARENT,
                        is_free=False)
 wall_right.attach_to(base.scene)
 wall_front = ossop.box(pos=(.85, 0, .2),
-                       half_extents=(.005, .355, .2),
+                       xyz_lengths=(0.01, 0.71, 0.4),
                        collision_type=ouc.CollisionType.AABB,
                        alpha=ouc.ALPHA.TRANSPARENT,
                        is_free=False)
 wall_front.attach_to(base.scene)
 wall_back = ossop.box(pos=(.15, 0, .2),
-                      half_extents=(.005, .355, .2),
+                      xyz_lengths=(0.01, 0.71, 0.4),
                       collision_type=ouc.CollisionType.AABB,
                       alpha=ouc.ALPHA.TRANSPARENT,
                       is_free=False)
@@ -55,7 +55,7 @@ base_pos = np.array([0, 0.7, 0])
 robot1 = khi_rs007l.RS007L()
 # robot1.is_free=True
 robot1.attach_to(base.scene)
-robot1.set_rotmat_pos(rotmat=base_rotmat, pos=base_pos)
+robot1.set_pos_rotmat(pos=base_pos, rotmat=base_rotmat)
 robot1.toggle_render_collision = True
 robot1.fk(qs=[0, 0, -np.pi / 4, 0, 0, 0])
 robot1.alpha = 0.1

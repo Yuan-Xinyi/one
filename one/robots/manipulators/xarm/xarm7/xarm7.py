@@ -19,11 +19,6 @@ import one.robots.base.urdf_loader as orul
 
 _URDF_PATH = os.path.join(os.path.dirname(__file__), 'xarm7.urdf')
 
-# default home: arm folded forward/up into a ready-to-reach pose (not the
-# all-zeros stretched-out pose).
-HOME_CONF = np.array([0.0, -0.7494, 0.0, 1.1920, 0.0, 1.9414, 0.0],
-                     dtype=np.float32)
-
 
 def prepare_mechstruct(collision_type=ouc.CollisionType.MESH):
     urdf_dir = os.path.dirname(os.path.abspath(_URDF_PATH))
@@ -42,8 +37,6 @@ class XArm7(orbmb.MechBase):
         return prepare_mechstruct()
 
     def __init__(self, rotmat=None, pos=None, home_qs=None, is_free=False):
-        if home_qs is None:
-            home_qs = HOME_CONF.copy()
         super().__init__(rotmat=rotmat, pos=pos,
                          home_qs=home_qs, is_free=is_free)
         c = self.structure.compiled

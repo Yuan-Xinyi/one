@@ -77,7 +77,11 @@ class SELIKSolver(orbkin.NumIKSolver):
             distances = np.linalg.norm(
                 seeds - prefer_qs[np.newaxis, :], axis=1)
             sorted_indices = np.argsort(distances)
-            seeds = seeds[sorted_indices]
+            # Try the reference config itself FIRST: for a continuation step the
+            # previous solution already (nearly) satisfies the slightly-moved
+            # target, so the backbone solver converges right at it -- keeping the
+            # arm on one IK branch instead of jumping to a closer CVT seed.
+            seeds = np.vstack([prefer_qs[np.newaxis, :], seeds[sorted_indices]])
         sols = []
         for qs0 in seeds:
             qs, info = self._backward(

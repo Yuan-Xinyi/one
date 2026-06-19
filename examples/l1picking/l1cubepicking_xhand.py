@@ -57,6 +57,13 @@ ROBOT_BASE_POS = np.array([0.30, -0.25, TABLE_TOP_Z], dtype=np.float32)
 FLANGE_Z = 0.0
 MOUNT_RPY = 4.71239                  # hand yaw about Z at the flange (270 deg)
 
+# xArm7 home (J1..J7, degrees). The all-zeros default has the arm/hand resting
+# in collision with the table, so RRT from it never connects (it burns all
+# max_iters, ~28 s, freezing the viewer on first play). This reachable, clear-of-
+# table config is the planning start AND the IK seed for the grasp search.
+HOME_DEG = np.array([-16.9, -34.8, 18.8, 20.5, 86.9, 12.0, -79.8],
+                    dtype=np.float32)
+
 CUBE_SIZE = 0.06
 CUBE_FORWARD = 0.35
 CUBE_POS = np.array([ROBOT_BASE_POS[0] + CUBE_FORWARD, ROBOT_BASE_POS[1],
@@ -360,6 +367,12 @@ def main():
     robot.mount(robot.left_hand, robot.runtime_lnks[-1], mount_tf, update=True)
     hand = robot.left_hand
     sphere_finger = sphere_finger_map(hand)
+
+    # Drive the arm to the collision-free HOME before the collider/ctx are built,
+    # so the ACM and the `home` used everywhere below reflect this valid pose.
+    qs_home = robot.qs.astype(np.float64).copy()
+    qs_home[robot.chain(CHAIN).active_jnt_ids] = np.deg2rad(HOME_DEG)
+    robot.fk(qs=qs_home)
 
     ossop.frame().attach_to(base.scene)
     for e in [robot] + statics + [cube]:

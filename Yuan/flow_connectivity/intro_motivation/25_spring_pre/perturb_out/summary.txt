@@ -1,0 +1,20 @@
+=== scan A (31 points) ===
+  branch count: min=3, max=4, unique=[3, 4]
+  argmax switches: 1
+    at theta_d_deg~+8.000: g0 -> g2
+  min top1-top2 gap: +0.0307
+  g0 bimodal in 19/29 = 65.5% of points where g0 present
+
+=== scan B (21 points) ===
+  branch count: min=2, max=4, unique=[2, 3, 4]
+  argmax switches: 0
+  min top1-top2 gap: +0.0000
+  g0 bimodal in 20/21 = 95.2% of points where g0 present
+
+=== scan C (33 points) ===
+  branch count: min=3, max=4, unique=[3, 4]
+  argmax switches: 2
+    at delta_cm~-2.000 [d0]: g1 -> g0
+    at delta_cm~-4.000 [d0xn0]: g1 -> g0
+  min top1-top2 gap: +0.0427
+  g0 bimodal in 29/33 = 87.9% of points where g0 present

@@ -1,0 +1,4664 @@
+seed=0, task L_max=1.500m, p_tgt=[-0.2859515  0.2506162  0.51074  ]
+    filter: no_converge=41, near_limit(<0.05)=9, dup(<0.08)=42
+
+=== 4 SMM branches at seed 0 task start ===
+  br0: T=127, arc=3.78 rad, open, members=14
+  br1: T=82, arc=2.43 rad, open, members=2
+  br2: T=51, arc=1.50 rad, open, members=7
+  br3: T=80, arc=2.37 rad, open, members=4
+
+  6-DOF strict rollout: 313 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.060, std=0.010, range=[0.051, 0.088]
+    br1: n=82, mean=0.112, std=0.161, range=[0.035, 0.571]
+    br2: n=51, mean=0.188, std=0.224, range=[0.037, 0.571]
+    br3: n=80, mean=0.275, std=0.255, range=[0.003, 0.571]
+
+saved: Yuan/RL/intro_motivation/data/task_seed0_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed0_smm_joints.png
+seed=0, task L_max=1.500m, p_tgt=[-0.2859515  0.2506162  0.51074  ]
+    filter: no_converge=41, near_limit(<0.05)=9, dup(<0.08)=42
+
+=== 4 SMM branches at seed 0 task start ===
+  br0: T=127, arc=3.78 rad, open, members=14
+  br1: T=82, arc=2.43 rad, open, members=2
+  br2: T=51, arc=1.50 rad, open, members=7
+  br3: T=80, arc=2.37 rad, open, members=4
+
+  6-DOF strict rollout: 313 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.060, std=0.010, range=[0.051, 0.088]
+    br1: n=82, mean=0.112, std=0.161, range=[0.035, 0.571]
+    br2: n=51, mean=0.188, std=0.224, range=[0.037, 0.571]
+    br3: n=80, mean=0.275, std=0.255, range=[0.003, 0.571]
+
+saved: Yuan/RL/intro_motivation/data/task_seed0_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed0_smm_joints.png
+seed=1, task L_max=1.500m, p_tgt=[-0.01972804  0.23074296  0.23643768]
+    filter: no_converge=53, near_limit(<0.05)=20, dup(<0.08)=64
+
+=== 4 SMM branches at seed 1 task start ===
+  br0: T=178, arc=5.31 rad, open, members=19
+  br1: T=27, arc=0.78 rad, open, members=3
+  br2: T=73, arc=2.16 rad, open, members=7
+  br3: T=73, arc=2.16 rad, open, members=8
+
+  6-DOF strict rollout: 273 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.064, std=0.059, range=[0.028, 0.208]
+    br1: n=27, mean=0.039, std=0.013, range=[0.003, 0.059]
+    br2: n=73, mean=0.036, std=0.005, range=[0.013, 0.043]
+    br3: n=73, mean=0.106, std=0.073, range=[0.040, 0.208]
+
+saved: Yuan/RL/intro_motivation/data/task_seed1_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed1_smm_joints.png
+seed=2, task L_max=1.500m, p_tgt=[0.1785697  0.21652818 0.1288109 ]
+    filter: no_converge=64, near_limit(<0.05)=14, dup(<0.08)=57
+
+=== 4 SMM branches at seed 2 task start ===
+  br0: T=241, arc=7.20 rad, open, members=22
+  br1: T=109, arc=3.24 rad, open, members=10
+  br2: T=55, arc=1.62 rad, open, members=3
+  br3: T=34, arc=0.99 rad, open, members=1
+
+  6-DOF strict rollout: 289 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.106, std=0.117, range=[0.045, 0.481]
+    br1: n=100, mean=0.362, std=0.184, range=[0.051, 0.481]
+    br2: n=55, mean=0.056, std=0.004, range=[0.048, 0.061]
+    br3: n=34, mean=0.105, std=0.055, range=[0.032, 0.179]
+
+saved: Yuan/RL/intro_motivation/data/task_seed2_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed2_smm_joints.png
+seed=3, task L_max=1.500m, p_tgt=[ 0.35728547 -0.37572318  0.4181343 ]
+    filter: no_converge=38, near_limit(<0.05)=3, dup(<0.08)=66
+
+=== 3 SMM branches at seed 3 task start ===
+  br0: T=249, arc=7.44 rad, open, members=16
+  br1: T=81, arc=2.40 rad, open, members=3
+  br2: T=128, arc=3.81 rad, open, members=8
+
+  6-DOF strict rollout: 281 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.194, std=0.046, range=[0.051, 0.235]
+    br1: n=81, mean=0.229, std=0.008, range=[0.220, 0.239]
+    br2: n=100, mean=0.202, std=0.023, range=[0.165, 0.229]
+
+saved: Yuan/RL/intro_motivation/data/task_seed3_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed3_smm_joints.png
+seed=4, task L_max=1.500m, p_tgt=[-0.23128939  0.08588467  0.26941895]
+    filter: no_converge=7, near_limit(<0.05)=4, dup(<0.08)=98
+
+=== 4 SMM branches at seed 4 task start ===
+  br0: T=89, arc=2.64 rad, open, members=11
+  br1: T=89, arc=2.64 rad, open, members=10
+  br2: T=86, arc=2.55 rad, open, members=9
+  br3: T=76, arc=2.25 rad, open, members=14
+
+  6-DOF strict rollout: 340 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=89, mean=0.014, std=0.001, range=[0.013, 0.015]
+    br1: n=89, mean=0.014, std=0.001, range=[0.013, 0.015]
+    br2: n=86, mean=0.014, std=0.001, range=[0.013, 0.015]
+    br3: n=76, mean=0.014, std=0.001, range=[0.013, 0.015]
+
+saved: Yuan/RL/intro_motivation/data/task_seed4_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed4_smm_joints.png
+seed=5, task L_max=1.500m, p_tgt=[ 0.41818777 -0.10569541  0.52796036]
+    filter: no_converge=32, near_limit(<0.05)=0, dup(<0.08)=63
+
+=== 3 SMM branches at seed 5 task start ===
+  br0: T=82, arc=2.43 rad, open, members=9
+  br1: T=238, arc=7.11 rad, open, members=16
+  br2: T=98, arc=2.91 rad, open, members=6
+
+  6-DOF strict rollout: 280 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=82, mean=0.055, std=0.017, range=[0.039, 0.085]
+    br1: n=100, mean=0.060, std=0.017, range=[0.039, 0.092]
+    br2: n=98, mean=0.065, std=0.014, range=[0.044, 0.084]
+
+saved: Yuan/RL/intro_motivation/data/task_seed5_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed5_smm_joints.png
+seed=6, task L_max=1.500m, p_tgt=[0.15836005 0.37639132 0.22419241]
+    filter: no_converge=52, near_limit(<0.05)=19, dup(<0.08)=46
+
+=== 4 SMM branches at seed 6 task start ===
+  br0: T=71, arc=2.10 rad, open, members=5
+  br1: T=76, arc=2.25 rad, open, members=7
+  br2: T=143, arc=4.26 rad, open, members=17
+  br3: T=41, arc=1.20 rad, open, members=3
+
+  6-DOF strict rollout: 288 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=71, mean=0.289, std=0.157, range=[0.000, 0.384]
+    br1: n=76, mean=0.322, std=0.141, range=[0.067, 0.404]
+    br2: n=100, mean=0.611, std=0.307, range=[0.053, 0.935]
+    br3: n=41, mean=0.470, std=0.010, range=[0.457, 0.489]
+
+saved: Yuan/RL/intro_motivation/data/task_seed6_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed6_smm_joints.png
+seed=7, task L_max=1.500m, p_tgt=[ 0.20182969 -0.26719108  0.40504315]
+    filter: no_converge=33, near_limit(<0.05)=13, dup(<0.08)=60
+
+=== 5 SMM branches at seed 7 task start ===
+  br0: T=148, arc=4.41 rad, open, members=15
+  br1: T=57, arc=1.68 rad, open, members=8
+  br2: T=48, arc=1.41 rad, open, members=4
+  br3: T=12, arc=0.33 rad, open, members=2
+  br4: T=11, arc=0.30 rad, open, members=1
+
+  6-DOF strict rollout: 228 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.015, std=0.000, range=[0.015, 0.016]
+    br1: n=57, mean=0.015, std=0.000, range=[0.013, 0.015]
+    br2: n=48, mean=0.015, std=0.000, range=[0.015, 0.016]
+    br3: n=12, mean=0.015, std=0.000, range=[0.015, 0.015]
+    br4: n=11, mean=0.013, std=0.000, range=[0.012, 0.013]
+
+saved: Yuan/RL/intro_motivation/data/task_seed7_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed7_smm_joints.png
+seed=8, task L_max=1.500m, p_tgt=[0.21363145 0.11748642 0.5101104 ]
+    filter: no_converge=30, near_limit(<0.05)=18, dup(<0.08)=50
+
+=== 4 SMM branches at seed 8 task start ===
+  br0: T=164, arc=4.89 rad, open, members=18
+  br1: T=65, arc=1.92 rad, open, members=7
+  br2: T=32, arc=0.93 rad, open, members=2
+  br3: T=25, arc=0.72 rad, open, members=2
+
+  6-DOF strict rollout: 222 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.253, std=0.063, range=[0.108, 0.309]
+    br1: n=65, mean=0.205, std=0.073, range=[0.108, 0.276]
+    br2: n=32, mean=0.047, std=0.014, range=[0.012, 0.060]
+    br3: n=25, mean=0.053, std=0.006, range=[0.041, 0.060]
+
+saved: Yuan/RL/intro_motivation/data/task_seed8_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed8_smm_joints.png
+seed=9, task L_max=1.500m, p_tgt=[-0.04569609  0.19259879  0.22588626]
+    filter: no_converge=26, near_limit(<0.05)=6, dup(<0.08)=2
+
+=== 1 SMM branches at seed 9 task start ===
+  br0: T=43, arc=1.26 rad, open, members=3
+
+  6-DOF strict rollout: 43 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=43, mean=0.019, std=0.011, range=[0.000, 0.037]
+
+saved: Yuan/RL/intro_motivation/data/task_seed9_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed9_smm_joints.png
+seed=10, task L_max=1.500m, p_tgt=[0.02540097 0.11926325 0.4769037 ]
+    filter: no_converge=29, near_limit(<0.05)=13, dup(<0.08)=43
+
+=== 2 SMM branches at seed 10 task start ===
+  br0: T=108, arc=3.21 rad, open, members=10
+  br1: T=72, arc=2.13 rad, open, members=12
+
+  6-DOF strict rollout: 172 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.019, std=0.001, range=[0.019, 0.023]
+    br1: n=72, mean=0.019, std=0.000, range=[0.017, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed10_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed10_smm_joints.png
+seed=11, task L_max=1.500m, p_tgt=[0.11920211 0.282336   0.19774508]
+    filter: no_converge=40, near_limit(<0.05)=11, dup(<0.08)=73
+
+=== 3 SMM branches at seed 11 task start ===
+  br0: T=107, arc=3.18 rad, open, members=10
+  br1: T=192, arc=5.73 rad, open, members=19
+  br2: T=36, arc=1.05 rad, open, members=5
+
+  6-DOF strict rollout: 236 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.328, std=0.049, range=[0.088, 0.339]
+    br1: n=100, mean=0.297, std=0.097, range=[0.016, 0.339]
+    br2: n=36, mean=0.337, std=0.000, range=[0.337, 0.337]
+
+saved: Yuan/RL/intro_motivation/data/task_seed11_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed11_smm_joints.png
+seed=12, task L_max=1.500m, p_tgt=[0.2837461  0.09318146 0.29644135]
+    filter: no_converge=27, near_limit(<0.05)=0, dup(<0.08)=79
+
+=== 3 SMM branches at seed 12 task start ===
+  br0: T=96, arc=2.85 rad, open, members=10
+  br1: T=221, arc=6.60 rad, open, members=16
+  br2: T=81, arc=2.40 rad, open, members=10
+
+  6-DOF strict rollout: 277 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=96, mean=0.094, std=0.039, range=[0.043, 0.144]
+    br1: n=100, mean=0.102, std=0.039, range=[0.043, 0.144]
+    br2: n=81, mean=0.097, std=0.040, range=[0.045, 0.140]
+
+saved: Yuan/RL/intro_motivation/data/task_seed12_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed12_smm_joints.png
+seed=13, task L_max=1.500m, p_tgt=[-0.11346818 -0.20751381  0.43237606]
+    filter: no_converge=43, near_limit(<0.05)=6, dup(<0.08)=29
+
+=== 2 SMM branches at seed 13 task start ===
+  br0: T=106, arc=3.15 rad, open, members=13
+  br1: T=57, arc=1.68 rad, open, members=8
+
+  6-DOF strict rollout: 157 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.016, std=0.000, range=[0.016, 0.016]
+    br1: n=57, mean=0.016, std=0.003, range=[0.001, 0.020]
+
+saved: Yuan/RL/intro_motivation/data/task_seed13_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed13_smm_joints.png
+seed=14, task L_max=1.500m, p_tgt=[-0.23480752 -0.27718732  0.21591845]
+    filter: no_converge=64, near_limit(<0.05)=23, dup(<0.08)=35
+
+=== 6 SMM branches at seed 14 task start ===
+  br0: T=74, arc=2.19 rad, open, members=11
+  br1: T=39, arc=1.14 rad, open, members=6
+  br2: T=103, arc=3.06 rad, open, members=5
+  br3: T=38, arc=1.11 rad, open, members=3
+  br4: T=73, arc=2.16 rad, open, members=5
+  br5: T=21, arc=0.60 rad, open, members=1
+
+  6-DOF strict rollout: 345 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=74, mean=0.079, std=0.028, range=[0.041, 0.116]
+    br1: n=39, mean=0.099, std=0.040, range=[0.001, 0.124]
+    br2: n=100, mean=0.096, std=0.036, range=[0.047, 0.139]
+    br3: n=38, mean=0.082, std=0.004, range=[0.077, 0.091]
+    br4: n=73, mean=0.079, std=0.028, range=[0.041, 0.116]
+    br5: n=21, mean=0.021, std=0.005, range=[0.012, 0.031]
+
+saved: Yuan/RL/intro_motivation/data/task_seed14_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed14_smm_joints.png
+seed=15, task L_max=1.500m, p_tgt=[ 0.28911674 -0.35451522  0.3092297 ]
+    filter: no_converge=48, near_limit(<0.05)=5, dup(<0.08)=55
+
+=== 3 SMM branches at seed 15 task start ===
+  br0: T=66, arc=1.95 rad, open, members=6
+  br1: T=243, arc=7.26 rad, open, members=16
+  br2: T=113, arc=3.36 rad, open, members=6
+
+  6-DOF strict rollout: 266 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=66, mean=0.020, std=0.001, range=[0.019, 0.024]
+    br1: n=100, mean=0.021, std=0.001, range=[0.019, 0.024]
+    br2: n=100, mean=0.021, std=0.001, range=[0.020, 0.024]
+
+saved: Yuan/RL/intro_motivation/data/task_seed15_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed15_smm_joints.png
+seed=16, task L_max=1.500m, p_tgt=[-0.1761081   0.08340872  0.42572367]
+    filter: no_converge=35, near_limit(<0.05)=7, dup(<0.08)=32
+
+=== 3 SMM branches at seed 16 task start ===
+  br0: T=91, arc=2.70 rad, open, members=12
+  br1: T=88, arc=2.61 rad, open, members=10
+  br2: T=76, arc=2.25 rad, open, members=8
+
+  6-DOF strict rollout: 255 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=91, mean=0.193, std=0.043, range=[0.003, 0.227]
+    br1: n=88, mean=0.146, std=0.049, range=[0.065, 0.205]
+    br2: n=76, mean=0.199, std=0.024, range=[0.168, 0.237]
+
+saved: Yuan/RL/intro_motivation/data/task_seed16_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed16_smm_joints.png
+seed=17, task L_max=1.500m, p_tgt=[-0.15434097 -0.12556002  0.37788162]
+    filter: no_converge=30, near_limit(<0.05)=13, dup(<0.08)=23
+
+=== 3 SMM branches at seed 17 task start ===
+  br0: T=43, arc=1.26 rad, open, members=6
+  br1: T=80, arc=2.37 rad, open, members=5
+  br2: T=69, arc=2.04 rad, open, members=9
+
+  6-DOF strict rollout: 192 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=43, mean=0.173, std=0.214, range=[0.040, 0.537]
+    br1: n=80, mean=0.038, std=0.003, range=[0.027, 0.040]
+    br2: n=69, mean=0.057, std=0.042, range=[0.001, 0.203]
+
+saved: Yuan/RL/intro_motivation/data/task_seed17_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed17_smm_joints.png
+seed=18, task L_max=1.500m, p_tgt=[-0.1959583  -0.1491231   0.43129387]
+    filter: no_converge=40, near_limit(<0.05)=17, dup(<0.08)=17
+
+=== 3 SMM branches at seed 18 task start ===
+  br0: T=34, arc=0.99 rad, open, members=3
+  br1: T=96, arc=2.85 rad, open, members=8
+  br2: T=87, arc=2.58 rad, open, members=10
+
+  6-DOF strict rollout: 217 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=34, mean=0.264, std=0.081, range=[0.097, 0.305]
+    br1: n=96, mean=0.297, std=0.008, range=[0.285, 0.308]
+    br2: n=87, mean=0.162, std=0.111, range=[0.007, 0.305]
+
+saved: Yuan/RL/intro_motivation/data/task_seed18_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed18_smm_joints.png
+seed=19, task L_max=1.500m, p_tgt=[ 0.22710016 -0.05363034  0.29885414]
+    filter: no_converge=26, near_limit(<0.05)=4, dup(<0.08)=74
+
+=== 3 SMM branches at seed 19 task start ===
+  br0: T=85, arc=2.52 rad, open, members=9
+  br1: T=51, arc=1.50 rad, open, members=7
+  br2: T=196, arc=5.85 rad, open, members=16
+
+  6-DOF strict rollout: 236 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=85, mean=0.153, std=0.036, range=[0.099, 0.189]
+    br1: n=51, mean=0.140, std=0.041, range=[0.089, 0.192]
+    br2: n=100, mean=0.156, std=0.037, range=[0.089, 0.196]
+
+saved: Yuan/RL/intro_motivation/data/task_seed19_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed19_smm_joints.png
+seed=20, task L_max=1.500m, p_tgt=[-0.28970018 -0.1896143   0.37439042]
+    filter: no_converge=25, near_limit(<0.05)=2, dup(<0.08)=70
+
+=== 4 SMM branches at seed 20 task start ===
+  br0: T=99, arc=2.94 rad, open, members=7
+  br1: T=107, arc=3.18 rad, open, members=11
+  br2: T=75, arc=2.22 rad, open, members=10
+  br3: T=126, arc=3.75 rad, open, members=17
+
+  6-DOF strict rollout: 374 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=99, mean=0.033, std=0.004, range=[0.028, 0.041]
+    br1: n=100, mean=0.035, std=0.005, range=[0.028, 0.041]
+    br2: n=75, mean=0.036, std=0.004, range=[0.028, 0.041]
+    br3: n=100, mean=0.036, std=0.006, range=[0.028, 0.045]
+
+saved: Yuan/RL/intro_motivation/data/task_seed20_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed20_smm_joints.png
+seed=21, task L_max=1.500m, p_tgt=[ 0.36912945 -0.3879174   0.16083775]
+    filter: no_converge=37, near_limit(<0.05)=8, dup(<0.08)=74
+
+=== 7 SMM branches at seed 21 task start ===
+  br0: T=105, arc=3.12 rad, open, members=7
+  br1: T=235, arc=7.02 rad, open, members=20
+  br2: T=70, arc=2.07 rad, open, members=6
+  br3: T=68, arc=2.01 rad, open, members=4
+  br4: T=74, arc=2.19 rad, open, members=8
+  br5: T=69, arc=2.04 rad, open, members=6
+  br6: T=51, arc=1.50 rad, open, members=5
+
+  6-DOF strict rollout: 532 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.084, std=0.060, range=[0.029, 0.175]
+    br1: n=100, mean=0.072, std=0.051, range=[0.029, 0.184]
+    br2: n=70, mean=0.038, std=0.010, range=[0.029, 0.064]
+    br3: n=68, mean=0.113, std=0.063, range=[0.032, 0.184]
+    br4: n=74, mean=0.078, std=0.065, range=[0.043, 0.299]
+    br5: n=69, mean=0.037, std=0.010, range=[0.029, 0.061]
+    br6: n=51, mean=0.115, std=0.078, range=[0.037, 0.219]
+
+saved: Yuan/RL/intro_motivation/data/task_seed21_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed21_smm_joints.png
+seed=22, task L_max=1.500m, p_tgt=[0.1458157  0.23794745 0.3543186 ]
+    filter: no_converge=53, near_limit(<0.05)=13, dup(<0.08)=54
+
+=== 4 SMM branches at seed 22 task start ===
+  br0: T=145, arc=4.32 rad, open, members=11
+  br1: T=46, arc=1.35 rad, open, members=4
+  br2: T=38, arc=1.11 rad, open, members=5
+  br3: T=34, arc=0.99 rad, open, members=1
+
+  6-DOF strict rollout: 218 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.029, std=0.004, range=[0.004, 0.035]
+    br1: n=46, mean=0.024, std=0.005, range=[0.001, 0.029]
+    br2: n=38, mean=0.029, std=0.003, range=[0.024, 0.035]
+    br3: n=34, mean=0.030, std=0.002, range=[0.027, 0.032]
+
+saved: Yuan/RL/intro_motivation/data/task_seed22_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed22_smm_joints.png
+seed=23, task L_max=1.500m, p_tgt=[ 0.12304392 -0.21331131  0.17202604]
+    filter: no_converge=72, near_limit(<0.05)=5, dup(<0.08)=1
+
+=== 2 SMM branches at seed 23 task start ===
+  br0: T=60, arc=1.77 rad, open, members=2
+  br1: T=53, arc=1.56 rad, open, members=1
+
+  6-DOF strict rollout: 113 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=60, mean=0.115, std=0.091, range=[0.027, 0.221]
+    br1: n=53, mean=0.058, std=0.049, range=[0.029, 0.181]
+
+saved: Yuan/RL/intro_motivation/data/task_seed23_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed23_smm_joints.png
+seed=24, task L_max=1.500m, p_tgt=[-0.2650427  -0.13408047  0.2702227 ]
+    filter: no_converge=66, near_limit(<0.05)=11, dup(<0.08)=45
+
+=== 6 SMM branches at seed 24 task start ===
+  br0: T=122, arc=3.63 rad, open, members=16
+  br1: T=78, arc=2.31 rad, open, members=12
+  br2: T=77, arc=2.28 rad, open, members=3
+  br3: T=76, arc=2.25 rad, open, members=3
+  br4: T=24, arc=0.69 rad, open, members=2
+  br5: T=35, arc=1.02 rad, open, members=1
+
+  6-DOF strict rollout: 390 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.033, std=0.005, range=[0.029, 0.056]
+    br1: n=78, mean=0.037, std=0.003, range=[0.027, 0.040]
+    br2: n=77, mean=0.071, std=0.054, range=[0.029, 0.180]
+    br3: n=76, mean=0.031, std=0.002, range=[0.027, 0.035]
+    br4: n=24, mean=0.028, std=0.002, range=[0.024, 0.032]
+    br5: n=35, mean=0.119, std=0.050, range=[0.032, 0.183]
+
+saved: Yuan/RL/intro_motivation/data/task_seed24_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed24_smm_joints.png
+seed=25, task L_max=1.500m, p_tgt=[-0.10809438  0.21346124  0.5125772 ]
+    filter: no_converge=59, near_limit(<0.05)=4, dup(<0.08)=32
+
+=== 1 SMM branches at seed 25 task start ===
+  br0: T=129, arc=3.84 rad, open, members=11
+
+  6-DOF strict rollout: 100 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.015, std=0.001, range=[0.015, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed25_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed25_smm_joints.png
+seed=26, task L_max=1.500m, p_tgt=[0.5180553  0.01582788 0.19106252]
+    filter: no_converge=68, near_limit(<0.05)=7, dup(<0.08)=64
+
+=== 5 SMM branches at seed 26 task start ===
+  br0: T=297, arc=8.88 rad, open, members=26
+  br1: T=131, arc=3.90 rad, open, members=8
+  br2: T=128, arc=3.81 rad, open, members=5
+  br3: T=39, arc=1.14 rad, open, members=5
+  br4: T=51, arc=1.50 rad, open, members=2
+
+  6-DOF strict rollout: 390 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.031, std=0.002, range=[0.025, 0.033]
+    br1: n=100, mean=0.030, std=0.002, range=[0.028, 0.033]
+    br2: n=100, mean=0.030, std=0.002, range=[0.025, 0.033]
+    br3: n=39, mean=0.029, std=0.001, range=[0.027, 0.029]
+    br4: n=51, mean=0.028, std=0.001, range=[0.028, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed26_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed26_smm_joints.png
+seed=27, task L_max=1.500m, p_tgt=[-0.2694753  -0.11344612  0.3279211 ]
+    filter: no_converge=56, near_limit(<0.05)=12, dup(<0.08)=46
+
+=== 3 SMM branches at seed 27 task start ===
+  br0: T=72, arc=2.13 rad, open, members=6
+  br1: T=91, arc=2.70 rad, open, members=14
+  br2: T=50, arc=1.47 rad, open, members=9
+
+  6-DOF strict rollout: 213 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=72, mean=0.037, std=0.004, range=[0.024, 0.043]
+    br1: n=91, mean=0.031, std=0.002, range=[0.029, 0.037]
+    br2: n=50, mean=0.035, std=0.004, range=[0.024, 0.040]
+
+saved: Yuan/RL/intro_motivation/data/task_seed27_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed27_smm_joints.png
+seed=28, task L_max=1.500m, p_tgt=[0.35546288 0.17103444 0.49619934]
+    filter: no_converge=49, near_limit(<0.05)=20, dup(<0.08)=27
+
+=== 4 SMM branches at seed 28 task start ===
+  br0: T=126, arc=3.75 rad, open, members=7
+  br1: T=212, arc=6.33 rad, open, members=19
+  br2: T=44, arc=1.29 rad, open, members=6
+  br3: T=44, arc=1.29 rad, open, members=3
+
+  6-DOF strict rollout: 288 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.133, std=0.104, range=[0.004, 0.252]
+    br1: n=100, mean=0.126, std=0.128, range=[0.004, 0.359]
+    br2: n=44, mean=0.098, std=0.037, range=[0.016, 0.129]
+    br3: n=44, mean=0.100, std=0.036, range=[0.016, 0.129]
+
+saved: Yuan/RL/intro_motivation/data/task_seed28_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed28_smm_joints.png
+seed=29, task L_max=1.500m, p_tgt=[-0.09752002  0.23048511  0.37791792]
+    filter: no_converge=59, near_limit(<0.05)=9, dup(<0.08)=30
+
+=== 3 SMM branches at seed 29 task start ===
+  br0: T=96, arc=2.85 rad, open, members=14
+  br1: T=33, arc=0.96 rad, open, members=3
+  br2: T=64, arc=1.89 rad, open, members=4
+
+  6-DOF strict rollout: 193 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=96, mean=0.211, std=0.101, range=[0.061, 0.309]
+    br1: n=33, mean=0.041, std=0.005, range=[0.024, 0.045]
+    br2: n=64, mean=0.037, std=0.011, range=[0.001, 0.051]
+
+saved: Yuan/RL/intro_motivation/data/task_seed29_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed29_smm_joints.png
+seed=30, task L_max=1.500m, p_tgt=[-0.02251337 -0.3123357   0.27946427]
+    filter: no_converge=35, near_limit(<0.05)=6, dup(<0.08)=63
+
+=== 3 SMM branches at seed 30 task start ===
+  br0: T=157, arc=4.68 rad, open, members=17
+  br1: T=91, arc=2.70 rad, open, members=7
+  br2: T=58, arc=1.71 rad, open, members=5
+
+  6-DOF strict rollout: 249 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.049, std=0.006, range=[0.037, 0.064]
+    br1: n=91, mean=0.155, std=0.209, range=[0.035, 0.576]
+    br2: n=58, mean=0.231, std=0.172, range=[0.045, 0.392]
+
+saved: Yuan/RL/intro_motivation/data/task_seed30_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed30_smm_joints.png
+seed=31, task L_max=1.500m, p_tgt=[ 0.21399572 -0.21334471  0.27667898]
+    filter: no_converge=56, near_limit(<0.05)=11, dup(<0.08)=83
+
+=== 3 SMM branches at seed 31 task start ===
+  br0: T=208, arc=6.21 rad, open, members=16
+  br1: T=93, arc=2.76 rad, open, members=10
+  br2: T=63, arc=1.86 rad, open, members=8
+
+  6-DOF strict rollout: 256 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.111, std=0.039, range=[0.048, 0.157]
+    br1: n=93, mean=0.104, std=0.042, range=[0.048, 0.157]
+    br2: n=63, mean=0.115, std=0.039, range=[0.056, 0.149]
+
+saved: Yuan/RL/intro_motivation/data/task_seed31_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed31_smm_joints.png
+seed=32, task L_max=1.500m, p_tgt=[-0.26414162 -0.21990293  0.4726775 ]
+    filter: no_converge=33, near_limit(<0.05)=19, dup(<0.08)=51
+
+=== 4 SMM branches at seed 32 task start ===
+  br0: T=94, arc=2.79 rad, open, members=9
+  br1: T=62, arc=1.83 rad, open, members=4
+  br2: T=130, arc=3.87 rad, open, members=12
+  br3: T=36, arc=1.05 rad, open, members=4
+
+  6-DOF strict rollout: 292 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=94, mean=0.018, std=0.001, range=[0.015, 0.019]
+    br1: n=62, mean=0.019, std=0.000, range=[0.019, 0.020]
+    br2: n=100, mean=0.018, std=0.001, range=[0.017, 0.020]
+    br3: n=36, mean=0.018, std=0.001, range=[0.016, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed32_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed32_smm_joints.png
+seed=33, task L_max=1.500m, p_tgt=[0.35672897 0.24291356 0.10926914]
+    filter: no_converge=58, near_limit(<0.05)=12, dup(<0.08)=74
+
+=== 6 SMM branches at seed 33 task start ===
+  br0: T=105, arc=3.12 rad, open, members=7
+  br1: T=315, arc=9.42 rad, open, members=29
+  br2: T=54, arc=1.59 rad, open, members=7
+  br3: T=144, arc=4.29 rad, open, members=6
+  br4: T=5, arc=0.12 rad, open, members=1
+  br5: T=40, arc=1.17 rad, open, members=2
+
+  6-DOF strict rollout: 399 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.214, std=0.065, range=[0.097, 0.273]
+    br1: n=100, mean=0.234, std=0.061, range=[0.097, 0.280]
+    br2: n=54, mean=0.150, std=0.006, range=[0.132, 0.157]
+    br3: n=100, mean=0.230, std=0.062, range=[0.104, 0.280]
+    br4: n=5, mean=0.029, std=0.002, range=[0.027, 0.031]
+    br5: n=40, mean=0.145, std=0.002, range=[0.143, 0.147]
+
+saved: Yuan/RL/intro_motivation/data/task_seed33_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed33_smm_joints.png
+seed=34, task L_max=1.500m, p_tgt=[ 0.2534021  -0.01272609  0.45484006]
+    filter: no_converge=33, near_limit(<0.05)=2, dup(<0.08)=49
+
+=== 3 SMM branches at seed 34 task start ===
+  br0: T=186, arc=5.55 rad, open, members=21
+  br1: T=51, arc=1.50 rad, open, members=3
+  br2: T=71, arc=2.10 rad, open, members=6
+
+  6-DOF strict rollout: 222 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.405, std=0.079, range=[0.005, 0.435]
+    br1: n=51, mean=0.387, std=0.117, range=[0.009, 0.425]
+    br2: n=71, mean=0.401, std=0.076, range=[0.037, 0.427]
+
+saved: Yuan/RL/intro_motivation/data/task_seed34_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed34_smm_joints.png
+seed=35, task L_max=1.500m, p_tgt=[0.23881093 0.02816316 0.48285794]
+    filter: no_converge=30, near_limit(<0.05)=17, dup(<0.08)=57
+
+=== 4 SMM branches at seed 35 task start ===
+  br0: T=138, arc=4.11 rad, open, members=18
+  br1: T=64, arc=1.89 rad, open, members=5
+  br2: T=28, arc=0.81 rad, open, members=3
+  br3: T=64, arc=1.89 rad, open, members=7
+
+  6-DOF strict rollout: 256 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.016, std=0.001, range=[0.015, 0.017]
+    br1: n=64, mean=0.016, std=0.001, range=[0.015, 0.016]
+    br2: n=28, mean=0.016, std=0.000, range=[0.016, 0.016]
+    br3: n=64, mean=0.016, std=0.000, range=[0.016, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed35_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed35_smm_joints.png
+seed=36, task L_max=1.500m, p_tgt=[-0.02012856  0.31539762  0.18495221]
+    filter: no_converge=54, near_limit(<0.05)=1, dup(<0.08)=62
+
+=== 5 SMM branches at seed 36 task start ===
+  br0: T=158, arc=4.71 rad, open, members=16
+  br1: T=94, arc=2.79 rad, open, members=9
+  br2: T=106, arc=3.15 rad, open, members=7
+  br3: T=48, arc=1.41 rad, open, members=1
+  br4: T=43, arc=1.26 rad, open, members=3
+
+  6-DOF strict rollout: 385 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.038, std=0.014, range=[0.019, 0.065]
+    br1: n=94, mean=0.023, std=0.009, range=[0.000, 0.043]
+    br2: n=100, mean=0.039, std=0.013, range=[0.021, 0.060]
+    br3: n=48, mean=0.025, std=0.007, range=[0.003, 0.032]
+    br4: n=43, mean=0.024, std=0.007, range=[0.000, 0.031]
+
+saved: Yuan/RL/intro_motivation/data/task_seed36_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed36_smm_joints.png
+seed=37, task L_max=1.500m, p_tgt=[-0.17283142 -0.25918087  0.17666048]
+    filter: no_converge=34, near_limit(<0.05)=1, dup(<0.08)=102
+
+=== 4 SMM branches at seed 37 task start ===
+  br0: T=111, arc=3.30 rad, open, members=7
+  br1: T=111, arc=3.30 rad, open, members=9
+  br2: T=146, arc=4.35 rad, open, members=20
+  br3: T=59, arc=1.74 rad, open, members=7
+
+  6-DOF strict rollout: 359 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.161, std=0.148, range=[0.032, 0.343]
+    br1: n=100, mean=0.122, std=0.106, range=[0.040, 0.343]
+    br2: n=100, mean=0.142, std=0.142, range=[0.029, 0.343]
+    br3: n=59, mean=0.099, std=0.123, range=[0.032, 0.343]
+
+saved: Yuan/RL/intro_motivation/data/task_seed37_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed37_smm_joints.png
+seed=38, task L_max=1.500m, p_tgt=[ 0.01520249 -0.23637328  0.42837936]
+    filter: no_converge=43, near_limit(<0.05)=3, dup(<0.08)=30
+
+=== 3 SMM branches at seed 38 task start ===
+  br0: T=103, arc=3.06 rad, open, members=11
+  br1: T=48, arc=1.41 rad, open, members=6
+  br2: T=81, arc=2.40 rad, open, members=11
+
+  6-DOF strict rollout: 229 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.056, std=0.002, range=[0.055, 0.069]
+    br1: n=48, mean=0.043, std=0.008, range=[0.031, 0.053]
+    br2: n=81, mean=0.036, std=0.011, range=[0.000, 0.057]
+
+saved: Yuan/RL/intro_motivation/data/task_seed38_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed38_smm_joints.png
+seed=39, task L_max=1.500m, p_tgt=[0.18819611 0.21647942 0.3692366 ]
+    filter: no_converge=40, near_limit(<0.05)=6, dup(<0.08)=62
+
+=== 3 SMM branches at seed 39 task start ===
+  br0: T=78, arc=2.31 rad, open, members=8
+  br1: T=188, arc=5.61 rad, open, members=20
+  br2: T=24, arc=0.69 rad, open, members=1
+
+  6-DOF strict rollout: 202 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=78, mean=0.038, std=0.004, range=[0.033, 0.048]
+    br1: n=100, mean=0.040, std=0.006, range=[0.024, 0.047]
+    br2: n=24, mean=0.040, std=0.002, range=[0.039, 0.045]
+
+saved: Yuan/RL/intro_motivation/data/task_seed39_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed39_smm_joints.png
+seed=40, task L_max=1.500m, p_tgt=[0.1501954  0.03389202 0.27105582]
+    filter: no_converge=28, near_limit(<0.05)=38, dup(<0.08)=44
+
+=== 4 SMM branches at seed 40 task start ===
+  br0: T=113, arc=3.36 rad, open, members=14
+  br1: T=36, arc=1.05 rad, open, members=7
+  br2: T=54, arc=1.59 rad, open, members=1
+  br3: T=15, arc=0.42 rad, open, members=1
+
+  6-DOF strict rollout: 205 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.026, std=0.001, range=[0.024, 0.027]
+    br1: n=36, mean=0.029, std=0.002, range=[0.027, 0.032]
+    br2: n=54, mean=0.026, std=0.002, range=[0.024, 0.029]
+    br3: n=15, mean=0.026, std=0.001, range=[0.024, 0.027]
+
+saved: Yuan/RL/intro_motivation/data/task_seed40_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed40_smm_joints.png
+seed=41, task L_max=1.500m, p_tgt=[-0.24023487 -0.29791507  0.39391616]
+    filter: no_converge=43, near_limit(<0.05)=5, dup(<0.08)=59
+
+=== 4 SMM branches at seed 41 task start ===
+  br0: T=138, arc=4.11 rad, open, members=16
+  br1: T=55, arc=1.62 rad, open, members=10
+  br2: T=99, arc=2.94 rad, open, members=10
+  br3: T=85, arc=2.52 rad, open, members=3
+
+  6-DOF strict rollout: 339 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.015, std=0.001, range=[0.015, 0.016]
+    br1: n=55, mean=0.015, std=0.001, range=[0.015, 0.017]
+    br2: n=99, mean=0.015, std=0.001, range=[0.015, 0.017]
+    br3: n=85, mean=0.015, std=0.001, range=[0.015, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed41_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed41_smm_joints.png
+seed=42, task L_max=1.500m, p_tgt=[ 0.35335037 -0.31380725  0.5122053 ]
+    filter: no_converge=40, near_limit(<0.05)=4, dup(<0.08)=52
+
+=== 3 SMM branches at seed 42 task start ===
+  br0: T=98, arc=2.91 rad, open, members=7
+  br1: T=231, arc=6.90 rad, open, members=15
+  br2: T=83, arc=2.46 rad, open, members=4
+
+  6-DOF strict rollout: 281 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=98, mean=0.026, std=0.002, range=[0.021, 0.028]
+    br1: n=100, mean=0.027, std=0.001, range=[0.021, 0.028]
+    br2: n=83, mean=0.026, std=0.001, range=[0.021, 0.027]
+
+saved: Yuan/RL/intro_motivation/data/task_seed42_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed42_smm_joints.png
+seed=43, task L_max=1.500m, p_tgt=[0.50335765 0.07453935 0.52429056]
+    filter: no_converge=56, near_limit(<0.05)=0, dup(<0.08)=46
+
+=== 3 SMM branches at seed 43 task start ===
+  br0: T=180, arc=5.37 rad, open, members=16
+  br1: T=56, arc=1.65 rad, open, members=6
+  br2: T=130, arc=3.87 rad, open, members=4
+
+  6-DOF strict rollout: 256 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.040, std=0.006, range=[0.015, 0.053]
+    br1: n=56, mean=0.042, std=0.006, range=[0.037, 0.061]
+    br2: n=100, mean=0.045, std=0.008, range=[0.035, 0.067]
+
+saved: Yuan/RL/intro_motivation/data/task_seed43_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed43_smm_joints.png
+seed=44, task L_max=1.500m, p_tgt=[0.07186155 0.15477383 0.54792356]
+    filter: no_converge=17, near_limit(<0.05)=4, dup(<0.08)=56
+
+=== 2 SMM branches at seed 44 task start ===
+  br0: T=154, arc=4.59 rad, open, members=16
+  br1: T=76, arc=2.25 rad, open, members=7
+
+  6-DOF strict rollout: 176 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.022, std=0.001, range=[0.021, 0.027]
+    br1: n=76, mean=0.023, std=0.001, range=[0.023, 0.025]
+
+saved: Yuan/RL/intro_motivation/data/task_seed44_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed44_smm_joints.png
+seed=45, task L_max=1.500m, p_tgt=[-0.20041089 -0.30312404  0.3024767 ]
+    filter: no_converge=47, near_limit(<0.05)=4, dup(<0.08)=50
+
+=== 4 SMM branches at seed 45 task start ===
+  br0: T=146, arc=4.35 rad, open, members=13
+  br1: T=108, arc=3.21 rad, open, members=10
+  br2: T=102, arc=3.03 rad, open, members=6
+  br3: T=62, arc=1.83 rad, open, members=9
+
+  6-DOF strict rollout: 362 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.166, std=0.045, range=[0.075, 0.204]
+    br1: n=100, mean=0.158, std=0.055, range=[0.064, 0.205]
+    br2: n=100, mean=0.153, std=0.050, range=[0.075, 0.204]
+    br3: n=62, mean=0.146, std=0.055, range=[0.065, 0.205]
+
+saved: Yuan/RL/intro_motivation/data/task_seed45_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed45_smm_joints.png
+seed=46, task L_max=1.500m, p_tgt=[0.27603495 0.09268524 0.3096043 ]
+    filter: no_converge=57, near_limit(<0.05)=6, dup(<0.08)=48
+
+=== 2 SMM branches at seed 46 task start ===
+  br0: T=195, arc=5.82 rad, open, members=14
+  br1: T=78, arc=2.31 rad, open, members=8
+
+  6-DOF strict rollout: 178 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.025, std=0.002, range=[0.021, 0.035]
+    br1: n=78, mean=0.025, std=0.002, range=[0.021, 0.032]
+
+saved: Yuan/RL/intro_motivation/data/task_seed46_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed46_smm_joints.png
+seed=47, task L_max=1.500m, p_tgt=[ 0.06863609 -0.15173618  0.42149204]
+    filter: no_converge=44, near_limit(<0.05)=7, dup(<0.08)=26
+
+=== 2 SMM branches at seed 47 task start ===
+  br0: T=46, arc=1.35 rad, open, members=6
+  br1: T=84, arc=2.49 rad, open, members=11
+
+  6-DOF strict rollout: 130 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=46, mean=0.027, std=0.012, range=[0.000, 0.043]
+    br1: n=84, mean=0.187, std=0.124, range=[0.075, 0.403]
+
+saved: Yuan/RL/intro_motivation/data/task_seed47_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed47_smm_joints.png
+seed=48, task L_max=1.500m, p_tgt=[ 0.5090162  -0.34220052  0.30872652]
+    filter: no_converge=28, near_limit(<0.05)=0, dup(<0.08)=64
+
+=== 3 SMM branches at seed 48 task start ===
+  br0: T=320, arc=9.57 rad, open, members=24
+  br1: T=148, arc=4.41 rad, open, members=10
+  br2: T=81, arc=2.40 rad, open, members=1
+
+  6-DOF strict rollout: 281 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.034, std=0.001, range=[0.032, 0.035]
+    br1: n=100, mean=0.034, std=0.001, range=[0.029, 0.035]
+    br2: n=81, mean=0.033, std=0.003, range=[0.027, 0.035]
+
+saved: Yuan/RL/intro_motivation/data/task_seed48_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed48_smm_joints.png
+seed=49, task L_max=1.500m, p_tgt=[0.29802114 0.13044047 0.4408037 ]
+    filter: no_converge=34, near_limit(<0.05)=16, dup(<0.08)=67
+
+=== 5 SMM branches at seed 49 task start ===
+  br0: T=199, arc=5.94 rad, open, members=21
+  br1: T=21, arc=0.60 rad, open, members=1
+  br2: T=21, arc=0.60 rad, open, members=3
+  br3: T=82, arc=2.43 rad, open, members=6
+  br4: T=74, arc=2.19 rad, open, members=6
+
+  6-DOF strict rollout: 298 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.020, std=0.001, range=[0.019, 0.021]
+    br1: n=21, mean=0.019, std=0.001, range=[0.019, 0.020]
+    br2: n=21, mean=0.018, std=0.003, range=[0.007, 0.020]
+    br3: n=82, mean=0.021, std=0.001, range=[0.020, 0.023]
+    br4: n=74, mean=0.019, std=0.001, range=[0.019, 0.021]
+
+saved: Yuan/RL/intro_motivation/data/task_seed49_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed49_smm_joints.png
+seed=50, task L_max=1.500m, p_tgt=[ 0.21768911 -0.18464129  0.3031661 ]
+    filter: no_converge=44, near_limit(<0.05)=6, dup(<0.08)=62
+
+=== 3 SMM branches at seed 50 task start ===
+  br0: T=82, arc=2.43 rad, open, members=6
+  br1: T=193, arc=5.76 rad, open, members=25
+  br2: T=62, arc=1.83 rad, open, members=7
+
+  6-DOF strict rollout: 244 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=82, mean=0.016, std=0.000, range=[0.016, 0.019]
+    br1: n=100, mean=0.016, std=0.000, range=[0.016, 0.017]
+    br2: n=62, mean=0.016, std=0.001, range=[0.016, 0.017]
+
+saved: Yuan/RL/intro_motivation/data/task_seed50_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed50_smm_joints.png
+seed=51, task L_max=1.500m, p_tgt=[ 0.17782158 -0.12536253  0.3502259 ]
+    filter: no_converge=55, near_limit(<0.05)=17, dup(<0.08)=24
+
+=== 2 SMM branches at seed 51 task start ===
+  br0: T=82, arc=2.43 rad, open, members=9
+  br1: T=25, arc=0.72 rad, open, members=1
+
+  6-DOF strict rollout: 107 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=82, mean=0.028, std=0.005, range=[0.001, 0.032]
+    br1: n=25, mean=0.035, std=0.006, range=[0.027, 0.043]
+
+saved: Yuan/RL/intro_motivation/data/task_seed51_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed51_smm_joints.png
+seed=52, task L_max=1.500m, p_tgt=[ 0.03835074 -0.38733009  0.20968859]
+    filter: no_converge=42, near_limit(<0.05)=41, dup(<0.08)=56
+
+=== 7 SMM branches at seed 52 task start ===
+  br0: T=81, arc=2.40 rad, open, members=5
+  br1: T=78, arc=2.31 rad, open, members=6
+  br2: T=75, arc=2.22 rad, open, members=3
+  br3: T=56, arc=1.65 rad, open, members=10
+  br4: T=13, arc=0.36 rad, open, members=1
+  br5: T=49, arc=1.44 rad, open, members=5
+  br6: T=78, arc=2.31 rad, open, members=1
+
+  6-DOF strict rollout: 430 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=81, mean=0.162, std=0.037, range=[0.115, 0.207]
+    br1: n=78, mean=0.154, std=0.025, range=[0.121, 0.197]
+    br2: n=75, mean=0.044, std=0.017, range=[0.027, 0.069]
+    br3: n=56, mean=0.028, std=0.001, range=[0.027, 0.031]
+    br4: n=13, mean=0.042, std=0.002, range=[0.037, 0.044]
+    br5: n=49, mean=0.050, std=0.011, range=[0.033, 0.069]
+    br6: n=78, mean=0.087, std=0.066, range=[0.000, 0.183]
+
+saved: Yuan/RL/intro_motivation/data/task_seed52_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed52_smm_joints.png
+seed=53, task L_max=1.500m, p_tgt=[-0.15848514  0.04930071  0.3383323 ]
+    filter: no_converge=48, near_limit(<0.05)=10, dup(<0.08)=6
+
+=== 1 SMM branches at seed 53 task start ===
+  br0: T=39, arc=1.14 rad, open, members=5
+
+  6-DOF strict rollout: 39 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=39, mean=0.012, std=0.004, range=[0.000, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed53_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed53_smm_joints.png
+seed=54, task L_max=1.500m, p_tgt=[ 0.49186355 -0.02034623  0.42026883]
+    filter: no_converge=70, near_limit(<0.05)=6, dup(<0.08)=72
+
+=== 6 SMM branches at seed 54 task start ===
+  br0: T=246, arc=7.35 rad, open, members=15
+  br1: T=104, arc=3.09 rad, open, members=4
+  br2: T=101, arc=3.00 rad, open, members=4
+  br3: T=38, arc=1.11 rad, open, members=1
+  br4: T=41, arc=1.20 rad, open, members=2
+  br5: T=39, arc=1.14 rad, open, members=1
+
+  6-DOF strict rollout: 418 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.023, std=0.002, range=[0.004, 0.025]
+    br1: n=100, mean=0.024, std=0.001, range=[0.020, 0.025]
+    br2: n=100, mean=0.022, std=0.002, range=[0.003, 0.023]
+    br3: n=38, mean=0.020, std=0.003, range=[0.017, 0.024]
+    br4: n=41, mean=0.019, std=0.002, range=[0.017, 0.024]
+    br5: n=39, mean=0.020, std=0.003, range=[0.017, 0.024]
+
+saved: Yuan/RL/intro_motivation/data/task_seed54_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed54_smm_joints.png
+seed=55, task L_max=1.500m, p_tgt=[-0.24731538  0.1866863   0.4867686 ]
+    filter: no_converge=39, near_limit(<0.05)=23, dup(<0.08)=50
+
+=== 5 SMM branches at seed 55 task start ===
+  br0: T=117, arc=3.48 rad, open, members=10
+  br1: T=49, arc=1.44 rad, open, members=3
+  br2: T=84, arc=2.49 rad, open, members=6
+  br3: T=21, arc=0.60 rad, open, members=3
+  br4: T=23, arc=0.66 rad, open, members=2
+
+  6-DOF strict rollout: 277 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.561, std=0.024, range=[0.515, 0.583]
+    br1: n=49, mean=0.575, std=0.000, range=[0.575, 0.575]
+    br2: n=84, mean=0.467, std=0.195, range=[0.075, 0.583]
+    br3: n=21, mean=0.211, std=0.000, range=[0.211, 0.211]
+    br4: n=23, mean=0.094, std=0.004, range=[0.083, 0.099]
+
+saved: Yuan/RL/intro_motivation/data/task_seed55_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed55_smm_joints.png
+seed=56, task L_max=1.500m, p_tgt=[0.3159136  0.03536973 0.20602915]
+    filter: no_converge=43, near_limit(<0.05)=19, dup(<0.08)=16
+
+=== 3 SMM branches at seed 56 task start ===
+  br0: T=65, arc=1.92 rad, open, members=9
+  br1: T=65, arc=1.92 rad, open, members=6
+  br2: T=52, arc=1.53 rad, open, members=1
+
+  6-DOF strict rollout: 182 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=65, mean=0.024, std=0.002, range=[0.019, 0.027]
+    br1: n=65, mean=0.024, std=0.002, range=[0.019, 0.028]
+    br2: n=52, mean=0.024, std=0.004, range=[0.004, 0.028]
+
+saved: Yuan/RL/intro_motivation/data/task_seed56_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed56_smm_joints.png
+seed=57, task L_max=1.500m, p_tgt=[0.06483541 0.18107155 0.2308931 ]
+    filter: no_converge=46, near_limit(<0.05)=16, dup(<0.08)=64
+
+=== 3 SMM branches at seed 57 task start ===
+  br0: T=24, arc=0.69 rad, open, members=3
+  br1: T=181, arc=5.40 rad, open, members=17
+  br2: T=76, arc=2.25 rad, open, members=9
+
+  6-DOF strict rollout: 200 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=24, mean=0.103, std=0.001, range=[0.100, 0.105]
+    br1: n=100, mean=0.597, std=0.042, range=[0.391, 0.609]
+    br2: n=76, mean=0.607, std=0.001, range=[0.607, 0.608]
+
+saved: Yuan/RL/intro_motivation/data/task_seed57_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed57_smm_joints.png
+seed=58, task L_max=1.500m, p_tgt=[0.49494255 0.30603918 0.23102488]
+    filter: no_converge=70, near_limit(<0.05)=4, dup(<0.08)=44
+
+=== 3 SMM branches at seed 58 task start ===
+  br0: T=88, arc=2.61 rad, open, members=1
+  br1: T=87, arc=2.58 rad, open, members=6
+  br2: T=134, arc=3.99 rad, open, members=11
+
+  6-DOF strict rollout: 275 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=88, mean=0.067, std=0.051, range=[0.003, 0.171]
+    br1: n=87, mean=0.067, std=0.051, range=[0.012, 0.171]
+    br2: n=100, mean=0.067, std=0.043, range=[0.032, 0.187]
+
+saved: Yuan/RL/intro_motivation/data/task_seed58_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed58_smm_joints.png
+seed=59, task L_max=1.500m, p_tgt=[0.34977752 0.17112756 0.2188978 ]
+    filter: no_converge=21, near_limit(<0.05)=0, dup(<0.08)=69
+
+=== 3 SMM branches at seed 59 task start ===
+  br0: T=316, arc=9.45 rad, open, members=32
+  br1: T=125, arc=3.72 rad, open, members=6
+  br2: T=146, arc=4.35 rad, open, members=11
+
+  6-DOF strict rollout: 300 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.016, std=0.005, range=[0.005, 0.021]
+    br1: n=100, mean=0.015, std=0.005, range=[0.005, 0.020]
+    br2: n=100, mean=0.015, std=0.005, range=[0.005, 0.021]
+
+saved: Yuan/RL/intro_motivation/data/task_seed59_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed59_smm_joints.png
+seed=60, task L_max=1.500m, p_tgt=[ 0.06656678 -0.31109875  0.23208737]
+    filter: no_converge=28, near_limit(<0.05)=29, dup(<0.08)=81
+
+=== 8 SMM branches at seed 60 task start ===
+  br0: T=35, arc=1.02 rad, open, members=4
+  br1: T=22, arc=0.63 rad, open, members=3
+  br2: T=202, arc=6.03 rad, open, members=17
+  br3: T=88, arc=2.61 rad, open, members=8
+  br4: T=11, arc=0.30 rad, open, members=1
+  br5: T=122, arc=3.63 rad, open, members=12
+  br6: T=19, arc=0.54 rad, open, members=1
+  br7: T=16, arc=0.45 rad, open, members=1
+
+  6-DOF strict rollout: 391 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=35, mean=0.312, std=0.006, range=[0.303, 0.321]
+    br1: n=22, mean=0.569, std=0.000, range=[0.569, 0.569]
+    br2: n=100, mean=0.549, std=0.070, range=[0.240, 0.569]
+    br3: n=88, mean=0.545, std=0.081, range=[0.241, 0.569]
+    br4: n=11, mean=0.085, std=0.001, range=[0.084, 0.085]
+    br5: n=100, mean=0.239, std=0.138, range=[0.045, 0.364]
+    br6: n=19, mean=0.310, std=0.002, range=[0.307, 0.313]
+    br7: n=16, mean=0.109, std=0.001, range=[0.108, 0.109]
+
+saved: Yuan/RL/intro_motivation/data/task_seed60_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed60_smm_joints.png
+seed=61, task L_max=1.500m, p_tgt=[ 0.0546726  -0.30814084  0.5038402 ]
+    filter: no_converge=64, near_limit(<0.05)=17, dup(<0.08)=59
+
+=== 4 SMM branches at seed 61 task start ===
+  br0: T=151, arc=4.50 rad, open, members=11
+  br1: T=57, arc=1.68 rad, open, members=8
+  br2: T=18, arc=0.51 rad, open, members=1
+  br3: T=49, arc=1.44 rad, open, members=2
+
+  6-DOF strict rollout: 224 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.045, std=0.003, range=[0.039, 0.051]
+    br1: n=57, mean=0.037, std=0.003, range=[0.028, 0.044]
+    br2: n=18, mean=0.022, std=0.003, range=[0.017, 0.025]
+    br3: n=49, mean=0.049, std=0.002, range=[0.045, 0.055]
+
+saved: Yuan/RL/intro_motivation/data/task_seed61_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed61_smm_joints.png
+seed=62, task L_max=1.500m, p_tgt=[-0.27841595 -0.31056058  0.35360768]
+    filter: no_converge=36, near_limit(<0.05)=4, dup(<0.08)=72
+
+=== 4 SMM branches at seed 62 task start ===
+  br0: T=143, arc=4.26 rad, open, members=13
+  br1: T=116, arc=3.45 rad, open, members=9
+  br2: T=76, arc=2.25 rad, open, members=2
+  br3: T=56, arc=1.65 rad, open, members=5
+
+  6-DOF strict rollout: 332 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.025, std=0.002, range=[0.024, 0.032]
+    br1: n=100, mean=0.025, std=0.002, range=[0.021, 0.029]
+    br2: n=76, mean=0.024, std=0.001, range=[0.021, 0.024]
+    br3: n=56, mean=0.025, std=0.002, range=[0.021, 0.027]
+
+saved: Yuan/RL/intro_motivation/data/task_seed62_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed62_smm_joints.png
+seed=63, task L_max=1.500m, p_tgt=[-0.27863204  0.3861594   0.28886458]
+    filter: no_converge=55, near_limit(<0.05)=2, dup(<0.08)=73
+
+=== 4 SMM branches at seed 63 task start ===
+  br0: T=160, arc=4.77 rad, open, members=16
+  br1: T=91, arc=2.70 rad, open, members=6
+  br2: T=120, arc=3.57 rad, open, members=6
+  br3: T=60, arc=1.77 rad, open, members=5
+
+  6-DOF strict rollout: 351 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.019, std=0.001, range=[0.019, 0.020]
+    br1: n=91, mean=0.018, std=0.002, range=[0.001, 0.020]
+    br2: n=100, mean=0.019, std=0.001, range=[0.017, 0.021]
+    br3: n=60, mean=0.018, std=0.001, range=[0.012, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed63_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed63_smm_joints.png
+seed=64, task L_max=1.500m, p_tgt=[0.09321486 0.20144609 0.48149124]
+    filter: no_converge=50, near_limit(<0.05)=22, dup(<0.08)=25
+
+=== 5 SMM branches at seed 64 task start ===
+  br0: T=145, arc=4.32 rad, open, members=20
+  br1: T=60, arc=1.77 rad, open, members=5
+  br2: T=26, arc=0.75 rad, open, members=3
+  br3: T=12, arc=0.33 rad, open, members=2
+  br4: T=18, arc=0.51 rad, open, members=1
+
+  6-DOF strict rollout: 216 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.031, std=0.003, range=[0.024, 0.035]
+    br1: n=60, mean=0.034, std=0.003, range=[0.029, 0.037]
+    br2: n=26, mean=0.030, std=0.002, range=[0.027, 0.032]
+    br3: n=12, mean=0.029, std=0.001, range=[0.027, 0.029]
+    br4: n=18, mean=0.066, std=0.014, range=[0.043, 0.079]
+
+saved: Yuan/RL/intro_motivation/data/task_seed64_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed64_smm_joints.png
+seed=65, task L_max=1.500m, p_tgt=[0.01858024 0.2852653  0.38317743]
+    filter: no_converge=28, near_limit(<0.05)=14, dup(<0.08)=64
+
+=== 4 SMM branches at seed 65 task start ===
+  br0: T=173, arc=5.16 rad, open, members=20
+  br1: T=107, arc=3.18 rad, open, members=10
+  br2: T=32, arc=0.93 rad, open, members=3
+  br3: T=17, arc=0.48 rad, open, members=2
+
+  6-DOF strict rollout: 249 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.016, std=0.000, range=[0.016, 0.019]
+    br1: n=100, mean=0.016, std=0.001, range=[0.013, 0.017]
+    br2: n=32, mean=0.015, std=0.001, range=[0.015, 0.016]
+    br3: n=17, mean=0.017, std=0.000, range=[0.017, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed65_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed65_smm_joints.png
+seed=66, task L_max=1.500m, p_tgt=[0.4965481  0.13373819 0.43735847]
+    filter: no_converge=44, near_limit(<0.05)=3, dup(<0.08)=51
+
+=== 3 SMM branches at seed 66 task start ===
+  br0: T=122, arc=3.63 rad, open, members=15
+  br1: T=97, arc=2.88 rad, open, members=7
+  br2: T=81, arc=2.40 rad, open, members=4
+
+  6-DOF strict rollout: 278 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.793, std=0.257, range=[0.384, 0.961]
+    br1: n=97, mean=0.287, std=0.031, range=[0.003, 0.301]
+    br2: n=81, mean=0.255, std=0.001, range=[0.253, 0.256]
+
+saved: Yuan/RL/intro_motivation/data/task_seed66_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed66_smm_joints.png
+seed=67, task L_max=1.500m, p_tgt=[ 0.3691036  -0.03200905  0.21096423]
+    filter: no_converge=30, near_limit(<0.05)=83, dup(<0.08)=49
+
+=== 8 SMM branches at seed 67 task start ===
+  br0: T=42, arc=1.23 rad, open, members=7
+  br1: T=103, arc=3.06 rad, open, members=6
+  br2: T=31, arc=0.90 rad, open, members=4
+  br3: T=77, arc=2.28 rad, open, members=9
+  br4: T=20, arc=0.57 rad, open, members=3
+  br5: T=60, arc=1.77 rad, open, members=1
+  br6: T=195, arc=5.82 rad, open, members=1
+  br7: T=31, arc=0.90 rad, open, members=2
+
+  6-DOF strict rollout: 461 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=42, mean=0.050, std=0.015, range=[0.024, 0.067]
+    br1: n=100, mean=0.122, std=0.077, range=[0.037, 0.327]
+    br2: n=31, mean=0.036, std=0.002, range=[0.032, 0.040]
+    br3: n=77, mean=0.026, std=0.002, range=[0.021, 0.029]
+    br4: n=20, mean=0.158, std=0.089, range=[0.048, 0.231]
+    br5: n=60, mean=0.112, std=0.094, range=[0.040, 0.327]
+    br6: n=100, mean=0.032, std=0.012, range=[0.024, 0.067]
+    br7: n=31, mean=0.037, std=0.002, range=[0.032, 0.040]
+
+saved: Yuan/RL/intro_motivation/data/task_seed67_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed67_smm_joints.png
+seed=68, task L_max=1.500m, p_tgt=[0.24835785 0.33579093 0.21512517]
+    filter: no_converge=43, near_limit(<0.05)=6, dup(<0.08)=112
+
+=== 7 SMM branches at seed 68 task start ===
+  br0: T=67, arc=1.98 rad, open, members=6
+  br1: T=218, arc=6.51 rad, open, members=23
+  br2: T=102, arc=3.03 rad, open, members=9
+  br3: T=28, arc=0.81 rad, open, members=4
+  br4: T=126, arc=3.75 rad, open, members=8
+  br5: T=32, arc=0.93 rad, open, members=3
+  br6: T=68, arc=2.01 rad, open, members=5
+
+  6-DOF strict rollout: 495 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=67, mean=0.012, std=0.001, range=[0.011, 0.013]
+    br1: n=100, mean=0.014, std=0.001, range=[0.013, 0.016]
+    br2: n=100, mean=0.014, std=0.001, range=[0.013, 0.015]
+    br3: n=28, mean=0.015, std=0.001, range=[0.013, 0.016]
+    br4: n=100, mean=0.012, std=0.001, range=[0.009, 0.013]
+    br5: n=32, mean=0.013, std=0.000, range=[0.013, 0.013]
+    br6: n=68, mean=0.012, std=0.001, range=[0.011, 0.013]
+
+saved: Yuan/RL/intro_motivation/data/task_seed68_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed68_smm_joints.png
+seed=69, task L_max=1.500m, p_tgt=[ 0.32145283 -0.363587    0.46528384]
+    filter: no_converge=26, near_limit(<0.05)=1, dup(<0.08)=70
+
+=== 4 SMM branches at seed 69 task start ===
+  br0: T=109, arc=3.24 rad, open, members=6
+  br1: T=233, arc=6.96 rad, open, members=19
+  br2: T=84, arc=2.49 rad, open, members=7
+  br3: T=13, arc=0.36 rad, open, members=2
+
+  6-DOF strict rollout: 297 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.028, std=0.002, range=[0.024, 0.032]
+    br1: n=100, mean=0.027, std=0.001, range=[0.024, 0.027]
+    br2: n=84, mean=0.026, std=0.001, range=[0.024, 0.027]
+    br3: n=13, mean=0.035, std=0.000, range=[0.035, 0.035]
+
+saved: Yuan/RL/intro_motivation/data/task_seed69_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed69_smm_joints.png
+seed=70, task L_max=1.500m, p_tgt=[-0.15526761 -0.3607618   0.2057618 ]
+    filter: no_converge=51, near_limit(<0.05)=11, dup(<0.08)=52
+
+=== 6 SMM branches at seed 70 task start ===
+  br0: T=146, arc=4.35 rad, open, members=11
+  br1: T=59, arc=1.74 rad, open, members=9
+  br2: T=109, arc=3.24 rad, open, members=7
+  br3: T=113, arc=3.36 rad, open, members=8
+  br4: T=67, arc=1.98 rad, open, members=3
+  br5: T=29, arc=0.84 rad, open, members=2
+
+  6-DOF strict rollout: 455 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.367, std=0.093, range=[0.208, 0.449]
+    br1: n=59, mean=0.363, std=0.117, range=[0.188, 0.445]
+    br2: n=100, mean=0.383, std=0.089, range=[0.188, 0.444]
+    br3: n=100, mean=0.380, std=0.103, range=[0.208, 0.449]
+    br4: n=67, mean=0.253, std=0.005, range=[0.248, 0.264]
+    br5: n=29, mean=0.254, std=0.015, range=[0.223, 0.272]
+
+saved: Yuan/RL/intro_motivation/data/task_seed70_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed70_smm_joints.png
+seed=71, task L_max=1.500m, p_tgt=[0.36018133 0.35868472 0.3273963 ]
+    filter: no_converge=65, near_limit(<0.05)=0, dup(<0.08)=38
+
+=== 3 SMM branches at seed 71 task start ===
+  br0: T=222, arc=6.63 rad, open, members=26
+  br1: T=78, arc=2.31 rad, open, members=9
+  br2: T=64, arc=1.89 rad, open, members=3
+
+  6-DOF strict rollout: 242 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.532, std=0.198, range=[0.024, 0.640]
+    br1: n=78, mean=0.525, std=0.229, range=[0.027, 0.644]
+    br2: n=64, mean=0.319, std=0.178, range=[0.024, 0.635]
+
+saved: Yuan/RL/intro_motivation/data/task_seed71_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed71_smm_joints.png
+seed=72, task L_max=1.500m, p_tgt=[-0.10876088  0.3158733   0.49847335]
+    filter: no_converge=49, near_limit(<0.05)=15, dup(<0.08)=53
+
+=== 3 SMM branches at seed 72 task start ===
+  br0: T=58, arc=1.71 rad, open, members=12
+  br1: T=76, arc=2.25 rad, open, members=7
+  br2: T=74, arc=2.19 rad, open, members=10
+
+  6-DOF strict rollout: 208 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=58, mean=0.162, std=0.011, range=[0.143, 0.177]
+    br1: n=76, mean=0.293, std=0.062, range=[0.216, 0.364]
+    br2: n=74, mean=0.126, std=0.049, range=[0.033, 0.224]
+
+saved: Yuan/RL/intro_motivation/data/task_seed72_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed72_smm_joints.png
+seed=73, task L_max=1.500m, p_tgt=[-0.1574942 -0.3375919  0.5308616]
+    filter: no_converge=19, near_limit(<0.05)=12, dup(<0.08)=55
+
+=== 5 SMM branches at seed 73 task start ===
+  br0: T=83, arc=2.46 rad, open, members=13
+  br1: T=87, arc=2.58 rad, open, members=6
+  br2: T=42, arc=1.23 rad, open, members=4
+  br3: T=48, arc=1.41 rad, open, members=3
+  br4: T=40, arc=1.17 rad, open, members=1
+
+  6-DOF strict rollout: 300 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=83, mean=0.018, std=0.001, range=[0.016, 0.019]
+    br1: n=87, mean=0.017, std=0.002, range=[0.003, 0.019]
+    br2: n=42, mean=0.018, std=0.001, range=[0.017, 0.019]
+    br3: n=48, mean=0.018, std=0.000, range=[0.017, 0.019]
+    br4: n=40, mean=0.018, std=0.001, range=[0.016, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed73_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed73_smm_joints.png
+seed=74, task L_max=1.500m, p_tgt=[0.2688191  0.05187047 0.33604062]
+    filter: no_converge=32, near_limit(<0.05)=2, dup(<0.08)=76
+
+=== 3 SMM branches at seed 74 task start ===
+  br0: T=221, arc=6.60 rad, open, members=16
+  br1: T=95, arc=2.82 rad, open, members=12
+  br2: T=77, arc=2.28 rad, open, members=8
+
+  6-DOF strict rollout: 272 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.359, std=0.077, range=[0.184, 0.407]
+    br1: n=95, mean=0.399, std=0.038, range=[0.183, 0.407]
+    br2: n=77, mean=0.396, std=0.041, range=[0.188, 0.405]
+
+saved: Yuan/RL/intro_motivation/data/task_seed74_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed74_smm_joints.png
+seed=75, task L_max=1.500m, p_tgt=[0.04112008 0.13370453 0.47680128]
+    filter: no_converge=45, near_limit(<0.05)=15, dup(<0.08)=44
+
+=== 1 SMM branches at seed 75 task start ===
+  br0: T=171, arc=5.10 rad, open, members=16
+
+  6-DOF strict rollout: 100 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.019, std=0.003, range=[0.001, 0.020]
+
+saved: Yuan/RL/intro_motivation/data/task_seed75_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed75_smm_joints.png
+seed=76, task L_max=1.500m, p_tgt=[0.27337015 0.33378902 0.14734133]
+    filter: no_converge=70, near_limit(<0.05)=8, dup(<0.08)=40
+
+=== 4 SMM branches at seed 76 task start ===
+  br0: T=73, arc=2.16 rad, open, members=4
+  br1: T=214, arc=6.39 rad, open, members=21
+  br2: T=13, arc=0.36 rad, open, members=2
+  br3: T=17, arc=0.48 rad, open, members=1
+
+  6-DOF strict rollout: 203 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=73, mean=0.130, std=0.170, range=[0.017, 0.407]
+    br1: n=100, mean=0.218, std=0.173, range=[0.017, 0.405]
+    br2: n=13, mean=0.368, std=0.000, range=[0.368, 0.368]
+    br3: n=17, mean=0.095, std=0.003, range=[0.087, 0.099]
+
+saved: Yuan/RL/intro_motivation/data/task_seed76_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed76_smm_joints.png
+seed=77, task L_max=1.500m, p_tgt=[-0.01571477 -0.14504784  0.27556932]
+    filter: no_converge=52, near_limit(<0.05)=20, dup(<0.08)=30
+
+=== 4 SMM branches at seed 77 task start ===
+  br0: T=58, arc=1.71 rad, open, members=8
+  br1: T=76, arc=2.25 rad, open, members=6
+  br2: T=56, arc=1.65 rad, open, members=1
+  br3: T=33, arc=0.96 rad, open, members=2
+
+  6-DOF strict rollout: 223 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=58, mean=0.114, std=0.023, range=[0.069, 0.147]
+    br1: n=76, mean=0.111, std=0.046, range=[0.059, 0.183]
+    br2: n=56, mean=0.098, std=0.012, range=[0.063, 0.115]
+    br3: n=33, mean=0.069, std=0.018, range=[0.019, 0.087]
+
+saved: Yuan/RL/intro_motivation/data/task_seed77_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed77_smm_joints.png
+seed=78, task L_max=1.500m, p_tgt=[0.272218   0.28019097 0.21171701]
+    filter: no_converge=56, near_limit(<0.05)=12, dup(<0.08)=60
+
+=== 4 SMM branches at seed 78 task start ===
+  br0: T=246, arc=7.35 rad, open, members=18
+  br1: T=114, arc=3.39 rad, open, members=8
+  br2: T=57, arc=1.68 rad, open, members=2
+  br3: T=12, arc=0.33 rad, open, members=1
+
+  6-DOF strict rollout: 269 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.025, std=0.008, range=[0.004, 0.044]
+    br1: n=100, mean=0.025, std=0.007, range=[0.015, 0.040]
+    br2: n=57, mean=0.034, std=0.006, range=[0.025, 0.044]
+    br3: n=12, mean=0.030, std=0.001, range=[0.028, 0.032]
+
+saved: Yuan/RL/intro_motivation/data/task_seed78_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed78_smm_joints.png
+seed=79, task L_max=1.500m, p_tgt=[0.22005899 0.00348679 0.5287536 ]
+    filter: no_converge=4, near_limit(<0.05)=15, dup(<0.08)=47
+
+=== 2 SMM branches at seed 79 task start ===
+  br0: T=148, arc=4.41 rad, open, members=18
+  br1: T=39, arc=1.14 rad, open, members=6
+
+  6-DOF strict rollout: 139 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.276, std=0.090, range=[0.092, 0.349]
+    br1: n=39, mean=0.079, std=0.007, range=[0.056, 0.084]
+
+saved: Yuan/RL/intro_motivation/data/task_seed79_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed79_smm_joints.png
+seed=80, task L_max=1.500m, p_tgt=[ 0.16688733 -0.01459564  0.4694614 ]
+    filter: no_converge=3, near_limit(<0.05)=7, dup(<0.08)=33
+
+=== 2 SMM branches at seed 80 task start ===
+  br0: T=50, arc=1.47 rad, open, members=7
+  br1: T=150, arc=4.47 rad, open, members=21
+
+  6-DOF strict rollout: 150 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=50, mean=0.019, std=0.001, range=[0.017, 0.020]
+    br1: n=100, mean=0.022, std=0.002, range=[0.019, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed80_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed80_smm_joints.png
+seed=81, task L_max=1.500m, p_tgt=[-0.2721002   0.33448517  0.19710587]
+    filter: no_converge=24, near_limit(<0.05)=9, dup(<0.08)=83
+
+=== 8 SMM branches at seed 81 task start ===
+  br0: T=39, arc=1.14 rad, open, members=4
+  br1: T=75, arc=2.22 rad, open, members=6
+  br2: T=150, arc=4.47 rad, open, members=19
+  br3: T=96, arc=2.85 rad, open, members=7
+  br4: T=98, arc=2.91 rad, open, members=9
+  br5: T=49, arc=1.44 rad, open, members=4
+  br6: T=39, arc=1.14 rad, open, members=5
+  br7: T=25, arc=0.72 rad, open, members=2
+
+  6-DOF strict rollout: 521 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=39, mean=0.019, std=0.002, range=[0.015, 0.023]
+    br1: n=75, mean=0.019, std=0.005, range=[0.009, 0.024]
+    br2: n=100, mean=0.026, std=0.003, range=[0.023, 0.029]
+    br3: n=96, mean=0.024, std=0.002, range=[0.023, 0.028]
+    br4: n=98, mean=0.031, std=0.004, range=[0.027, 0.040]
+    br5: n=49, mean=0.022, std=0.001, range=[0.020, 0.024]
+    br6: n=39, mean=0.016, std=0.001, range=[0.012, 0.017]
+    br7: n=25, mean=0.016, std=0.003, range=[0.001, 0.017]
+
+saved: Yuan/RL/intro_motivation/data/task_seed81_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed81_smm_joints.png
+seed=82, task L_max=1.500m, p_tgt=[-0.15994225 -0.19346711  0.3633908 ]
+    filter: no_converge=66, near_limit(<0.05)=5, dup(<0.08)=28
+
+=== 5 SMM branches at seed 82 task start ===
+  br0: T=88, arc=2.61 rad, open, members=11
+  br1: T=75, arc=2.22 rad, open, members=7
+  br2: T=52, arc=1.53 rad, open, members=1
+  br3: T=76, arc=2.25 rad, open, members=6
+  br4: T=24, arc=0.69 rad, open, members=3
+
+  6-DOF strict rollout: 315 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=88, mean=0.013, std=0.001, range=[0.012, 0.015]
+    br1: n=75, mean=0.013, std=0.000, range=[0.013, 0.013]
+    br2: n=52, mean=0.013, std=0.001, range=[0.012, 0.015]
+    br3: n=76, mean=0.013, std=0.000, range=[0.013, 0.015]
+    br4: n=24, mean=0.013, std=0.000, range=[0.013, 0.013]
+
+saved: Yuan/RL/intro_motivation/data/task_seed82_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed82_smm_joints.png
+seed=83, task L_max=1.500m, p_tgt=[ 0.18524574 -0.37196276  0.26861876]
+    filter: no_converge=27, near_limit(<0.05)=3, dup(<0.08)=65
+
+=== 4 SMM branches at seed 83 task start ===
+  br0: T=121, arc=3.60 rad, open, members=7
+  br1: T=242, arc=7.23 rad, open, members=22
+  br2: T=66, arc=1.95 rad, open, members=6
+  br3: T=14, arc=0.39 rad, open, members=2
+
+  6-DOF strict rollout: 280 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.026, std=0.001, range=[0.021, 0.027]
+    br1: n=100, mean=0.025, std=0.001, range=[0.021, 0.027]
+    br2: n=66, mean=0.025, std=0.002, range=[0.021, 0.027]
+    br3: n=14, mean=0.029, std=0.000, range=[0.029, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed83_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed83_smm_joints.png
+seed=84, task L_max=1.500m, p_tgt=[ 0.4054806  -0.39085227  0.22152458]
+    filter: no_converge=63, near_limit(<0.05)=6, dup(<0.08)=73
+
+=== 7 SMM branches at seed 84 task start ===
+  br0: T=52, arc=1.53 rad, open, members=5
+  br1: T=76, arc=2.25 rad, open, members=11
+  br2: T=283, arc=8.46 rad, open, members=25
+  br3: T=130, arc=3.87 rad, open, members=5
+  br4: T=82, arc=2.43 rad, open, members=8
+  br5: T=52, arc=1.53 rad, open, members=3
+  br6: T=11, arc=0.30 rad, open, members=1
+
+  6-DOF strict rollout: 473 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=52, mean=0.023, std=0.002, range=[0.019, 0.025]
+    br1: n=76, mean=0.018, std=0.002, range=[0.016, 0.021]
+    br2: n=100, mean=0.024, std=0.006, range=[0.015, 0.035]
+    br3: n=100, mean=0.023, std=0.005, range=[0.016, 0.031]
+    br4: n=82, mean=0.026, std=0.006, range=[0.005, 0.032]
+    br5: n=52, mean=0.023, std=0.002, range=[0.019, 0.025]
+    br6: n=11, mean=0.020, std=0.000, range=[0.020, 0.020]
+
+saved: Yuan/RL/intro_motivation/data/task_seed84_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed84_smm_joints.png
+seed=85, task L_max=1.500m, p_tgt=[-0.10299098 -0.1546618   0.3836002 ]
+    filter: no_converge=34, near_limit(<0.05)=17, dup(<0.08)=20
+
+=== 3 SMM branches at seed 85 task start ===
+  br0: T=66, arc=1.95 rad, open, members=10
+  br1: T=43, arc=1.26 rad, open, members=1
+  br2: T=41, arc=1.20 rad, open, members=1
+
+  6-DOF strict rollout: 150 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=66, mean=0.015, std=0.000, range=[0.015, 0.015]
+    br1: n=43, mean=0.016, std=0.001, range=[0.016, 0.019]
+    br2: n=41, mean=0.014, std=0.004, range=[0.001, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed85_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed85_smm_joints.png
+seed=86, task L_max=1.500m, p_tgt=[-0.2863173  -0.20536211  0.30374932]
+    filter: no_converge=40, near_limit(<0.05)=33, dup(<0.08)=54
+
+=== 8 SMM branches at seed 86 task start ===
+  br0: T=129, arc=3.84 rad, open, members=16
+  br1: T=44, arc=1.29 rad, open, members=4
+  br2: T=28, arc=0.81 rad, open, members=1
+  br3: T=26, arc=0.75 rad, open, members=4
+  br4: T=42, arc=1.23 rad, open, members=4
+  br5: T=80, arc=2.37 rad, open, members=4
+  br6: T=84, arc=2.49 rad, open, members=3
+  br7: T=32, arc=0.93 rad, open, members=1
+
+  6-DOF strict rollout: 436 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.772, std=0.250, range=[0.227, 0.895]
+    br1: n=44, mean=0.123, std=0.011, range=[0.099, 0.135]
+    br2: n=28, mean=0.177, std=0.003, range=[0.171, 0.181]
+    br3: n=26, mean=0.223, std=0.001, range=[0.223, 0.224]
+    br4: n=42, mean=0.102, std=0.037, range=[0.003, 0.129]
+    br5: n=80, mean=0.181, std=0.042, range=[0.112, 0.241]
+    br6: n=84, mean=0.133, std=0.046, range=[0.008, 0.185]
+    br7: n=32, mean=0.052, std=0.030, range=[0.001, 0.085]
+
+saved: Yuan/RL/intro_motivation/data/task_seed86_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed86_smm_joints.png
+seed=87, task L_max=1.500m, p_tgt=[-0.04394706  0.34049988  0.10153543]
+    filter: no_converge=36, near_limit(<0.05)=14, dup(<0.08)=73
+
+=== 6 SMM branches at seed 87 task start ===
+  br0: T=250, arc=7.47 rad, open, members=22
+  br1: T=40, arc=1.17 rad, open, members=5
+  br2: T=111, arc=3.30 rad, open, members=14
+  br3: T=120, arc=3.57 rad, open, members=12
+  br4: T=45, arc=1.32 rad, open, members=3
+  br5: T=24, arc=0.69 rad, open, members=3
+
+  6-DOF strict rollout: 409 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.041, std=0.033, range=[0.016, 0.208]
+    br1: n=40, mean=0.071, std=0.111, range=[0.027, 0.404]
+    br2: n=100, mean=0.076, std=0.078, range=[0.028, 0.245]
+    br3: n=100, mean=0.115, std=0.137, range=[0.032, 0.404]
+    br4: n=45, mean=0.036, std=0.001, range=[0.035, 0.037]
+    br5: n=24, mean=0.146, std=0.027, range=[0.017, 0.153]
+
+saved: Yuan/RL/intro_motivation/data/task_seed87_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed87_smm_joints.png
+seed=88, task L_max=1.500m, p_tgt=[-0.06690707  0.329402    0.3476645 ]
+    filter: no_converge=40, near_limit(<0.05)=0, dup(<0.08)=61
+
+=== 3 SMM branches at seed 88 task start ===
+  br0: T=162, arc=4.83 rad, open, members=22
+  br1: T=64, arc=1.89 rad, open, members=6
+  br2: T=101, arc=3.00 rad, open, members=5
+
+  6-DOF strict rollout: 264 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.038, std=0.002, range=[0.032, 0.040]
+    br1: n=64, mean=0.043, std=0.008, range=[0.037, 0.067]
+    br2: n=100, mean=0.116, std=0.163, range=[0.032, 0.464]
+
+saved: Yuan/RL/intro_motivation/data/task_seed88_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed88_smm_joints.png
+seed=89, task L_max=1.500m, p_tgt=[-0.28328815  0.03205674  0.50551075]
+    filter: no_converge=57, near_limit(<0.05)=29, dup(<0.08)=20
+
+=== 3 SMM branches at seed 89 task start ===
+  br0: T=111, arc=3.30 rad, open, members=7
+  br1: T=34, arc=0.99 rad, open, members=5
+  br2: T=120, arc=3.57 rad, open, members=8
+
+  6-DOF strict rollout: 234 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.223, std=0.042, range=[0.149, 0.265]
+    br1: n=34, mean=0.045, std=0.014, range=[0.007, 0.063]
+    br2: n=100, mean=0.153, std=0.028, range=[0.101, 0.183]
+
+saved: Yuan/RL/intro_motivation/data/task_seed89_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed89_smm_joints.png
+seed=90, task L_max=1.500m, p_tgt=[0.13220367 0.13184269 0.40982503]
+    filter: no_converge=31, near_limit(<0.05)=6, dup(<0.08)=50
+
+=== 3 SMM branches at seed 90 task start ===
+  br0: T=198, arc=5.91 rad, open, members=13
+  br1: T=51, arc=1.50 rad, open, members=5
+  br2: T=83, arc=2.46 rad, open, members=12
+
+  6-DOF strict rollout: 234 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.348, std=0.191, range=[0.072, 0.488]
+    br1: n=51, mean=0.487, std=0.000, range=[0.487, 0.487]
+    br2: n=83, mean=0.243, std=0.203, range=[0.000, 0.487]
+
+saved: Yuan/RL/intro_motivation/data/task_seed90_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed90_smm_joints.png
+seed=91, task L_max=1.500m, p_tgt=[ 0.49185532 -0.09134249  0.28874072]
+    filter: no_converge=37, near_limit(<0.05)=2, dup(<0.08)=65
+
+=== 5 SMM branches at seed 91 task start ===
+  br0: T=200, arc=5.97 rad, open, members=25
+  br1: T=108, arc=3.21 rad, open, members=6
+  br2: T=60, arc=1.77 rad, open, members=5
+  br3: T=60, arc=1.77 rad, open, members=8
+  br4: T=53, arc=1.56 rad, open, members=2
+
+  6-DOF strict rollout: 373 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.017, std=0.005, range=[0.008, 0.024]
+    br1: n=100, mean=0.016, std=0.005, range=[0.008, 0.021]
+    br2: n=60, mean=0.021, std=0.002, range=[0.016, 0.024]
+    br3: n=60, mean=0.021, std=0.002, range=[0.016, 0.024]
+    br4: n=53, mean=0.014, std=0.005, range=[0.008, 0.023]
+
+saved: Yuan/RL/intro_motivation/data/task_seed91_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed91_smm_joints.png
+seed=92, task L_max=1.500m, p_tgt=[ 0.12198926 -0.05981175  0.30703613]
+    filter: no_converge=32, near_limit(<0.05)=0, dup(<0.08)=41
+
+=== 2 SMM branches at seed 92 task start ===
+  br0: T=145, arc=4.32 rad, open, members=12
+  br1: T=52, arc=1.53 rad, open, members=6
+
+  6-DOF strict rollout: 152 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.015, std=0.002, range=[0.001, 0.019]
+    br1: n=52, mean=0.015, std=0.003, range=[0.003, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed92_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed92_smm_joints.png
+seed=93, task L_max=1.500m, p_tgt=[-0.15787627  0.03812941  0.42519638]
+    filter: no_converge=34, near_limit(<0.05)=3, dup(<0.08)=42
+
+=== 4 SMM branches at seed 93 task start ===
+  br0: T=112, arc=3.33 rad, open, members=17
+  br1: T=91, arc=2.70 rad, open, members=14
+  br2: T=90, arc=2.67 rad, open, members=3
+  br3: T=97, arc=2.88 rad, open, members=1
+
+  6-DOF strict rollout: 378 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.026, std=0.009, range=[0.001, 0.075]
+    br1: n=91, mean=0.024, std=0.003, range=[0.001, 0.029]
+    br2: n=90, mean=0.023, std=0.001, range=[0.021, 0.024]
+    br3: n=97, mean=0.027, std=0.009, range=[0.009, 0.075]
+
+saved: Yuan/RL/intro_motivation/data/task_seed93_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed93_smm_joints.png
+seed=94, task L_max=1.500m, p_tgt=[0.31593868 0.06516082 0.26640204]
+    filter: no_converge=67, near_limit(<0.05)=11, dup(<0.08)=60
+
+=== 6 SMM branches at seed 94 task start ===
+  br0: T=53, arc=1.56 rad, open, members=7
+  br1: T=178, arc=5.31 rad, open, members=16
+  br2: T=48, arc=1.41 rad, open, members=3
+  br3: T=72, arc=2.13 rad, open, members=7
+  br4: T=48, arc=1.41 rad, open, members=1
+  br5: T=48, arc=1.41 rad, open, members=2
+
+  6-DOF strict rollout: 369 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=53, mean=0.026, std=0.001, range=[0.024, 0.029]
+    br1: n=100, mean=0.023, std=0.003, range=[0.012, 0.028]
+    br2: n=48, mean=0.025, std=0.003, range=[0.019, 0.031]
+    br3: n=72, mean=0.021, std=0.002, range=[0.013, 0.024]
+    br4: n=48, mean=0.026, std=0.002, range=[0.021, 0.028]
+    br5: n=48, mean=0.025, std=0.002, range=[0.021, 0.028]
+
+saved: Yuan/RL/intro_motivation/data/task_seed94_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed94_smm_joints.png
+seed=95, task L_max=1.500m, p_tgt=[ 0.02356649 -0.07171994  0.31453976]
+    filter: no_converge=68, near_limit(<0.05)=2, dup(<0.08)=3
+
+=== 1 SMM branches at seed 95 task start ===
+  br0: T=114, arc=3.39 rad, open, members=5
+
+  6-DOF strict rollout: 100 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.017, std=0.001, range=[0.016, 0.020]
+
+saved: Yuan/RL/intro_motivation/data/task_seed95_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed95_smm_joints.png
+seed=96, task L_max=1.500m, p_tgt=[-0.02558307 -0.01821904  0.4773971 ]
+    filter: no_converge=20, near_limit(<0.05)=22, dup(<0.08)=47
+
+=== 4 SMM branches at seed 96 task start ===
+  br0: T=74, arc=2.19 rad, open, members=9
+  br1: T=192, arc=5.73 rad, open, members=17
+  br2: T=36, arc=1.05 rad, open, members=5
+  br3: T=35, arc=1.02 rad, open, members=3
+
+  6-DOF strict rollout: 245 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=74, mean=0.214, std=0.062, range=[0.003, 0.265]
+    br1: n=100, mean=0.170, std=0.094, range=[0.028, 0.279]
+    br2: n=36, mean=0.038, std=0.021, range=[0.001, 0.063]
+    br3: n=35, mean=0.034, std=0.003, range=[0.029, 0.039]
+
+saved: Yuan/RL/intro_motivation/data/task_seed96_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed96_smm_joints.png
+seed=97, task L_max=1.500m, p_tgt=[0.02016949 0.38007382 0.3427351 ]
+    filter: no_converge=54, near_limit(<0.05)=23, dup(<0.08)=54
+
+=== 4 SMM branches at seed 97 task start ===
+  br0: T=151, arc=4.50 rad, open, members=14
+  br1: T=70, arc=2.07 rad, open, members=4
+  br2: T=83, arc=2.46 rad, open, members=9
+  br3: T=33, arc=0.96 rad, open, members=1
+
+  6-DOF strict rollout: 286 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.327, std=0.028, range=[0.164, 0.333]
+    br1: n=70, mean=0.201, std=0.103, range=[0.064, 0.332]
+    br2: n=83, mean=0.325, std=0.031, range=[0.164, 0.332]
+    br3: n=33, mean=0.007, std=0.004, range=[0.000, 0.015]
+
+saved: Yuan/RL/intro_motivation/data/task_seed97_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed97_smm_joints.png
+seed=98, task L_max=1.500m, p_tgt=[ 0.442004   -0.06216842  0.22813995]
+    filter: no_converge=60, near_limit(<0.05)=9, dup(<0.08)=70
+
+=== 6 SMM branches at seed 98 task start ===
+  br0: T=57, arc=1.68 rad, open, members=7
+  br1: T=249, arc=7.44 rad, open, members=21
+  br2: T=111, arc=3.30 rad, open, members=4
+  br3: T=92, arc=2.73 rad, open, members=8
+  br4: T=33, arc=0.96 rad, open, members=1
+  br5: T=33, arc=0.96 rad, open, members=1
+
+  6-DOF strict rollout: 415 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=57, mean=0.150, std=0.013, range=[0.116, 0.164]
+    br1: n=100, mean=0.251, std=0.037, range=[0.176, 0.285]
+    br2: n=100, mean=0.252, std=0.042, range=[0.179, 0.285]
+    br3: n=92, mean=0.242, std=0.038, range=[0.176, 0.281]
+    br4: n=33, mean=0.127, std=0.001, range=[0.127, 0.129]
+    br5: n=33, mean=0.127, std=0.001, range=[0.127, 0.129]
+
+saved: Yuan/RL/intro_motivation/data/task_seed98_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed98_smm_joints.png
+seed=99, task L_max=1.500m, p_tgt=[ 0.0302944  -0.19616263  0.27867723]
+    filter: no_converge=63, near_limit(<0.05)=5, dup(<0.08)=24
+
+=== 2 SMM branches at seed 99 task start ===
+  br0: T=58, arc=1.71 rad, open, members=11
+  br1: T=104, arc=3.09 rad, open, members=11
+
+  6-DOF strict rollout: 158 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=58, mean=0.018, std=0.002, range=[0.016, 0.023]
+    br1: n=100, mean=0.017, std=0.001, range=[0.015, 0.017]
+
+saved: Yuan/RL/intro_motivation/data/task_seed99_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed99_smm_joints.png
+seed=100, task L_max=1.500m, p_tgt=[-0.19027509 -0.31220737  0.36778152]
+    filter: no_converge=27, near_limit(<0.05)=3, dup(<0.08)=65
+
+=== 4 SMM branches at seed 100 task start ===
+  br0: T=143, arc=4.26 rad, open, members=18
+  br1: T=106, arc=3.15 rad, open, members=6
+  br2: T=61, arc=1.80 rad, open, members=4
+  br3: T=34, arc=0.99 rad, open, members=1
+
+  6-DOF strict rollout: 295 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.472, std=0.038, range=[0.253, 0.480]
+    br1: n=100, mean=0.471, std=0.038, range=[0.252, 0.479]
+    br2: n=61, mean=0.479, std=0.000, range=[0.479, 0.479]
+    br3: n=34, mean=0.479, std=0.000, range=[0.479, 0.479]
+
+saved: Yuan/RL/intro_motivation/data/task_seed100_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed100_smm_joints.png
+seed=101, task L_max=1.500m, p_tgt=[0.08607348 0.19753878 0.2613939 ]
+    filter: no_converge=27, near_limit(<0.05)=55, dup(<0.08)=35
+
+=== 4 SMM branches at seed 101 task start ===
+  br0: T=115, arc=3.42 rad, open, members=10
+  br1: T=76, arc=2.25 rad, open, members=9
+  br2: T=46, arc=1.35 rad, open, members=1
+  br3: T=10, arc=0.27 rad, open, members=1
+
+  6-DOF strict rollout: 232 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.030, std=0.003, range=[0.025, 0.035]
+    br1: n=76, mean=0.033, std=0.005, range=[0.015, 0.043]
+    br2: n=46, mean=0.027, std=0.002, range=[0.025, 0.032]
+    br3: n=10, mean=0.018, std=0.002, range=[0.012, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed101_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed101_smm_joints.png
+seed=102, task L_max=1.500m, p_tgt=[-0.20251445 -0.09949993  0.29832283]
+    filter: no_converge=40, near_limit(<0.05)=23, dup(<0.08)=32
+
+=== 4 SMM branches at seed 102 task start ===
+  br0: T=117, arc=3.48 rad, open, members=15
+  br1: T=73, arc=2.16 rad, open, members=5
+  br2: T=79, arc=2.34 rad, open, members=6
+  br3: T=22, arc=0.63 rad, open, members=1
+
+  6-DOF strict rollout: 274 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.024, std=0.001, range=[0.019, 0.024]
+    br1: n=73, mean=0.025, std=0.003, range=[0.021, 0.035]
+    br2: n=79, mean=0.024, std=0.002, range=[0.019, 0.032]
+    br3: n=22, mean=0.036, std=0.001, range=[0.035, 0.037]
+
+saved: Yuan/RL/intro_motivation/data/task_seed102_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed102_smm_joints.png
+seed=103, task L_max=1.500m, p_tgt=[ 0.04559113 -0.26969895  0.13218358]
+    filter: no_converge=43, near_limit(<0.05)=15, dup(<0.08)=15
+
+=== 4 SMM branches at seed 103 task start ===
+  br0: T=15, arc=0.42 rad, open, members=1
+  br1: T=73, arc=2.16 rad, open, members=4
+  br2: T=70, arc=2.07 rad, open, members=4
+  br3: T=20, arc=0.57 rad, open, members=1
+
+  6-DOF strict rollout: 178 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=15, mean=0.023, std=0.001, range=[0.023, 0.024]
+    br1: n=73, mean=0.021, std=0.002, range=[0.016, 0.025]
+    br2: n=70, mean=0.022, std=0.001, range=[0.021, 0.024]
+    br3: n=20, mean=0.021, std=0.002, range=[0.017, 0.024]
+
+saved: Yuan/RL/intro_motivation/data/task_seed103_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed103_smm_joints.png
+seed=104, task L_max=1.500m, p_tgt=[ 0.32490978 -0.06968842  0.39021912]
+    filter: no_converge=59, near_limit(<0.05)=9, dup(<0.08)=68
+
+=== 4 SMM branches at seed 104 task start ===
+  br0: T=170, arc=5.07 rad, open, members=16
+  br1: T=79, arc=2.34 rad, open, members=5
+  br2: T=32, arc=0.93 rad, open, members=5
+  br3: T=40, arc=1.17 rad, open, members=4
+
+  6-DOF strict rollout: 251 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.029, std=0.001, range=[0.027, 0.032]
+    br1: n=79, mean=0.030, std=0.002, range=[0.027, 0.035]
+    br2: n=32, mean=0.048, std=0.015, range=[0.037, 0.077]
+    br3: n=40, mean=0.030, std=0.002, range=[0.027, 0.032]
+
+saved: Yuan/RL/intro_motivation/data/task_seed104_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed104_smm_joints.png
+seed=105, task L_max=1.500m, p_tgt=[0.4508635 0.0323863 0.375492 ]
+    filter: no_converge=29, near_limit(<0.05)=0, dup(<0.08)=78
+
+=== 3 SMM branches at seed 105 task start ===
+  br0: T=109, arc=3.24 rad, open, members=10
+  br1: T=250, arc=7.47 rad, open, members=18
+  br2: T=104, arc=3.09 rad, open, members=7
+
+  6-DOF strict rollout: 300 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.046, std=0.009, range=[0.035, 0.065]
+    br1: n=100, mean=0.049, std=0.009, range=[0.035, 0.065]
+    br2: n=100, mean=0.046, std=0.007, range=[0.037, 0.059]
+
+saved: Yuan/RL/intro_motivation/data/task_seed105_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed105_smm_joints.png
+seed=106, task L_max=1.500m, p_tgt=[-0.13365626 -0.14104484  0.5471468 ]
+    filter: no_converge=29, near_limit(<0.05)=10, dup(<0.08)=21
+
+=== 3 SMM branches at seed 106 task start ===
+  br0: T=38, arc=1.11 rad, open, members=4
+  br1: T=107, arc=3.18 rad, open, members=13
+  br2: T=35, arc=1.02 rad, open, members=1
+
+  6-DOF strict rollout: 173 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=38, mean=0.038, std=0.007, range=[0.024, 0.051]
+    br1: n=100, mean=0.056, std=0.028, range=[0.043, 0.155]
+    br2: n=35, mean=0.039, std=0.005, range=[0.027, 0.043]
+
+saved: Yuan/RL/intro_motivation/data/task_seed106_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed106_smm_joints.png
+seed=107, task L_max=1.500m, p_tgt=[ 0.03003748 -0.2132297   0.5036737 ]
+    filter: no_converge=19, near_limit(<0.05)=0, dup(<0.08)=30
+
+=== 1 SMM branches at seed 107 task start ===
+  br0: T=160, arc=4.77 rad, open, members=16
+
+  6-DOF strict rollout: 100 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.015, std=0.001, range=[0.005, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed107_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed107_smm_joints.png
+seed=108, task L_max=1.500m, p_tgt=[-0.00642127 -0.22169925  0.41872665]
+    filter: no_converge=27, near_limit(<0.05)=2, dup(<0.08)=21
+
+=== 1 SMM branches at seed 108 task start ===
+  br0: T=117, arc=3.48 rad, open, members=13
+
+  6-DOF strict rollout: 100 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.223, std=0.089, range=[0.000, 0.297]
+
+saved: Yuan/RL/intro_motivation/data/task_seed108_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed108_smm_joints.png
+seed=109, task L_max=1.500m, p_tgt=[-0.0623302   0.31831953  0.41003734]
+    filter: no_converge=35, near_limit(<0.05)=13, dup(<0.08)=48
+
+=== 4 SMM branches at seed 109 task start ===
+  br0: T=153, arc=4.56 rad, open, members=17
+  br1: T=28, arc=0.81 rad, open, members=3
+  br2: T=44, arc=1.29 rad, open, members=4
+  br3: T=53, arc=1.56 rad, open, members=8
+
+  6-DOF strict rollout: 225 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.016, std=0.000, range=[0.016, 0.016]
+    br1: n=28, mean=0.016, std=0.000, range=[0.016, 0.016]
+    br2: n=44, mean=0.015, std=0.002, range=[0.001, 0.017]
+    br3: n=53, mean=0.015, std=0.001, range=[0.013, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed109_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed109_smm_joints.png
+seed=110, task L_max=1.500m, p_tgt=[ 0.12689026 -0.20811991  0.4943596 ]
+    filter: no_converge=31, near_limit(<0.05)=24, dup(<0.08)=55
+
+=== 5 SMM branches at seed 110 task start ===
+  br0: T=136, arc=4.05 rad, open, members=15
+  br1: T=49, arc=1.44 rad, open, members=4
+  br2: T=31, arc=0.90 rad, open, members=3
+  br3: T=32, arc=0.93 rad, open, members=1
+  br4: T=25, arc=0.72 rad, open, members=2
+
+  6-DOF strict rollout: 237 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.019, std=0.001, range=[0.017, 0.020]
+    br1: n=49, mean=0.018, std=0.002, range=[0.009, 0.019]
+    br2: n=31, mean=0.020, std=0.001, range=[0.019, 0.020]
+    br3: n=32, mean=0.018, std=0.001, range=[0.017, 0.020]
+    br4: n=25, mean=0.019, std=0.001, range=[0.019, 0.021]
+
+saved: Yuan/RL/intro_motivation/data/task_seed110_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed110_smm_joints.png
+seed=111, task L_max=1.500m, p_tgt=[0.37795705 0.37499672 0.2111272 ]
+    filter: no_converge=62, near_limit(<0.05)=19, dup(<0.08)=81
+
+=== 7 SMM branches at seed 111 task start ===
+  br0: T=277, arc=8.28 rad, open, members=17
+  br1: T=42, arc=1.23 rad, open, members=6
+  br2: T=131, arc=3.90 rad, open, members=5
+  br3: T=11, arc=0.30 rad, open, members=2
+  br4: T=81, arc=2.40 rad, open, members=4
+  br5: T=60, arc=1.77 rad, open, members=7
+  br6: T=42, arc=1.23 rad, open, members=1
+
+  6-DOF strict rollout: 436 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.203, std=0.109, range=[0.000, 0.293]
+    br1: n=42, mean=0.154, std=0.004, range=[0.148, 0.159]
+    br2: n=100, mean=0.242, std=0.081, range=[0.063, 0.287]
+    br3: n=11, mean=0.272, std=0.000, range=[0.272, 0.272]
+    br4: n=81, mean=0.290, std=0.005, range=[0.283, 0.295]
+    br5: n=60, mean=0.147, std=0.009, range=[0.132, 0.159]
+    br6: n=42, mean=0.154, std=0.004, range=[0.148, 0.159]
+
+saved: Yuan/RL/intro_motivation/data/task_seed111_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed111_smm_joints.png
+seed=112, task L_max=1.500m, p_tgt=[-0.22796388 -0.28746212  0.17964348]
+    filter: no_converge=55, near_limit(<0.05)=9, dup(<0.08)=77
+
+=== 6 SMM branches at seed 112 task start ===
+  br0: T=131, arc=3.90 rad, open, members=18
+  br1: T=107, arc=3.18 rad, open, members=8
+  br2: T=70, arc=2.07 rad, open, members=6
+  br3: T=111, arc=3.30 rad, open, members=9
+  br4: T=67, arc=1.98 rad, open, members=3
+  br5: T=9, arc=0.24 rad, open, members=1
+
+  6-DOF strict rollout: 446 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.017, std=0.002, range=[0.015, 0.020]
+    br1: n=100, mean=0.019, std=0.001, range=[0.017, 0.021]
+    br2: n=70, mean=0.019, std=0.001, range=[0.017, 0.020]
+    br3: n=100, mean=0.017, std=0.001, range=[0.015, 0.020]
+    br4: n=67, mean=0.016, std=0.002, range=[0.007, 0.019]
+    br5: n=9, mean=0.015, std=0.000, range=[0.015, 0.015]
+
+saved: Yuan/RL/intro_motivation/data/task_seed112_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed112_smm_joints.png
+seed=113, task L_max=1.500m, p_tgt=[ 0.21669048 -0.07598155  0.3297371 ]
+    filter: no_converge=51, near_limit(<0.05)=5, dup(<0.08)=58
+
+=== 3 SMM branches at seed 113 task start ===
+  br0: T=48, arc=1.41 rad, open, members=5
+  br1: T=59, arc=1.74 rad, open, members=8
+  br2: T=162, arc=4.83 rad, open, members=15
+
+  6-DOF strict rollout: 207 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=48, mean=0.030, std=0.002, range=[0.028, 0.036]
+    br1: n=59, mean=0.035, std=0.006, range=[0.020, 0.044]
+    br2: n=100, mean=0.032, std=0.005, range=[0.004, 0.039]
+
+saved: Yuan/RL/intro_motivation/data/task_seed113_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed113_smm_joints.png
+seed=114, task L_max=1.500m, p_tgt=[-0.28071195 -0.39701682  0.46769044]
+    filter: no_converge=24, near_limit(<0.05)=3, dup(<0.08)=64
+
+=== 5 SMM branches at seed 114 task start ===
+  br0: T=73, arc=2.16 rad, open, members=6
+  br1: T=35, arc=1.02 rad, open, members=4
+  br2: T=66, arc=1.95 rad, open, members=6
+  br3: T=149, arc=4.44 rad, open, members=15
+  br4: T=76, arc=2.25 rad, open, members=6
+
+  6-DOF strict rollout: 350 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=73, mean=0.075, std=0.029, range=[0.020, 0.107]
+    br1: n=35, mean=0.472, std=0.122, range=[0.243, 0.539]
+    br2: n=66, mean=0.138, std=0.033, range=[0.077, 0.185]
+    br3: n=100, mean=0.499, std=0.049, range=[0.411, 0.539]
+    br4: n=76, mean=0.102, std=0.040, range=[0.031, 0.145]
+
+saved: Yuan/RL/intro_motivation/data/task_seed114_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed114_smm_joints.png
+seed=115, task L_max=1.500m, p_tgt=[ 0.04431228 -0.18775403  0.38750407]
+    filter: no_converge=54, near_limit(<0.05)=15, dup(<0.08)=51
+
+=== 2 SMM branches at seed 115 task start ===
+  br0: T=152, arc=4.53 rad, open, members=18
+  br1: T=97, arc=2.88 rad, open, members=12
+
+  6-DOF strict rollout: 197 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.038, std=0.002, range=[0.032, 0.048]
+    br1: n=97, mean=0.041, std=0.015, range=[0.024, 0.101]
+
+saved: Yuan/RL/intro_motivation/data/task_seed115_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed115_smm_joints.png
+seed=116, task L_max=1.500m, p_tgt=[ 0.10639125 -0.3262412   0.18052913]
+    filter: no_converge=38, near_limit(<0.05)=12, dup(<0.08)=65
+
+=== 5 SMM branches at seed 116 task start ===
+  br0: T=208, arc=6.21 rad, open, members=18
+  br1: T=39, arc=1.14 rad, open, members=5
+  br2: T=38, arc=1.11 rad, open, members=1
+  br3: T=35, arc=1.02 rad, open, members=3
+  br4: T=97, arc=2.88 rad, open, members=6
+
+  6-DOF strict rollout: 309 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.020, std=0.001, range=[0.019, 0.023]
+    br1: n=39, mean=0.016, std=0.002, range=[0.012, 0.017]
+    br2: n=38, mean=0.021, std=0.001, range=[0.017, 0.023]
+    br3: n=35, mean=0.020, std=0.001, range=[0.017, 0.021]
+    br4: n=97, mean=0.019, std=0.001, range=[0.017, 0.023]
+
+saved: Yuan/RL/intro_motivation/data/task_seed116_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed116_smm_joints.png
+seed=117, task L_max=1.500m, p_tgt=[-0.27098638 -0.25185218  0.53883517]
+    filter: no_converge=25, near_limit(<0.05)=14, dup(<0.08)=56
+
+=== 5 SMM branches at seed 117 task start ===
+  br0: T=113, arc=3.36 rad, open, members=12
+  br1: T=76, arc=2.25 rad, open, members=6
+  br2: T=28, arc=0.81 rad, open, members=5
+  br3: T=59, arc=1.74 rad, open, members=4
+  br4: T=20, arc=0.57 rad, open, members=1
+
+  6-DOF strict rollout: 283 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.027, std=0.001, range=[0.024, 0.029]
+    br1: n=76, mean=0.026, std=0.001, range=[0.024, 0.027]
+    br2: n=28, mean=0.028, std=0.003, range=[0.024, 0.035]
+    br3: n=59, mean=0.030, std=0.004, range=[0.027, 0.043]
+    br4: n=20, mean=0.029, std=0.002, range=[0.027, 0.032]
+
+saved: Yuan/RL/intro_motivation/data/task_seed117_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed117_smm_joints.png
+seed=118, task L_max=1.500m, p_tgt=[-0.29071963 -0.18689734  0.37726584]
+    filter: no_converge=66, near_limit(<0.05)=17, dup(<0.08)=29
+
+=== 4 SMM branches at seed 118 task start ===
+  br0: T=74, arc=2.19 rad, open, members=7
+  br1: T=79, arc=2.34 rad, open, members=5
+  br2: T=63, arc=1.86 rad, open, members=4
+  br3: T=79, arc=2.34 rad, open, members=7
+
+  6-DOF strict rollout: 295 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=74, mean=0.085, std=0.018, range=[0.036, 0.104]
+    br1: n=79, mean=0.105, std=0.018, range=[0.053, 0.128]
+    br2: n=63, mean=0.189, std=0.005, range=[0.184, 0.199]
+    br3: n=79, mean=0.098, std=0.013, range=[0.052, 0.109]
+
+saved: Yuan/RL/intro_motivation/data/task_seed118_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed118_smm_joints.png
+seed=119, task L_max=1.500m, p_tgt=[ 0.14328623 -0.30227318  0.3215947 ]
+    filter: no_converge=65, near_limit(<0.05)=0, dup(<0.08)=50
+
+=== 2 SMM branches at seed 119 task start ===
+  br0: T=93, arc=2.76 rad, open, members=10
+  br1: T=169, arc=5.04 rad, open, members=10
+
+  6-DOF strict rollout: 193 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=93, mean=0.323, std=0.054, range=[0.057, 0.361]
+    br1: n=100, mean=0.345, std=0.032, range=[0.273, 0.368]
+
+saved: Yuan/RL/intro_motivation/data/task_seed119_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed119_smm_joints.png
+seed=120, task L_max=1.500m, p_tgt=[-0.00604865 -0.24392559  0.35197783]
+    filter: no_converge=34, near_limit(<0.05)=15, dup(<0.08)=65
+
+=== 5 SMM branches at seed 120 task start ===
+  br0: T=174, arc=5.19 rad, open, members=21
+  br1: T=59, arc=1.74 rad, open, members=7
+  br2: T=37, arc=1.08 rad, open, members=4
+  br3: T=23, arc=0.66 rad, open, members=5
+  br4: T=12, arc=0.33 rad, open, members=1
+
+  6-DOF strict rollout: 231 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.289, std=0.035, range=[0.179, 0.331]
+    br1: n=59, mean=0.243, std=0.062, range=[0.153, 0.299]
+    br2: n=37, mean=0.127, std=0.004, range=[0.119, 0.131]
+    br3: n=23, mean=0.090, std=0.001, range=[0.089, 0.091]
+    br4: n=12, mean=0.284, std=0.001, range=[0.283, 0.285]
+
+saved: Yuan/RL/intro_motivation/data/task_seed120_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed120_smm_joints.png
+seed=121, task L_max=1.500m, p_tgt=[-0.27450582  0.22339435  0.4023405 ]
+    filter: no_converge=60, near_limit(<0.05)=5, dup(<0.08)=28
+
+=== 3 SMM branches at seed 121 task start ===
+  br0: T=129, arc=3.84 rad, open, members=17
+  br1: T=35, arc=1.02 rad, open, members=5
+  br2: T=83, arc=2.46 rad, open, members=8
+
+  6-DOF strict rollout: 218 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.022, std=0.001, range=[0.021, 0.027]
+    br1: n=35, mean=0.021, std=0.001, range=[0.019, 0.021]
+    br2: n=83, mean=0.022, std=0.003, range=[0.004, 0.027]
+
+saved: Yuan/RL/intro_motivation/data/task_seed121_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed121_smm_joints.png
+seed=122, task L_max=1.500m, p_tgt=[0.45976287 0.25716597 0.31281683]
+    filter: no_converge=57, near_limit(<0.05)=27, dup(<0.08)=60
+
+=== 8 SMM branches at seed 122 task start ===
+  br0: T=45, arc=1.32 rad, open, members=4
+  br1: T=45, arc=1.32 rad, open, members=5
+  br2: T=111, arc=3.30 rad, open, members=9
+  br3: T=116, arc=3.45 rad, open, members=4
+  br4: T=91, arc=2.70 rad, open, members=6
+  br5: T=85, arc=2.52 rad, open, members=4
+  br6: T=124, arc=3.69 rad, open, members=14
+  br7: T=77, arc=2.28 rad, open, members=4
+
+  6-DOF strict rollout: 643 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=45, mean=0.011, std=0.001, range=[0.008, 0.013]
+    br1: n=45, mean=0.011, std=0.001, range=[0.008, 0.013]
+    br2: n=100, mean=0.010, std=0.002, range=[0.007, 0.013]
+    br3: n=100, mean=0.013, std=0.001, range=[0.012, 0.015]
+    br4: n=91, mean=0.013, std=0.001, range=[0.012, 0.013]
+    br5: n=85, mean=0.013, std=0.001, range=[0.012, 0.013]
+    br6: n=100, mean=0.013, std=0.001, range=[0.012, 0.015]
+    br7: n=77, mean=0.009, std=0.002, range=[0.007, 0.012]
+
+saved: Yuan/RL/intro_motivation/data/task_seed122_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed122_smm_joints.png
+seed=123, task L_max=1.500m, p_tgt=[ 0.01505349 -0.13715594  0.37568876]
+    filter: no_converge=51, near_limit(<0.05)=8, dup(<0.08)=37
+
+=== 3 SMM branches at seed 123 task start ===
+  br0: T=87, arc=2.58 rad, open, members=13
+  br1: T=73, arc=2.16 rad, open, members=12
+  br2: T=66, arc=1.95 rad, open, members=2
+
+  6-DOF strict rollout: 226 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=87, mean=0.015, std=0.000, range=[0.015, 0.016]
+    br1: n=73, mean=0.015, std=0.000, range=[0.015, 0.015]
+    br2: n=66, mean=0.014, std=0.002, range=[0.004, 0.015]
+
+saved: Yuan/RL/intro_motivation/data/task_seed123_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed123_smm_joints.png
+seed=124, task L_max=1.500m, p_tgt=[-0.15117975  0.00328517  0.26950508]
+    filter: no_converge=44, near_limit(<0.05)=58, dup(<0.08)=25
+
+=== 4 SMM branches at seed 124 task start ===
+  br0: T=78, arc=2.31 rad, open, members=9
+  br1: T=61, arc=1.80 rad, open, members=4
+  br2: T=62, arc=1.83 rad, open, members=6
+  br3: T=81, arc=2.40 rad, open, members=7
+
+  6-DOF strict rollout: 282 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=78, mean=0.062, std=0.037, range=[0.032, 0.139]
+    br1: n=61, mean=0.047, std=0.007, range=[0.040, 0.064]
+    br2: n=62, mean=0.044, std=0.002, range=[0.040, 0.045]
+    br3: n=81, mean=0.042, std=0.003, range=[0.032, 0.045]
+
+saved: Yuan/RL/intro_motivation/data/task_seed124_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed124_smm_joints.png
+seed=125, task L_max=1.500m, p_tgt=[0.11552656 0.23609282 0.3408624 ]
+    filter: no_converge=47, near_limit(<0.05)=20, dup(<0.08)=43
+
+=== 3 SMM branches at seed 125 task start ===
+  br0: T=49, arc=1.44 rad, open, members=8
+  br1: T=88, arc=2.61 rad, open, members=7
+  br2: T=133, arc=3.96 rad, open, members=13
+
+  6-DOF strict rollout: 237 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=49, mean=0.100, std=0.017, range=[0.061, 0.116]
+    br1: n=88, mean=0.124, std=0.035, range=[0.051, 0.175]
+    br2: n=100, mean=0.386, std=0.043, range=[0.209, 0.404]
+
+saved: Yuan/RL/intro_motivation/data/task_seed125_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed125_smm_joints.png
+seed=126, task L_max=1.500m, p_tgt=[-0.19541316 -0.31783283  0.4676838 ]
+    filter: no_converge=33, near_limit(<0.05)=14, dup(<0.08)=52
+
+=== 4 SMM branches at seed 126 task start ===
+  br0: T=141, arc=4.20 rad, open, members=16
+  br1: T=47, arc=1.38 rad, open, members=2
+  br2: T=96, arc=2.85 rad, open, members=4
+  br3: T=66, arc=1.95 rad, open, members=4
+
+  6-DOF strict rollout: 309 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.027, std=0.001, range=[0.024, 0.029]
+    br1: n=47, mean=0.031, std=0.002, range=[0.029, 0.037]
+    br2: n=96, mean=0.028, std=0.003, range=[0.024, 0.037]
+    br3: n=66, mean=0.029, std=0.004, range=[0.027, 0.043]
+
+saved: Yuan/RL/intro_motivation/data/task_seed126_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed126_smm_joints.png
+seed=127, task L_max=1.500m, p_tgt=[0.21198402 0.2509598  0.17258714]
+    filter: no_converge=67, near_limit(<0.05)=7, dup(<0.08)=65
+
+=== 5 SMM branches at seed 127 task start ===
+  br0: T=236, arc=7.05 rad, open, members=20
+  br1: T=64, arc=1.89 rad, open, members=6
+  br2: T=107, arc=3.18 rad, open, members=9
+  br3: T=46, arc=1.35 rad, open, members=2
+  br4: T=26, arc=0.75 rad, open, members=1
+
+  6-DOF strict rollout: 336 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.145, std=0.044, range=[0.052, 0.197]
+    br1: n=64, mean=0.062, std=0.025, range=[0.025, 0.108]
+    br2: n=100, mean=0.131, std=0.043, range=[0.069, 0.189]
+    br3: n=46, mean=0.075, std=0.029, range=[0.035, 0.108]
+    br4: n=26, mean=0.023, std=0.001, range=[0.020, 0.024]
+
+saved: Yuan/RL/intro_motivation/data/task_seed127_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed127_smm_joints.png
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/lqin/one/Yuan/RL/intro_motivation/v18_smm_task.py", line 460, in <module>
+    main()
+  File "/home/lqin/one/Yuan/RL/intro_motivation/v18_smm_task.py", line 403, in main
+    raise RuntimeError('no valid IK candidates after filter')
+RuntimeError: no valid IK candidates after filter
+seed=128, task L_max=1.500m, p_tgt=[-0.16876963  0.14408074  0.3140375 ]
+    filter: no_converge=37, near_limit(<0.05)=13, dup(<0.08)=0
+seed=129, task L_max=1.500m, p_tgt=[-0.2605318   0.10628916  0.52057594]
+    filter: no_converge=44, near_limit(<0.05)=29, dup(<0.08)=24
+
+=== 6 SMM branches at seed 129 task start ===
+  br0: T=62, arc=1.83 rad, open, members=3
+  br1: T=87, arc=2.58 rad, open, members=6
+  br2: T=55, arc=1.62 rad, open, members=3
+  br3: T=12, arc=0.33 rad, open, members=2
+  br4: T=41, arc=1.20 rad, open, members=1
+  br5: T=36, arc=1.05 rad, open, members=5
+
+  6-DOF strict rollout: 293 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=62, mean=0.032, std=0.014, range=[0.015, 0.055]
+    br1: n=87, mean=0.286, std=0.040, range=[0.233, 0.348]
+    br2: n=55, mean=0.229, std=0.051, range=[0.148, 0.305]
+    br3: n=12, mean=0.051, std=0.006, range=[0.043, 0.060]
+    br4: n=41, mean=0.061, std=0.072, range=[0.003, 0.312]
+    br5: n=36, mean=0.041, std=0.009, range=[0.028, 0.053]
+
+saved: Yuan/RL/intro_motivation/data/task_seed129_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed129_smm_joints.png
+seed=130, task L_max=1.500m, p_tgt=[-0.29193878  0.0053923   0.4217766 ]
+    filter: no_converge=42, near_limit(<0.05)=7, dup(<0.08)=35
+
+=== 3 SMM branches at seed 130 task start ===
+  br0: T=93, arc=2.76 rad, open, members=12
+  br1: T=92, arc=2.73 rad, open, members=10
+  br2: T=85, arc=2.52 rad, open, members=12
+
+  6-DOF strict rollout: 270 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=93, mean=0.023, std=0.001, range=[0.019, 0.024]
+    br1: n=92, mean=0.024, std=0.004, range=[0.004, 0.035]
+    br2: n=85, mean=0.024, std=0.001, range=[0.024, 0.027]
+
+saved: Yuan/RL/intro_motivation/data/task_seed130_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed130_smm_joints.png
+seed=131, task L_max=1.500m, p_tgt=[-0.2393589   0.35233414  0.14381605]
+    filter: no_converge=35, near_limit(<0.05)=4, dup(<0.08)=62
+
+=== 6 SMM branches at seed 131 task start ===
+  br0: T=140, arc=4.17 rad, open, members=21
+  br1: T=92, arc=2.73 rad, open, members=5
+  br2: T=63, arc=1.86 rad, open, members=7
+  br3: T=47, arc=1.38 rad, open, members=5
+  br4: T=96, arc=2.85 rad, open, members=5
+  br5: T=47, arc=1.38 rad, open, members=1
+
+  6-DOF strict rollout: 445 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.341, std=0.239, range=[0.005, 0.520]
+    br1: n=92, mean=0.317, std=0.239, range=[0.007, 0.517]
+    br2: n=63, mean=0.103, std=0.099, range=[0.007, 0.223]
+    br3: n=47, mean=0.145, std=0.031, range=[0.047, 0.160]
+    br4: n=96, mean=0.211, std=0.154, range=[0.005, 0.344]
+    br5: n=47, mean=0.132, std=0.031, range=[0.043, 0.153]
+
+saved: Yuan/RL/intro_motivation/data/task_seed131_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed131_smm_joints.png
+seed=132, task L_max=1.500m, p_tgt=[0.25841373 0.04617899 0.18451606]
+    filter: no_converge=50, near_limit(<0.05)=5, dup(<0.08)=78
+
+=== 5 SMM branches at seed 132 task start ===
+  br0: T=187, arc=5.58 rad, open, members=17
+  br1: T=38, arc=1.11 rad, open, members=4
+  br2: T=69, arc=2.04 rad, open, members=9
+  br3: T=72, arc=2.13 rad, open, members=8
+  br4: T=35, arc=1.02 rad, open, members=2
+
+  6-DOF strict rollout: 314 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.130, std=0.062, range=[0.040, 0.200]
+    br1: n=38, mean=0.042, std=0.014, range=[0.019, 0.057]
+    br2: n=69, mean=0.105, std=0.063, range=[0.040, 0.196]
+    br3: n=72, mean=0.123, std=0.063, range=[0.053, 0.200]
+    br4: n=35, mean=0.016, std=0.006, range=[0.005, 0.028]
+
+saved: Yuan/RL/intro_motivation/data/task_seed132_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed132_smm_joints.png
+seed=133, task L_max=1.500m, p_tgt=[ 0.02172743 -0.21246232  0.22519521]
+    filter: no_converge=52, near_limit(<0.05)=7, dup(<0.08)=13
+
+=== 4 SMM branches at seed 133 task start ===
+  br0: T=53, arc=1.56 rad, open, members=7
+  br1: T=39, arc=1.14 rad, open, members=6
+  br2: T=13, arc=0.36 rad, open, members=1
+  br3: T=28, arc=0.81 rad, open, members=1
+
+  6-DOF strict rollout: 133 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=53, mean=0.536, std=0.066, range=[0.263, 0.553]
+    br1: n=39, mean=0.327, std=0.052, range=[0.005, 0.341]
+    br2: n=13, mean=0.060, std=0.008, range=[0.043, 0.071]
+    br3: n=28, mean=0.269, std=0.001, range=[0.268, 0.269]
+
+saved: Yuan/RL/intro_motivation/data/task_seed133_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed133_smm_joints.png
+seed=134, task L_max=1.500m, p_tgt=[0.27273527 0.2279863  0.12021286]
+    filter: no_converge=59, near_limit(<0.05)=13, dup(<0.08)=65
+
+=== 5 SMM branches at seed 134 task start ===
+  br0: T=267, arc=7.98 rad, open, members=25
+  br1: T=132, arc=3.93 rad, open, members=8
+  br2: T=25, arc=0.72 rad, open, members=2
+  br3: T=71, arc=2.10 rad, open, members=2
+  br4: T=24, arc=0.69 rad, open, members=1
+
+  6-DOF strict rollout: 320 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.019, std=0.004, range=[0.011, 0.024]
+    br1: n=100, mean=0.020, std=0.004, range=[0.013, 0.024]
+    br2: n=25, mean=0.022, std=0.003, range=[0.012, 0.025]
+    br3: n=71, mean=0.016, std=0.004, range=[0.009, 0.024]
+    br4: n=24, mean=0.019, std=0.000, range=[0.019, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed134_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed134_smm_joints.png
+seed=135, task L_max=1.500m, p_tgt=[-0.20619254  0.3197334   0.20022176]
+    filter: no_converge=42, near_limit(<0.05)=21, dup(<0.08)=54
+
+=== 9 SMM branches at seed 135 task start ===
+  br0: T=111, arc=3.30 rad, open, members=9
+  br1: T=25, arc=0.72 rad, open, members=2
+  br2: T=63, arc=1.86 rad, open, members=6
+  br3: T=64, arc=1.89 rad, open, members=13
+  br4: T=56, arc=1.65 rad, open, members=4
+  br5: T=42, arc=1.23 rad, open, members=4
+  br6: T=61, arc=1.80 rad, open, members=7
+  br7: T=22, arc=0.63 rad, open, members=1
+  br8: T=42, arc=1.23 rad, open, members=1
+
+  6-DOF strict rollout: 475 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.024, std=0.004, range=[0.019, 0.031]
+    br1: n=25, mean=0.019, std=0.005, range=[0.000, 0.024]
+    br2: n=63, mean=0.024, std=0.003, range=[0.019, 0.029]
+    br3: n=64, mean=0.024, std=0.004, range=[0.019, 0.029]
+    br4: n=56, mean=0.024, std=0.005, range=[0.001, 0.028]
+    br5: n=42, mean=0.017, std=0.004, range=[0.000, 0.020]
+    br6: n=61, mean=0.026, std=0.006, range=[0.008, 0.031]
+    br7: n=22, mean=0.018, std=0.002, range=[0.013, 0.021]
+    br8: n=42, mean=0.017, std=0.002, range=[0.008, 0.020]
+
+saved: Yuan/RL/intro_motivation/data/task_seed135_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed135_smm_joints.png
+seed=136, task L_max=1.500m, p_tgt=[0.12708664 0.15951861 0.5378242 ]
+    filter: no_converge=36, near_limit(<0.05)=8, dup(<0.08)=65
+
+=== 3 SMM branches at seed 136 task start ===
+  br0: T=191, arc=5.70 rad, open, members=18
+  br1: T=65, arc=1.92 rad, open, members=6
+  br2: T=51, arc=1.50 rad, open, members=7
+
+  6-DOF strict rollout: 216 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.173, std=0.034, range=[0.045, 0.205]
+    br1: n=65, mean=0.124, std=0.068, range=[0.000, 0.177]
+    br2: n=51, mean=0.175, std=0.013, range=[0.159, 0.193]
+
+saved: Yuan/RL/intro_motivation/data/task_seed136_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed136_smm_joints.png
+seed=137, task L_max=1.500m, p_tgt=[0.5491324  0.05840361 0.45225087]
+    filter: no_converge=40, near_limit(<0.05)=0, dup(<0.08)=70
+
+=== 3 SMM branches at seed 137 task start ===
+  br0: T=137, arc=4.08 rad, open, members=3
+  br1: T=298, arc=8.91 rad, open, members=16
+  br2: T=126, arc=3.75 rad, open, members=9
+
+  6-DOF strict rollout: 300 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.195, std=0.031, range=[0.132, 0.223]
+    br1: n=100, mean=0.177, std=0.034, range=[0.128, 0.223]
+    br2: n=100, mean=0.172, std=0.028, range=[0.128, 0.208]
+
+saved: Yuan/RL/intro_motivation/data/task_seed137_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed137_smm_joints.png
+seed=138, task L_max=1.500m, p_tgt=[-0.06124149  0.21082446  0.5031795 ]
+    filter: no_converge=53, near_limit(<0.05)=24, dup(<0.08)=12
+
+=== 3 SMM branches at seed 138 task start ===
+  br0: T=99, arc=2.94 rad, open, members=8
+  br1: T=21, arc=0.60 rad, open, members=2
+  br2: T=56, arc=1.65 rad, open, members=2
+
+  6-DOF strict rollout: 176 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=99, mean=0.021, std=0.001, range=[0.020, 0.023]
+    br1: n=21, mean=0.022, std=0.001, range=[0.021, 0.023]
+    br2: n=56, mean=0.017, std=0.005, range=[0.000, 0.020]
+
+saved: Yuan/RL/intro_motivation/data/task_seed138_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed138_smm_joints.png
+seed=139, task L_max=1.500m, p_tgt=[0.01307807 0.14059229 0.37435383]
+    filter: no_converge=23, near_limit(<0.05)=21, dup(<0.08)=13
+
+=== 1 SMM branches at seed 139 task start ===
+  br0: T=118, arc=3.51 rad, open, members=13
+
+  6-DOF strict rollout: 100 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.039, std=0.017, range=[0.016, 0.083]
+
+saved: Yuan/RL/intro_motivation/data/task_seed139_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed139_smm_joints.png
+seed=140, task L_max=1.500m, p_tgt=[-0.19607215 -0.32613748  0.16568233]
+    filter: no_converge=40, near_limit(<0.05)=3, dup(<0.08)=64
+
+=== 4 SMM branches at seed 140 task start ===
+  br0: T=65, arc=1.92 rad, open, members=10
+  br1: T=127, arc=3.78 rad, open, members=10
+  br2: T=168, arc=5.01 rad, open, members=17
+  br3: T=108, arc=3.21 rad, open, members=9
+
+  6-DOF strict rollout: 365 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=65, mean=0.014, std=0.002, range=[0.011, 0.016]
+    br1: n=100, mean=0.012, std=0.003, range=[0.007, 0.016]
+    br2: n=100, mean=0.013, std=0.003, range=[0.008, 0.016]
+    br3: n=100, mean=0.012, std=0.002, range=[0.004, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed140_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed140_smm_joints.png
+seed=141, task L_max=1.500m, p_tgt=[-0.1191102  -0.26824087  0.4830375 ]
+    filter: no_converge=40, near_limit(<0.05)=2, dup(<0.08)=46
+
+=== 3 SMM branches at seed 141 task start ===
+  br0: T=133, arc=3.96 rad, open, members=15
+  br1: T=79, arc=2.34 rad, open, members=11
+  br2: T=36, arc=1.05 rad, open, members=1
+
+  6-DOF strict rollout: 215 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.025, std=0.001, range=[0.024, 0.025]
+    br1: n=79, mean=0.023, std=0.004, range=[0.003, 0.028]
+    br2: n=36, mean=0.025, std=0.002, range=[0.024, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed141_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed141_smm_joints.png
+seed=142, task L_max=1.500m, p_tgt=[-0.12633358  0.35635522  0.4158766 ]
+    filter: no_converge=50, near_limit(<0.05)=10, dup(<0.08)=45
+
+=== 4 SMM branches at seed 142 task start ===
+  br0: T=97, arc=2.88 rad, open, members=16
+  br1: T=104, arc=3.09 rad, open, members=7
+  br2: T=43, arc=1.26 rad, open, members=4
+  br3: T=51, arc=1.50 rad, open, members=4
+
+  6-DOF strict rollout: 291 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=97, mean=0.262, std=0.058, range=[0.227, 0.381]
+    br1: n=100, mean=0.154, std=0.004, range=[0.143, 0.159]
+    br2: n=43, mean=0.355, std=0.085, range=[0.040, 0.379]
+    br3: n=51, mean=0.108, std=0.017, range=[0.079, 0.131]
+
+saved: Yuan/RL/intro_motivation/data/task_seed142_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed142_smm_joints.png
+seed=143, task L_max=1.500m, p_tgt=[0.05755593 0.02892532 0.5026175 ]
+    filter: no_converge=36, near_limit(<0.05)=6, dup(<0.08)=60
+
+=== 3 SMM branches at seed 143 task start ===
+  br0: T=270, arc=8.07 rad, open, members=23
+  br1: T=74, arc=2.19 rad, open, members=9
+  br2: T=96, arc=2.85 rad, open, members=8
+
+  6-DOF strict rollout: 270 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.019, std=0.005, range=[0.001, 0.023]
+    br1: n=74, mean=0.022, std=0.001, range=[0.021, 0.023]
+    br2: n=96, mean=0.021, std=0.001, range=[0.020, 0.025]
+
+saved: Yuan/RL/intro_motivation/data/task_seed143_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed143_smm_joints.png
+seed=144, task L_max=1.500m, p_tgt=[ 0.07213695 -0.33209038  0.21026736]
+    filter: no_converge=38, near_limit(<0.05)=15, dup(<0.08)=53
+
+=== 4 SMM branches at seed 144 task start ===
+  br0: T=173, arc=5.16 rad, open, members=14
+  br1: T=94, arc=2.79 rad, open, members=9
+  br2: T=58, arc=1.71 rad, open, members=6
+  br3: T=33, arc=0.96 rad, open, members=1
+
+  6-DOF strict rollout: 285 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.153, std=0.166, range=[0.003, 0.393]
+    br1: n=94, mean=0.176, std=0.169, range=[0.029, 0.393]
+    br2: n=58, mean=0.184, std=0.155, range=[0.027, 0.393]
+    br3: n=33, mean=0.153, std=0.013, range=[0.125, 0.169]
+
+saved: Yuan/RL/intro_motivation/data/task_seed144_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed144_smm_joints.png
+seed=145, task L_max=1.500m, p_tgt=[0.3880898  0.27686557 0.5330062 ]
+    filter: no_converge=37, near_limit(<0.05)=8, dup(<0.08)=62
+
+=== 4 SMM branches at seed 145 task start ===
+  br0: T=71, arc=2.10 rad, open, members=4
+  br1: T=98, arc=2.91 rad, open, members=8
+  br2: T=145, arc=4.32 rad, open, members=12
+  br3: T=68, arc=2.01 rad, open, members=5
+
+  6-DOF strict rollout: 337 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=71, mean=0.016, std=0.001, range=[0.015, 0.017]
+    br1: n=98, mean=0.016, std=0.001, range=[0.013, 0.016]
+    br2: n=100, mean=0.016, std=0.001, range=[0.015, 0.017]
+    br3: n=68, mean=0.016, std=0.001, range=[0.013, 0.017]
+
+saved: Yuan/RL/intro_motivation/data/task_seed145_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed145_smm_joints.png
+seed=146, task L_max=1.500m, p_tgt=[-0.0775941  -0.24852988  0.24853864]
+    filter: no_converge=64, near_limit(<0.05)=63, dup(<0.08)=5
+
+=== 4 SMM branches at seed 146 task start ===
+  br0: T=47, arc=1.38 rad, open, members=5
+  br1: T=126, arc=3.75 rad, open, members=3
+  br2: T=45, arc=1.32 rad, open, members=2
+  br3: T=52, arc=1.53 rad, open, members=2
+
+  6-DOF strict rollout: 244 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=47, mean=0.021, std=0.002, range=[0.019, 0.027]
+    br1: n=100, mean=0.020, std=0.003, range=[0.015, 0.024]
+    br2: n=45, mean=0.017, std=0.002, range=[0.005, 0.020]
+    br3: n=52, mean=0.020, std=0.002, range=[0.016, 0.023]
+
+saved: Yuan/RL/intro_motivation/data/task_seed146_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed146_smm_joints.png
+seed=147, task L_max=1.500m, p_tgt=[0.22669946 0.05488911 0.5109154 ]
+    filter: no_converge=15, near_limit(<0.05)=1, dup(<0.08)=68
+
+=== 3 SMM branches at seed 147 task start ===
+  br0: T=204, arc=6.09 rad, open, members=16
+  br1: T=85, arc=2.52 rad, open, members=13
+  br2: T=74, arc=2.19 rad, open, members=13
+
+  6-DOF strict rollout: 259 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.265, std=0.073, range=[0.005, 0.312]
+    br1: n=85, mean=0.273, std=0.075, range=[0.048, 0.307]
+    br2: n=74, mean=0.279, std=0.061, range=[0.001, 0.307]
+
+saved: Yuan/RL/intro_motivation/data/task_seed147_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed147_smm_joints.png
+seed=148, task L_max=1.500m, p_tgt=[ 0.26990587 -0.09093227  0.524871  ]
+    filter: no_converge=36, near_limit(<0.05)=27, dup(<0.08)=45
+
+=== 5 SMM branches at seed 148 task start ===
+  br0: T=181, arc=5.40 rad, open, members=16
+  br1: T=60, arc=1.77 rad, open, members=5
+  br2: T=61, arc=1.80 rad, open, members=3
+  br3: T=10, arc=0.27 rad, open, members=1
+  br4: T=9, arc=0.24 rad, open, members=1
+
+  6-DOF strict rollout: 240 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.021, std=0.001, range=[0.019, 0.021]
+    br1: n=60, mean=0.021, std=0.001, range=[0.019, 0.021]
+    br2: n=61, mean=0.022, std=0.002, range=[0.019, 0.027]
+    br3: n=10, mean=0.020, std=0.008, range=[0.001, 0.027]
+    br4: n=9, mean=0.028, std=0.002, range=[0.025, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed148_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed148_smm_joints.png
+seed=149, task L_max=1.500m, p_tgt=[-0.2626263  -0.03566506  0.35318586]
+    filter: no_converge=49, near_limit(<0.05)=21, dup(<0.08)=30
+
+=== 4 SMM branches at seed 149 task start ===
+  br0: T=72, arc=2.13 rad, open, members=9
+  br1: T=83, arc=2.46 rad, open, members=10
+  br2: T=78, arc=2.31 rad, open, members=4
+  br3: T=60, arc=1.77 rad, open, members=6
+
+  6-DOF strict rollout: 293 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=72, mean=0.019, std=0.001, range=[0.016, 0.021]
+    br1: n=83, mean=0.019, std=0.001, range=[0.017, 0.021]
+    br2: n=78, mean=0.019, std=0.001, range=[0.019, 0.021]
+    br3: n=60, mean=0.018, std=0.001, range=[0.016, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed149_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed149_smm_joints.png
+seed=150, task L_max=1.500m, p_tgt=[ 0.40080857 -0.12371498  0.3558552 ]
+    filter: no_converge=40, near_limit(<0.05)=3, dup(<0.08)=84
+
+=== 5 SMM branches at seed 150 task start ===
+  br0: T=229, arc=6.84 rad, open, members=17
+  br1: T=99, arc=2.94 rad, open, members=11
+  br2: T=82, arc=2.43 rad, open, members=7
+  br3: T=23, arc=0.66 rad, open, members=1
+  br4: T=26, arc=0.75 rad, open, members=1
+
+  6-DOF strict rollout: 330 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.123, std=0.023, range=[0.085, 0.155]
+    br1: n=99, mean=0.116, std=0.021, range=[0.085, 0.144]
+    br2: n=82, mean=0.139, std=0.019, range=[0.101, 0.155]
+    br3: n=23, mean=0.020, std=0.003, range=[0.012, 0.024]
+    br4: n=26, mean=0.022, std=0.005, range=[0.015, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed150_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed150_smm_joints.png
+seed=151, task L_max=1.500m, p_tgt=[-0.07038248 -0.26081997  0.4276014 ]
+    filter: no_converge=70, near_limit(<0.05)=8, dup(<0.08)=14
+
+=== 3 SMM branches at seed 151 task start ===
+  br0: T=102, arc=3.03 rad, open, members=10
+  br1: T=80, arc=2.37 rad, open, members=6
+  br2: T=62, arc=1.83 rad, open, members=3
+
+  6-DOF strict rollout: 242 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.023, std=0.001, range=[0.021, 0.024]
+    br1: n=80, mean=0.024, std=0.001, range=[0.021, 0.024]
+    br2: n=62, mean=0.025, std=0.001, range=[0.024, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed151_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed151_smm_joints.png
+seed=152, task L_max=1.500m, p_tgt=[-0.20419037 -0.0093658   0.26990998]
+    filter: no_converge=49, near_limit(<0.05)=16, dup(<0.08)=34
+
+=== 4 SMM branches at seed 152 task start ===
+  br0: T=50, arc=1.47 rad, open, members=9
+  br1: T=73, arc=2.16 rad, open, members=11
+  br2: T=25, arc=0.72 rad, open, members=1
+  br3: T=54, arc=1.59 rad, open, members=1
+
+  6-DOF strict rollout: 202 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=50, mean=0.195, std=0.042, range=[0.007, 0.224]
+    br1: n=73, mean=0.222, std=0.024, range=[0.185, 0.244]
+    br2: n=25, mean=0.184, std=0.007, range=[0.177, 0.199]
+    br3: n=54, mean=0.236, std=0.012, range=[0.203, 0.244]
+
+saved: Yuan/RL/intro_motivation/data/task_seed152_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed152_smm_joints.png
+seed=153, task L_max=1.500m, p_tgt=[ 0.04775627 -0.24222729  0.40851232]
+    filter: no_converge=29, near_limit(<0.05)=10, dup(<0.08)=63
+
+=== 2 SMM branches at seed 153 task start ===
+  br0: T=88, arc=2.61 rad, open, members=13
+  br1: T=176, arc=5.25 rad, open, members=14
+
+  6-DOF strict rollout: 188 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=88, mean=0.166, std=0.032, range=[0.113, 0.200]
+    br1: n=100, mean=0.173, std=0.034, range=[0.031, 0.207]
+
+saved: Yuan/RL/intro_motivation/data/task_seed153_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed153_smm_joints.png
+seed=154, task L_max=1.500m, p_tgt=[0.3385641  0.14220667 0.47522804]
+    filter: no_converge=36, near_limit(<0.05)=15, dup(<0.08)=62
+
+=== 4 SMM branches at seed 154 task start ===
+  br0: T=159, arc=4.74 rad, open, members=18
+  br1: T=83, arc=2.46 rad, open, members=6
+  br2: T=17, arc=0.48 rad, open, members=1
+  br3: T=43, arc=1.26 rad, open, members=4
+
+  6-DOF strict rollout: 243 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.039, std=0.003, range=[0.035, 0.045]
+    br1: n=83, mean=0.041, std=0.003, range=[0.037, 0.051]
+    br2: n=17, mean=0.037, std=0.000, range=[0.037, 0.037]
+    br3: n=43, mean=0.043, std=0.006, range=[0.037, 0.059]
+
+saved: Yuan/RL/intro_motivation/data/task_seed154_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed154_smm_joints.png
+seed=155, task L_max=1.500m, p_tgt=[-0.08748341  0.1664684   0.3604131 ]
+    filter: no_converge=36, near_limit(<0.05)=12, dup(<0.08)=66
+
+=== 3 SMM branches at seed 155 task start ===
+  br0: T=145, arc=4.32 rad, open, members=21
+  br1: T=75, arc=2.22 rad, open, members=6
+  br2: T=50, arc=1.47 rad, open, members=1
+
+  6-DOF strict rollout: 225 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.027, std=0.002, range=[0.025, 0.033]
+    br1: n=75, mean=0.026, std=0.003, range=[0.011, 0.032]
+    br2: n=50, mean=0.024, std=0.001, range=[0.020, 0.025]
+
+saved: Yuan/RL/intro_motivation/data/task_seed155_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed155_smm_joints.png
+seed=156, task L_max=1.500m, p_tgt=[-0.2876707  -0.23836465  0.11994278]
+    filter: no_converge=31, near_limit(<0.05)=1, dup(<0.08)=76
+
+=== 5 SMM branches at seed 156 task start ===
+  br0: T=164, arc=4.89 rad, open, members=17
+  br1: T=150, arc=4.47 rad, open, members=14
+  br2: T=118, arc=3.51 rad, open, members=9
+  br3: T=147, arc=4.38 rad, open, members=10
+  br4: T=19, arc=0.54 rad, open, members=1
+
+  6-DOF strict rollout: 419 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.280, std=0.095, range=[0.007, 0.313]
+    br1: n=100, mean=0.188, std=0.102, range=[0.007, 0.313]
+    br2: n=100, mean=0.227, std=0.121, range=[0.007, 0.313]
+    br3: n=100, mean=0.279, std=0.095, range=[0.007, 0.313]
+    br4: n=19, mean=0.081, std=0.001, range=[0.079, 0.083]
+
+saved: Yuan/RL/intro_motivation/data/task_seed156_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed156_smm_joints.png
+seed=157, task L_max=1.500m, p_tgt=[ 0.23061638 -0.17210989  0.44486666]
+    filter: no_converge=38, near_limit(<0.05)=2, dup(<0.08)=52
+
+=== 3 SMM branches at seed 157 task start ===
+  br0: T=110, arc=3.27 rad, open, members=13
+  br1: T=209, arc=6.24 rad, open, members=17
+  br2: T=54, arc=1.59 rad, open, members=5
+
+  6-DOF strict rollout: 254 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.031, std=0.005, range=[0.024, 0.053]
+    br1: n=100, mean=0.040, std=0.036, range=[0.011, 0.189]
+    br2: n=54, mean=0.066, std=0.062, range=[0.009, 0.192]
+
+saved: Yuan/RL/intro_motivation/data/task_seed157_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed157_smm_joints.png
+seed=158, task L_max=1.500m, p_tgt=[0.08250871 0.18685302 0.23115167]
+    filter: no_converge=35, near_limit(<0.05)=9, dup(<0.08)=59
+
+=== 4 SMM branches at seed 158 task start ===
+  br0: T=143, arc=4.26 rad, open, members=14
+  br1: T=54, arc=1.59 rad, open, members=5
+  br2: T=33, arc=0.96 rad, open, members=1
+  br3: T=28, arc=0.81 rad, open, members=1
+
+  6-DOF strict rollout: 215 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.262, std=0.044, range=[0.191, 0.305]
+    br1: n=54, mean=0.288, std=0.027, range=[0.212, 0.305]
+    br2: n=33, mean=0.128, std=0.040, range=[0.007, 0.153]
+    br3: n=28, mean=0.078, std=0.009, range=[0.052, 0.088]
+
+saved: Yuan/RL/intro_motivation/data/task_seed158_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed158_smm_joints.png
+seed=159, task L_max=1.500m, p_tgt=[-0.22712235 -0.2712435   0.30581754]
+    filter: no_converge=22, near_limit(<0.05)=2, dup(<0.08)=86
+
+=== 4 SMM branches at seed 159 task start ===
+  br0: T=61, arc=1.80 rad, open, members=12
+  br1: T=104, arc=3.09 rad, open, members=8
+  br2: T=123, arc=3.66 rad, open, members=13
+  br3: T=90, arc=2.67 rad, open, members=5
+
+  6-DOF strict rollout: 351 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=61, mean=0.295, std=0.065, range=[0.108, 0.324]
+    br1: n=100, mean=0.264, std=0.050, range=[0.109, 0.324]
+    br2: n=100, mean=0.318, std=0.037, range=[0.108, 0.324]
+    br3: n=90, mean=0.317, std=0.038, range=[0.108, 0.324]
+
+saved: Yuan/RL/intro_motivation/data/task_seed159_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed159_smm_joints.png
+seed=160, task L_max=1.500m, p_tgt=[-0.09730694  0.38747534  0.15381302]
+    filter: no_converge=48, near_limit(<0.05)=5, dup(<0.08)=62
+
+=== 4 SMM branches at seed 160 task start ===
+  br0: T=183, arc=5.46 rad, open, members=18
+  br1: T=118, arc=3.51 rad, open, members=11
+  br2: T=53, arc=1.56 rad, open, members=2
+  br3: T=58, arc=1.71 rad, open, members=3
+
+  6-DOF strict rollout: 311 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.264, std=0.104, range=[0.007, 0.316]
+    br1: n=100, mean=0.301, std=0.058, range=[0.067, 0.316]
+    br2: n=53, mean=0.290, std=0.080, range=[0.013, 0.316]
+    br3: n=58, mean=0.098, std=0.029, range=[0.017, 0.128]
+
+saved: Yuan/RL/intro_motivation/data/task_seed160_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed160_smm_joints.png
+seed=161, task L_max=1.500m, p_tgt=[0.4207511  0.04200021 0.13840535]
+    filter: no_converge=58, near_limit(<0.05)=8, dup(<0.08)=81
+
+=== 6 SMM branches at seed 161 task start ===
+  br0: T=267, arc=7.98 rad, open, members=27
+  br1: T=115, arc=3.42 rad, open, members=11
+  br2: T=45, arc=1.32 rad, open, members=5
+  br3: T=114, arc=3.39 rad, open, members=9
+  br4: T=58, arc=1.71 rad, open, members=3
+  br5: T=45, arc=1.32 rad, open, members=2
+
+  6-DOF strict rollout: 448 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.030, std=0.012, range=[0.015, 0.059]
+    br1: n=100, mean=0.025, std=0.008, range=[0.015, 0.039]
+    br2: n=45, mean=0.028, std=0.002, range=[0.024, 0.032]
+    br3: n=100, mean=0.032, std=0.015, range=[0.015, 0.059]
+    br4: n=58, mean=0.024, std=0.005, range=[0.007, 0.029]
+    br5: n=45, mean=0.028, std=0.002, range=[0.024, 0.032]
+
+saved: Yuan/RL/intro_motivation/data/task_seed161_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed161_smm_joints.png
+seed=162, task L_max=1.500m, p_tgt=[-0.26459408  0.21648958  0.34560534]
+    filter: no_converge=53, near_limit(<0.05)=22, dup(<0.08)=30
+
+=== 5 SMM branches at seed 162 task start ===
+  br0: T=26, arc=0.75 rad, open, members=4
+  br1: T=122, arc=3.63 rad, open, members=11
+  br2: T=43, arc=1.26 rad, open, members=7
+  br3: T=69, arc=2.04 rad, open, members=5
+  br4: T=56, arc=1.65 rad, open, members=4
+
+  6-DOF strict rollout: 294 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=26, mean=0.036, std=0.014, range=[0.004, 0.052]
+    br1: n=100, mean=0.033, std=0.018, range=[0.024, 0.108]
+    br2: n=43, mean=0.029, std=0.001, range=[0.027, 0.029]
+    br3: n=69, mean=0.028, std=0.008, range=[0.008, 0.059]
+    br4: n=56, mean=0.029, std=0.001, range=[0.027, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed162_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed162_smm_joints.png
+seed=163, task L_max=1.500m, p_tgt=[-0.02616927 -0.20007217  0.32992232]
+    filter: no_converge=66, near_limit(<0.05)=19, dup(<0.08)=28
+
+=== 3 SMM branches at seed 163 task start ===
+  br0: T=77, arc=2.28 rad, open, members=5
+  br1: T=98, arc=2.91 rad, open, members=9
+  br2: T=72, arc=2.13 rad, open, members=5
+
+  6-DOF strict rollout: 247 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=77, mean=0.031, std=0.003, range=[0.027, 0.040]
+    br1: n=98, mean=0.030, std=0.002, range=[0.027, 0.032]
+    br2: n=72, mean=0.030, std=0.002, range=[0.027, 0.035]
+
+saved: Yuan/RL/intro_motivation/data/task_seed163_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed163_smm_joints.png
+seed=164, task L_max=1.500m, p_tgt=[-0.24041618 -0.2777786   0.4890001 ]
+    filter: no_converge=52, near_limit(<0.05)=10, dup(<0.08)=37
+
+=== 5 SMM branches at seed 164 task start ===
+  br0: T=99, arc=2.94 rad, open, members=9
+  br1: T=100, arc=2.97 rad, open, members=8
+  br2: T=58, arc=1.71 rad, open, members=1
+  br3: T=14, arc=0.39 rad, open, members=1
+  br4: T=66, arc=1.95 rad, open, members=3
+
+  6-DOF strict rollout: 337 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=99, mean=0.028, std=0.001, range=[0.027, 0.029]
+    br1: n=100, mean=0.031, std=0.003, range=[0.027, 0.040]
+    br2: n=58, mean=0.029, std=0.001, range=[0.027, 0.032]
+    br3: n=14, mean=0.032, std=0.002, range=[0.029, 0.035]
+    br4: n=66, mean=0.028, std=0.002, range=[0.024, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed164_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed164_smm_joints.png
+seed=165, task L_max=1.500m, p_tgt=[0.47695643 0.11929612 0.28396448]
+    filter: no_converge=47, near_limit(<0.05)=0, dup(<0.08)=60
+
+=== 3 SMM branches at seed 165 task start ===
+  br0: T=246, arc=7.35 rad, open, members=26
+  br1: T=85, arc=2.52 rad, open, members=2
+  br2: T=122, arc=3.63 rad, open, members=7
+
+  6-DOF strict rollout: 285 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.271, std=0.155, range=[0.015, 0.384]
+    br1: n=85, mean=0.222, std=0.177, range=[0.015, 0.384]
+    br2: n=100, mean=0.271, std=0.147, range=[0.017, 0.381]
+
+saved: Yuan/RL/intro_motivation/data/task_seed165_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed165_smm_joints.png
+seed=166, task L_max=1.500m, p_tgt=[0.3172777  0.0934395  0.37484235]
+    filter: no_converge=34, near_limit(<0.05)=0, dup(<0.08)=75
+
+=== 3 SMM branches at seed 166 task start ===
+  br0: T=235, arc=7.02 rad, open, members=17
+  br1: T=102, arc=3.03 rad, open, members=8
+  br2: T=87, arc=2.58 rad, open, members=8
+
+  6-DOF strict rollout: 287 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.034, std=0.004, range=[0.025, 0.041]
+    br1: n=100, mean=0.034, std=0.004, range=[0.028, 0.041]
+    br2: n=87, mean=0.033, std=0.003, range=[0.025, 0.037]
+
+saved: Yuan/RL/intro_motivation/data/task_seed166_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed166_smm_joints.png
+seed=167, task L_max=1.500m, p_tgt=[-0.22492245 -0.127627    0.32515082]
+    filter: no_converge=49, near_limit(<0.05)=12, dup(<0.08)=39
+
+=== 4 SMM branches at seed 167 task start ===
+  br0: T=49, arc=1.44 rad, open, members=7
+  br1: T=88, arc=2.61 rad, open, members=12
+  br2: T=67, arc=1.98 rad, open, members=7
+  br3: T=70, arc=2.07 rad, open, members=4
+
+  6-DOF strict rollout: 274 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=49, mean=0.033, std=0.001, range=[0.032, 0.035]
+    br1: n=88, mean=0.040, std=0.004, range=[0.027, 0.045]
+    br2: n=67, mean=0.041, std=0.005, range=[0.027, 0.045]
+    br3: n=70, mean=0.033, std=0.002, range=[0.027, 0.035]
+
+saved: Yuan/RL/intro_motivation/data/task_seed167_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed167_smm_joints.png
+seed=168, task L_max=1.500m, p_tgt=[-0.10034977 -0.1808683   0.29281464]
+    filter: no_converge=41, near_limit(<0.05)=34, dup(<0.08)=22
+
+=== 3 SMM branches at seed 168 task start ===
+  br0: T=29, arc=0.84 rad, open, members=2
+  br1: T=109, arc=3.24 rad, open, members=12
+  br2: T=35, arc=1.02 rad, open, members=2
+
+  6-DOF strict rollout: 164 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=29, mean=0.060, std=0.009, range=[0.043, 0.071]
+    br1: n=100, mean=0.034, std=0.005, range=[0.021, 0.043]
+    br2: n=35, mean=0.044, std=0.019, range=[0.003, 0.073]
+
+saved: Yuan/RL/intro_motivation/data/task_seed168_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed168_smm_joints.png
+seed=169, task L_max=1.500m, p_tgt=[-0.11736459 -0.06996053  0.4405007 ]
+    filter: no_converge=37, near_limit(<0.05)=19, dup(<0.08)=0
+
+=== 1 SMM branches at seed 169 task start ===
+  br0: T=68, arc=2.01 rad, open, members=4
+
+  6-DOF strict rollout: 68 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=68, mean=0.021, std=0.011, range=[0.000, 0.035]
+
+saved: Yuan/RL/intro_motivation/data/task_seed169_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed169_smm_joints.png
+seed=170, task L_max=1.500m, p_tgt=[-0.05538885  0.28336978  0.4253657 ]
+    filter: no_converge=44, near_limit(<0.05)=17, dup(<0.08)=41
+
+=== 3 SMM branches at seed 170 task start ===
+  br0: T=68, arc=2.01 rad, open, members=8
+  br1: T=69, arc=2.04 rad, open, members=5
+  br2: T=70, arc=2.07 rad, open, members=9
+
+  6-DOF strict rollout: 207 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=68, mean=0.143, std=0.008, range=[0.135, 0.157]
+    br1: n=69, mean=0.062, std=0.018, range=[0.000, 0.076]
+    br2: n=70, mean=0.126, std=0.004, range=[0.117, 0.129]
+
+saved: Yuan/RL/intro_motivation/data/task_seed170_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed170_smm_joints.png
+seed=171, task L_max=1.500m, p_tgt=[-0.29019848 -0.0703256   0.33703956]
+    filter: no_converge=17, near_limit(<0.05)=0, dup(<0.08)=89
+
+=== 4 SMM branches at seed 171 task start ===
+  br0: T=100, arc=2.97 rad, open, members=9
+  br1: T=93, arc=2.76 rad, open, members=13
+  br2: T=87, arc=2.58 rad, open, members=11
+  br3: T=85, arc=2.52 rad, open, members=14
+
+  6-DOF strict rollout: 365 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.017, std=0.001, range=[0.016, 0.019]
+    br1: n=93, mean=0.017, std=0.001, range=[0.016, 0.019]
+    br2: n=87, mean=0.017, std=0.001, range=[0.015, 0.019]
+    br3: n=85, mean=0.017, std=0.001, range=[0.015, 0.017]
+
+saved: Yuan/RL/intro_motivation/data/task_seed171_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed171_smm_joints.png
+seed=172, task L_max=1.500m, p_tgt=[ 0.19909252 -0.16366276  0.29736853]
+    filter: no_converge=53, near_limit(<0.05)=33, dup(<0.08)=33
+
+=== 4 SMM branches at seed 172 task start ===
+  br0: T=102, arc=3.03 rad, open, members=5
+  br1: T=42, arc=1.23 rad, open, members=4
+  br2: T=48, arc=1.41 rad, open, members=1
+  br3: T=42, arc=1.23 rad, open, members=1
+
+  6-DOF strict rollout: 232 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.028, std=0.004, range=[0.003, 0.032]
+    br1: n=42, mean=0.031, std=0.008, range=[0.021, 0.053]
+    br2: n=48, mean=0.028, std=0.005, range=[0.007, 0.040]
+    br3: n=42, mean=0.030, std=0.008, range=[0.019, 0.051]
+
+saved: Yuan/RL/intro_motivation/data/task_seed172_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed172_smm_joints.png
+seed=173, task L_max=1.500m, p_tgt=[0.27831614 0.09769028 0.5020734 ]
+    filter: no_converge=28, near_limit(<0.05)=0, dup(<0.08)=69
+
+=== 3 SMM branches at seed 173 task start ===
+  br0: T=213, arc=6.36 rad, open, members=27
+  br1: T=74, arc=2.19 rad, open, members=9
+  br2: T=86, arc=2.55 rad, open, members=9
+
+  6-DOF strict rollout: 260 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.042, std=0.009, range=[0.008, 0.063]
+    br1: n=74, mean=0.035, std=0.008, range=[0.008, 0.045]
+    br2: n=86, mean=0.050, std=0.004, range=[0.043, 0.064]
+
+saved: Yuan/RL/intro_motivation/data/task_seed173_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed173_smm_joints.png
+seed=174, task L_max=1.500m, p_tgt=[-0.1374565  -0.37512252  0.20023878]
+    filter: no_converge=40, near_limit(<0.05)=8, dup(<0.08)=63
+
+=== 6 SMM branches at seed 174 task start ===
+  br0: T=34, arc=0.99 rad, open, members=6
+  br1: T=108, arc=3.21 rad, open, members=7
+  br2: T=62, arc=1.83 rad, open, members=5
+  br3: T=172, arc=5.13 rad, open, members=18
+  br4: T=63, arc=1.86 rad, open, members=2
+  br5: T=49, arc=1.44 rad, open, members=1
+
+  6-DOF strict rollout: 408 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=34, mean=0.014, std=0.001, range=[0.013, 0.015]
+    br1: n=100, mean=0.015, std=0.001, range=[0.015, 0.017]
+    br2: n=62, mean=0.016, std=0.001, range=[0.015, 0.016]
+    br3: n=100, mean=0.016, std=0.001, range=[0.015, 0.017]
+    br4: n=63, mean=0.015, std=0.001, range=[0.015, 0.016]
+    br5: n=49, mean=0.015, std=0.001, range=[0.012, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed174_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed174_smm_joints.png
+seed=175, task L_max=1.500m, p_tgt=[-0.26323986 -0.31067082  0.24172015]
+    filter: no_converge=59, near_limit(<0.05)=14, dup(<0.08)=47
+
+=== 6 SMM branches at seed 175 task start ===
+  br0: T=151, arc=4.50 rad, open, members=14
+  br1: T=63, arc=1.86 rad, open, members=3
+  br2: T=95, arc=2.82 rad, open, members=8
+  br3: T=118, arc=3.51 rad, open, members=10
+  br4: T=30, arc=0.87 rad, open, members=2
+  br5: T=58, arc=1.71 rad, open, members=3
+
+  6-DOF strict rollout: 446 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.023, std=0.002, range=[0.017, 0.024]
+    br1: n=63, mean=0.023, std=0.003, range=[0.019, 0.029]
+    br2: n=95, mean=0.024, std=0.003, range=[0.012, 0.028]
+    br3: n=100, mean=0.021, std=0.004, range=[0.015, 0.027]
+    br4: n=30, mean=0.015, std=0.002, range=[0.007, 0.017]
+    br5: n=58, mean=0.025, std=0.001, range=[0.021, 0.027]
+
+saved: Yuan/RL/intro_motivation/data/task_seed175_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed175_smm_joints.png
+seed=176, task L_max=1.500m, p_tgt=[0.17258106 0.11909402 0.5177433 ]
+    filter: no_converge=28, near_limit(<0.05)=7, dup(<0.08)=77
+
+=== 3 SMM branches at seed 176 task start ===
+  br0: T=211, arc=6.30 rad, open, members=18
+  br1: T=56, arc=1.65 rad, open, members=6
+  br2: T=38, arc=1.11 rad, open, members=6
+
+  6-DOF strict rollout: 194 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.090, std=0.024, range=[0.003, 0.121]
+    br1: n=56, mean=0.102, std=0.009, range=[0.087, 0.111]
+    br2: n=38, mean=0.055, std=0.015, range=[0.009, 0.075]
+
+saved: Yuan/RL/intro_motivation/data/task_seed176_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed176_smm_joints.png
+seed=177, task L_max=1.500m, p_tgt=[-0.20971556 -0.1346437   0.5435625 ]
+    filter: no_converge=37, near_limit(<0.05)=9, dup(<0.08)=38
+
+=== 3 SMM branches at seed 177 task start ===
+  br0: T=124, arc=3.69 rad, open, members=15
+  br1: T=36, arc=1.05 rad, open, members=4
+  br2: T=97, arc=2.88 rad, open, members=11
+
+  6-DOF strict rollout: 233 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.024, std=0.001, range=[0.019, 0.024]
+    br1: n=36, mean=0.025, std=0.001, range=[0.024, 0.027]
+    br2: n=97, mean=0.025, std=0.004, range=[0.004, 0.035]
+
+saved: Yuan/RL/intro_motivation/data/task_seed177_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed177_smm_joints.png
+seed=178, task L_max=1.500m, p_tgt=[-0.1946717  -0.21794097  0.40942943]
+    filter: no_converge=50, near_limit(<0.05)=36, dup(<0.08)=40
+
+=== 6 SMM branches at seed 178 task start ===
+  br0: T=82, arc=2.43 rad, open, members=11
+  br1: T=95, arc=2.82 rad, open, members=13
+  br2: T=51, arc=1.50 rad, open, members=2
+  br3: T=72, arc=2.13 rad, open, members=1
+  br4: T=11, arc=0.30 rad, open, members=1
+  br5: T=21, arc=0.60 rad, open, members=1
+
+  6-DOF strict rollout: 332 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=82, mean=0.027, std=0.003, range=[0.021, 0.037]
+    br1: n=95, mean=0.026, std=0.001, range=[0.024, 0.027]
+    br2: n=51, mean=0.026, std=0.001, range=[0.021, 0.027]
+    br3: n=72, mean=0.026, std=0.001, range=[0.021, 0.027]
+    br4: n=11, mean=0.024, std=0.001, range=[0.024, 0.027]
+    br5: n=21, mean=0.028, std=0.002, range=[0.027, 0.032]
+
+saved: Yuan/RL/intro_motivation/data/task_seed178_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed178_smm_joints.png
+seed=179, task L_max=1.500m, p_tgt=[-0.00773188  0.31464687  0.47167367]
+    filter: no_converge=41, near_limit(<0.05)=16, dup(<0.08)=31
+
+=== 3 SMM branches at seed 179 task start ===
+  br0: T=77, arc=2.28 rad, open, members=10
+  br1: T=138, arc=4.11 rad, open, members=13
+  br2: T=16, arc=0.45 rad, open, members=1
+
+  6-DOF strict rollout: 193 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=77, mean=0.178, std=0.122, range=[0.001, 0.311]
+    br1: n=100, mean=0.272, std=0.066, range=[0.108, 0.328]
+    br2: n=16, mean=0.246, std=0.000, range=[0.245, 0.247]
+
+saved: Yuan/RL/intro_motivation/data/task_seed179_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed179_smm_joints.png
+seed=180, task L_max=1.500m, p_tgt=[0.02067407 0.09299403 0.3601928 ]
+    filter: no_converge=60, near_limit(<0.05)=6, dup(<0.08)=40
+
+=== 3 SMM branches at seed 180 task start ===
+  br0: T=125, arc=3.72 rad, open, members=16
+  br1: T=43, arc=1.26 rad, open, members=8
+  br2: T=65, arc=1.92 rad, open, members=4
+
+  6-DOF strict rollout: 208 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.254, std=0.096, range=[0.067, 0.319]
+    br1: n=43, mean=0.038, std=0.004, range=[0.033, 0.044]
+    br2: n=65, mean=0.076, std=0.037, range=[0.005, 0.148]
+
+saved: Yuan/RL/intro_motivation/data/task_seed180_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed180_smm_joints.png
+seed=181, task L_max=1.500m, p_tgt=[0.5207429  0.2222881  0.12230207]
+    filter: no_converge=67, near_limit(<0.05)=14, dup(<0.08)=41
+
+=== 4 SMM branches at seed 181 task start ===
+  br0: T=77, arc=2.28 rad, open, members=3
+  br1: T=110, arc=3.27 rad, open, members=13
+  br2: T=71, arc=2.10 rad, open, members=4
+  br3: T=77, arc=2.28 rad, open, members=1
+
+  6-DOF strict rollout: 325 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=77, mean=0.019, std=0.002, range=[0.017, 0.021]
+    br1: n=100, mean=0.020, std=0.002, range=[0.017, 0.023]
+    br2: n=71, mean=0.021, std=0.001, range=[0.019, 0.023]
+    br3: n=77, mean=0.019, std=0.002, range=[0.017, 0.021]
+
+saved: Yuan/RL/intro_motivation/data/task_seed181_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed181_smm_joints.png
+seed=182, task L_max=1.500m, p_tgt=[0.2893018  0.29990798 0.30007172]
+    filter: no_converge=19, near_limit(<0.05)=18, dup(<0.08)=72
+
+=== 4 SMM branches at seed 182 task start ===
+  br0: T=238, arc=7.11 rad, open, members=22
+  br1: T=118, arc=3.51 rad, open, members=10
+  br2: T=70, arc=2.07 rad, open, members=4
+  br3: T=12, arc=0.33 rad, open, members=1
+
+  6-DOF strict rollout: 282 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.015, std=0.002, range=[0.003, 0.016]
+    br1: n=100, mean=0.015, std=0.002, range=[0.012, 0.017]
+    br2: n=70, mean=0.016, std=0.000, range=[0.016, 0.016]
+    br3: n=12, mean=0.016, std=0.001, range=[0.016, 0.017]
+
+saved: Yuan/RL/intro_motivation/data/task_seed182_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed182_smm_joints.png
+seed=183, task L_max=1.500m, p_tgt=[0.27467394 0.14114103 0.43395674]
+    filter: no_converge=34, near_limit(<0.05)=1, dup(<0.08)=81
+
+=== 3 SMM branches at seed 183 task start ===
+  br0: T=222, arc=6.63 rad, open, members=14
+  br1: T=76, arc=2.25 rad, open, members=8
+  br2: T=82, arc=2.43 rad, open, members=8
+
+  6-DOF strict rollout: 258 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.024, std=0.001, range=[0.019, 0.025]
+    br1: n=76, mean=0.024, std=0.001, range=[0.021, 0.025]
+    br2: n=82, mean=0.023, std=0.001, range=[0.019, 0.027]
+
+saved: Yuan/RL/intro_motivation/data/task_seed183_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed183_smm_joints.png
+seed=184, task L_max=1.500m, p_tgt=[0.3026911  0.12652057 0.38007155]
+    filter: no_converge=27, near_limit(<0.05)=2, dup(<0.08)=71
+
+=== 3 SMM branches at seed 184 task start ===
+  br0: T=205, arc=6.12 rad, open, members=18
+  br1: T=80, arc=2.37 rad, open, members=10
+  br2: T=56, arc=1.65 rad, open, members=4
+
+  6-DOF strict rollout: 236 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.015, std=0.001, range=[0.013, 0.016]
+    br1: n=80, mean=0.015, std=0.000, range=[0.015, 0.016]
+    br2: n=56, mean=0.015, std=0.001, range=[0.013, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed184_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed184_smm_joints.png
+seed=185, task L_max=1.500m, p_tgt=[0.25842494 0.03832896 0.21107537]
+    filter: no_converge=63, near_limit(<0.05)=30, dup(<0.08)=54
+
+=== 4 SMM branches at seed 185 task start ===
+  br0: T=157, arc=4.68 rad, open, members=10
+  br1: T=40, arc=1.17 rad, open, members=6
+  br2: T=62, arc=1.83 rad, open, members=7
+  br3: T=51, arc=1.50 rad, open, members=6
+
+  6-DOF strict rollout: 253 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.016, std=0.001, range=[0.013, 0.017]
+    br1: n=40, mean=0.014, std=0.001, range=[0.013, 0.016]
+    br2: n=62, mean=0.017, std=0.001, range=[0.015, 0.017]
+    br3: n=51, mean=0.016, std=0.001, range=[0.013, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed185_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed185_smm_joints.png
+seed=186, task L_max=1.500m, p_tgt=[0.31298196 0.08803844 0.52945477]
+    filter: no_converge=24, near_limit(<0.05)=16, dup(<0.08)=65
+
+=== 5 SMM branches at seed 186 task start ===
+  br0: T=134, arc=3.99 rad, open, members=16
+  br1: T=70, arc=2.07 rad, open, members=3
+  br2: T=53, arc=1.56 rad, open, members=4
+  br3: T=57, arc=1.68 rad, open, members=4
+  br4: T=19, arc=0.54 rad, open, members=3
+
+  6-DOF strict rollout: 299 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.053, std=0.009, range=[0.043, 0.080]
+    br1: n=70, mean=0.102, std=0.043, range=[0.024, 0.165]
+    br2: n=53, mean=0.117, std=0.038, range=[0.045, 0.159]
+    br3: n=57, mean=0.053, std=0.010, range=[0.048, 0.085]
+    br4: n=19, mean=0.043, std=0.000, range=[0.043, 0.043]
+
+saved: Yuan/RL/intro_motivation/data/task_seed186_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed186_smm_joints.png
+seed=187, task L_max=1.500m, p_tgt=[ 0.05345752 -0.20362157  0.4340784 ]
+    filter: no_converge=60, near_limit(<0.05)=6, dup(<0.08)=36
+
+=== 5 SMM branches at seed 187 task start ===
+  br0: T=164, arc=4.89 rad, open, members=16
+  br1: T=15, arc=0.42 rad, open, members=1
+  br2: T=40, arc=1.17 rad, open, members=4
+  br3: T=26, arc=0.75 rad, open, members=1
+  br4: T=25, arc=0.72 rad, open, members=1
+
+  6-DOF strict rollout: 206 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.036, std=0.004, range=[0.021, 0.037]
+    br1: n=15, mean=0.034, std=0.002, range=[0.032, 0.037]
+    br2: n=40, mean=0.093, std=0.014, range=[0.043, 0.104]
+    br3: n=26, mean=0.036, std=0.015, range=[0.003, 0.052]
+    br4: n=25, mean=0.034, std=0.005, range=[0.024, 0.040]
+
+saved: Yuan/RL/intro_motivation/data/task_seed187_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed187_smm_joints.png
+seed=188, task L_max=1.500m, p_tgt=[ 0.13352604 -0.14301394  0.38132787]
+    filter: no_converge=28, near_limit(<0.05)=20, dup(<0.08)=30
+
+=== 3 SMM branches at seed 188 task start ===
+  br0: T=80, arc=2.37 rad, open, members=9
+  br1: T=60, arc=1.77 rad, open, members=2
+  br2: T=67, arc=1.98 rad, open, members=9
+
+  6-DOF strict rollout: 207 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=80, mean=0.039, std=0.003, range=[0.035, 0.045]
+    br1: n=60, mean=0.025, std=0.006, range=[0.003, 0.031]
+    br2: n=67, mean=0.045, std=0.002, range=[0.039, 0.048]
+
+saved: Yuan/RL/intro_motivation/data/task_seed188_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed188_smm_joints.png
+seed=189, task L_max=1.500m, p_tgt=[ 0.07671743 -0.06728677  0.52534044]
+    filter: no_converge=17, near_limit(<0.05)=12, dup(<0.08)=39
+
+=== 2 SMM branches at seed 189 task start ===
+  br0: T=158, arc=4.71 rad, open, members=17
+  br1: T=57, arc=1.68 rad, open, members=8
+
+  6-DOF strict rollout: 157 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.246, std=0.074, range=[0.092, 0.303]
+    br1: n=57, mean=0.057, std=0.007, range=[0.048, 0.067]
+
+saved: Yuan/RL/intro_motivation/data/task_seed189_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed189_smm_joints.png
+seed=190, task L_max=1.500m, p_tgt=[ 0.52447385 -0.04908584  0.27480468]
+    filter: no_converge=50, near_limit(<0.05)=4, dup(<0.08)=75
+
+=== 7 SMM branches at seed 190 task start ===
+  br0: T=54, arc=1.59 rad, open, members=7
+  br1: T=255, arc=7.62 rad, open, members=16
+  br2: T=53, arc=1.56 rad, open, members=7
+  br3: T=110, arc=3.27 rad, open, members=7
+  br4: T=134, arc=3.99 rad, open, members=10
+  br5: T=99, arc=2.94 rad, open, members=7
+  br6: T=53, arc=1.56 rad, open, members=3
+
+  6-DOF strict rollout: 559 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=54, mean=0.030, std=0.002, range=[0.027, 0.032]
+    br1: n=100, mean=0.032, std=0.002, range=[0.029, 0.037]
+    br2: n=53, mean=0.030, std=0.002, range=[0.027, 0.032]
+    br3: n=100, mean=0.033, std=0.002, range=[0.029, 0.040]
+    br4: n=100, mean=0.141, std=0.124, range=[0.029, 0.312]
+    br5: n=99, mean=0.031, std=0.002, range=[0.029, 0.037]
+    br6: n=53, mean=0.090, std=0.011, range=[0.068, 0.103]
+
+saved: Yuan/RL/intro_motivation/data/task_seed190_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed190_smm_joints.png
+seed=191, task L_max=1.500m, p_tgt=[ 0.49187317 -0.36217108  0.16629049]
+    filter: no_converge=77, near_limit(<0.05)=28, dup(<0.08)=37
+
+=== 6 SMM branches at seed 191 task start ===
+  br0: T=127, arc=3.78 rad, open, members=8
+  br1: T=28, arc=0.81 rad, open, members=4
+  br2: T=142, arc=4.23 rad, open, members=9
+  br3: T=82, arc=2.43 rad, open, members=3
+  br4: T=30, arc=0.87 rad, open, members=3
+  br5: T=67, arc=1.98 rad, open, members=2
+
+  6-DOF strict rollout: 407 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.168, std=0.102, range=[0.057, 0.315]
+    br1: n=28, mean=0.659, std=0.000, range=[0.659, 0.659]
+    br2: n=100, mean=0.172, std=0.106, range=[0.057, 0.317]
+    br3: n=82, mean=0.315, std=0.058, range=[0.007, 0.336]
+    br4: n=30, mean=0.171, std=0.010, range=[0.156, 0.191]
+    br5: n=67, mean=0.326, std=0.011, range=[0.308, 0.336]
+
+saved: Yuan/RL/intro_motivation/data/task_seed191_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed191_smm_joints.png
+seed=192, task L_max=1.500m, p_tgt=[ 0.17328875 -0.32235307  0.2565361 ]
+    filter: no_converge=42, near_limit(<0.05)=15, dup(<0.08)=67
+
+=== 4 SMM branches at seed 192 task start ===
+  br0: T=194, arc=5.79 rad, open, members=13
+  br1: T=95, arc=2.82 rad, open, members=8
+  br2: T=26, arc=0.75 rad, open, members=1
+  br3: T=31, arc=0.90 rad, open, members=2
+
+  6-DOF strict rollout: 252 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.115, std=0.057, range=[0.001, 0.184]
+    br1: n=95, mean=0.121, std=0.049, range=[0.052, 0.175]
+    br2: n=26, mean=0.008, std=0.003, range=[0.000, 0.013]
+    br3: n=31, mean=0.072, std=0.015, range=[0.049, 0.100]
+
+saved: Yuan/RL/intro_motivation/data/task_seed192_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed192_smm_joints.png
+seed=193, task L_max=1.500m, p_tgt=[-0.18855621 -0.3472782   0.3458985 ]
+    filter: no_converge=60, near_limit(<0.05)=15, dup(<0.08)=39
+
+=== 4 SMM branches at seed 193 task start ===
+  br0: T=103, arc=3.06 rad, open, members=6
+  br1: T=101, arc=3.00 rad, open, members=13
+  br2: T=51, arc=1.50 rad, open, members=4
+  br3: T=78, arc=2.31 rad, open, members=7
+
+  6-DOF strict rollout: 329 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.040, std=0.004, range=[0.035, 0.045]
+    br1: n=100, mean=0.039, std=0.005, range=[0.032, 0.045]
+    br2: n=51, mean=0.044, std=0.014, range=[0.035, 0.083]
+    br3: n=78, mean=0.039, std=0.005, range=[0.027, 0.045]
+
+saved: Yuan/RL/intro_motivation/data/task_seed193_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed193_smm_joints.png
+seed=194, task L_max=1.500m, p_tgt=[ 0.08071292 -0.09461018  0.2875347 ]
+    filter: no_converge=15, near_limit(<0.05)=43, dup(<0.08)=44
+
+=== 4 SMM branches at seed 194 task start ===
+  br0: T=41, arc=1.20 rad, open, members=1
+  br1: T=145, arc=4.32 rad, open, members=15
+  br2: T=40, arc=1.17 rad, open, members=6
+  br3: T=16, arc=0.45 rad, open, members=2
+
+  6-DOF strict rollout: 197 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=41, mean=0.026, std=0.001, range=[0.021, 0.027]
+    br1: n=100, mean=0.026, std=0.001, range=[0.021, 0.027]
+    br2: n=40, mean=0.026, std=0.001, range=[0.024, 0.027]
+    br3: n=16, mean=0.036, std=0.001, range=[0.035, 0.037]
+
+saved: Yuan/RL/intro_motivation/data/task_seed194_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed194_smm_joints.png
+seed=195, task L_max=1.500m, p_tgt=[-0.24236892 -0.29484513  0.42338866]
+    filter: no_converge=51, near_limit(<0.05)=20, dup(<0.08)=40
+
+=== 5 SMM branches at seed 195 task start ===
+  br0: T=33, arc=0.96 rad, open, members=6
+  br1: T=84, arc=2.49 rad, open, members=11
+  br2: T=122, arc=3.63 rad, open, members=8
+  br3: T=69, arc=2.04 rad, open, members=8
+  br4: T=44, arc=1.29 rad, open, members=2
+
+  6-DOF strict rollout: 330 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=33, mean=0.111, std=0.009, range=[0.085, 0.119]
+    br1: n=84, mean=0.321, std=0.075, range=[0.208, 0.377]
+    br2: n=100, mean=0.242, std=0.099, range=[0.121, 0.396]
+    br3: n=69, mean=0.392, std=0.002, range=[0.389, 0.395]
+    br4: n=44, mean=0.227, std=0.017, range=[0.207, 0.256]
+
+saved: Yuan/RL/intro_motivation/data/task_seed195_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed195_smm_joints.png
+seed=196, task L_max=1.500m, p_tgt=[ 0.48737398 -0.3106702   0.10587372]
+    filter: no_converge=60, near_limit(<0.05)=25, dup(<0.08)=75
+
+=== 8 SMM branches at seed 196 task start ===
+  br0: T=87, arc=2.58 rad, open, members=9
+  br1: T=140, arc=4.17 rad, open, members=7
+  br2: T=107, arc=3.18 rad, open, members=8
+  br3: T=68, arc=2.01 rad, open, members=4
+  br4: T=107, arc=3.18 rad, open, members=9
+  br5: T=123, arc=3.66 rad, open, members=5
+  br6: T=56, arc=1.65 rad, open, members=6
+  br7: T=60, arc=1.77 rad, open, members=1
+
+  6-DOF strict rollout: 671 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=87, mean=0.302, std=0.067, range=[0.177, 0.395]
+    br1: n=100, mean=0.138, std=0.060, range=[0.043, 0.212]
+    br2: n=100, mean=0.197, std=0.066, range=[0.008, 0.243]
+    br3: n=68, mean=0.324, std=0.009, range=[0.308, 0.339]
+    br4: n=100, mean=0.197, std=0.066, range=[0.005, 0.243]
+    br5: n=100, mean=0.157, std=0.084, range=[0.043, 0.243]
+    br6: n=56, mean=0.379, std=0.067, range=[0.300, 0.451]
+    br7: n=60, mean=0.254, std=0.044, range=[0.177, 0.308]
+
+saved: Yuan/RL/intro_motivation/data/task_seed196_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed196_smm_joints.png
+seed=197, task L_max=1.500m, p_tgt=[ 0.4216412  -0.27517214  0.30299428]
+    filter: no_converge=28, near_limit(<0.05)=8, dup(<0.08)=62
+
+=== 5 SMM branches at seed 197 task start ===
+  br0: T=216, arc=6.45 rad, open, members=23
+  br1: T=116, arc=3.45 rad, open, members=4
+  br2: T=38, arc=1.11 rad, open, members=2
+  br3: T=54, arc=1.59 rad, open, members=3
+  br4: T=38, arc=1.11 rad, open, members=2
+
+  6-DOF strict rollout: 330 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.227, std=0.217, range=[0.009, 0.489]
+    br1: n=100, mean=0.240, std=0.209, range=[0.011, 0.501]
+    br2: n=38, mean=0.206, std=0.001, range=[0.204, 0.207]
+    br3: n=54, mean=0.016, std=0.006, range=[0.009, 0.029]
+    br4: n=38, mean=0.206, std=0.001, range=[0.204, 0.207]
+
+saved: Yuan/RL/intro_motivation/data/task_seed197_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed197_smm_joints.png
+seed=198, task L_max=1.500m, p_tgt=[-0.29377857 -0.29311514  0.10810433]
+    filter: no_converge=45, near_limit(<0.05)=5, dup(<0.08)=46
+
+=== 3 SMM branches at seed 198 task start ===
+  br0: T=124, arc=3.69 rad, open, members=17
+  br1: T=101, arc=3.00 rad, open, members=5
+  br2: T=146, arc=4.35 rad, open, members=12
+
+  6-DOF strict rollout: 300 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.246, std=0.144, range=[0.020, 0.420]
+    br1: n=100, mean=0.233, std=0.200, range=[0.016, 0.429]
+    br2: n=100, mean=0.246, std=0.123, range=[0.020, 0.363]
+
+saved: Yuan/RL/intro_motivation/data/task_seed198_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed198_smm_joints.png
+seed=199, task L_max=1.500m, p_tgt=[0.27042207 0.2349794  0.27773213]
+    filter: no_converge=35, near_limit(<0.05)=10, dup(<0.08)=43
+
+=== 5 SMM branches at seed 199 task start ===
+  br0: T=43, arc=1.26 rad, open, members=5
+  br1: T=17, arc=0.48 rad, open, members=1
+  br2: T=188, arc=5.61 rad, open, members=21
+  br3: T=116, arc=3.45 rad, open, members=8
+  br4: T=43, arc=1.26 rad, open, members=6
+
+  6-DOF strict rollout: 303 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=43, mean=0.204, std=0.002, range=[0.200, 0.207]
+    br1: n=17, mean=0.122, std=0.001, range=[0.120, 0.124]
+    br2: n=100, mean=0.728, std=0.010, range=[0.704, 0.737]
+    br3: n=100, mean=0.484, std=0.195, range=[0.295, 0.731]
+    br4: n=43, mean=0.204, std=0.002, range=[0.200, 0.207]
+
+saved: Yuan/RL/intro_motivation/data/task_seed199_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed199_smm_joints.png
+seed=200, task L_max=1.500m, p_tgt=[-0.27072638  0.12020681  0.1812924 ]
+    filter: no_converge=64, near_limit(<0.05)=19, dup(<0.08)=66
+
+=== 5 SMM branches at seed 200 task start ===
+  br0: T=92, arc=2.73 rad, open, members=10
+  br1: T=100, arc=2.97 rad, open, members=13
+  br2: T=32, arc=0.93 rad, open, members=4
+  br3: T=92, arc=2.73 rad, open, members=6
+  br4: T=67, arc=1.98 rad, open, members=8
+
+  6-DOF strict rollout: 383 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=92, mean=0.031, std=0.003, range=[0.029, 0.043]
+    br1: n=100, mean=0.029, std=0.001, range=[0.024, 0.032]
+    br2: n=32, mean=0.038, std=0.006, range=[0.024, 0.048]
+    br3: n=92, mean=0.031, std=0.003, range=[0.024, 0.040]
+    br4: n=67, mean=0.035, std=0.005, range=[0.032, 0.051]
+
+saved: Yuan/RL/intro_motivation/data/task_seed200_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed200_smm_joints.png
+seed=201, task L_max=1.500m, p_tgt=[-0.07435466 -0.23753834  0.26760036]
+    filter: no_converge=28, near_limit(<0.05)=2, dup(<0.08)=0
+
+=== 1 SMM branches at seed 201 task start ===
+  br0: T=50, arc=1.47 rad, open, members=3
+
+  6-DOF strict rollout: 50 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=50, mean=0.019, std=0.003, range=[0.005, 0.024]
+
+saved: Yuan/RL/intro_motivation/data/task_seed201_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed201_smm_joints.png
+seed=202, task L_max=1.500m, p_tgt=[0.17198941 0.18841739 0.50670016]
+    filter: no_converge=25, near_limit(<0.05)=29, dup(<0.08)=55
+
+=== 3 SMM branches at seed 202 task start ===
+  br0: T=175, arc=5.22 rad, open, members=14
+  br1: T=30, arc=0.87 rad, open, members=2
+  br2: T=99, arc=2.94 rad, open, members=13
+
+  6-DOF strict rollout: 229 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.052, std=0.021, range=[0.040, 0.143]
+    br1: n=30, mean=0.100, std=0.011, range=[0.079, 0.111]
+    br2: n=99, mean=0.076, std=0.075, range=[0.027, 0.240]
+
+saved: Yuan/RL/intro_motivation/data/task_seed202_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed202_smm_joints.png
+seed=203, task L_max=1.500m, p_tgt=[ 0.53510576 -0.39227834  0.3226656 ]
+    filter: no_converge=45, near_limit(<0.05)=0, dup(<0.08)=65
+
+=== 3 SMM branches at seed 203 task start ===
+  br0: T=323, arc=9.66 rad, open, members=30
+  br1: T=90, arc=2.67 rad, open, members=4
+  br2: T=150, arc=4.47 rad, open, members=5
+
+  6-DOF strict rollout: 290 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.016, std=0.000, range=[0.015, 0.016]
+    br1: n=90, mean=0.014, std=0.002, range=[0.003, 0.016]
+    br2: n=100, mean=0.016, std=0.000, range=[0.015, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed203_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed203_smm_joints.png
+seed=204, task L_max=1.500m, p_tgt=[-0.2397471  -0.08841699  0.46368194]
+    filter: no_converge=21, near_limit(<0.05)=0, dup(<0.08)=36
+
+=== 3 SMM branches at seed 204 task start ===
+  br0: T=110, arc=3.27 rad, open, members=17
+  br1: T=67, arc=1.98 rad, open, members=9
+  br2: T=74, arc=2.19 rad, open, members=2
+
+  6-DOF strict rollout: 241 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.026, std=0.001, range=[0.024, 0.027]
+    br1: n=67, mean=0.024, std=0.002, range=[0.017, 0.027]
+    br2: n=74, mean=0.027, std=0.002, range=[0.025, 0.032]
+
+saved: Yuan/RL/intro_motivation/data/task_seed204_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed204_smm_joints.png
+seed=205, task L_max=1.500m, p_tgt=[-0.28751498  0.25959095  0.19090362]
+    filter: no_converge=71, near_limit(<0.05)=14, dup(<0.08)=49
+
+=== 6 SMM branches at seed 205 task start ===
+  br0: T=79, arc=2.34 rad, open, members=7
+  br1: T=78, arc=2.31 rad, open, members=10
+  br2: T=18, arc=0.51 rad, open, members=2
+  br3: T=78, arc=2.31 rad, open, members=7
+  br4: T=70, arc=2.07 rad, open, members=5
+  br5: T=45, arc=1.32 rad, open, members=2
+
+  6-DOF strict rollout: 368 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=79, mean=0.025, std=0.013, range=[0.000, 0.040]
+    br1: n=78, mean=0.616, std=0.000, range=[0.616, 0.616]
+    br2: n=18, mean=0.040, std=0.001, range=[0.040, 0.041]
+    br3: n=78, mean=0.616, std=0.000, range=[0.616, 0.616]
+    br4: n=70, mean=0.366, std=0.124, range=[0.004, 0.427]
+    br5: n=45, mean=0.348, std=0.204, range=[0.144, 0.620]
+
+saved: Yuan/RL/intro_motivation/data/task_seed205_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed205_smm_joints.png
+seed=206, task L_max=1.500m, p_tgt=[-0.02642537  0.31313744  0.14811629]
+    filter: no_converge=42, near_limit(<0.05)=11, dup(<0.08)=59
+
+=== 8 SMM branches at seed 206 task start ===
+  br0: T=175, arc=5.22 rad, open, members=17
+  br1: T=100, arc=2.97 rad, open, members=16
+  br2: T=87, arc=2.58 rad, open, members=9
+  br3: T=87, arc=2.58 rad, open, members=6
+  br4: T=53, arc=1.56 rad, open, members=3
+  br5: T=37, arc=1.08 rad, open, members=2
+  br6: T=23, arc=0.66 rad, open, members=2
+  br7: T=91, arc=2.70 rad, open, members=2
+
+  6-DOF strict rollout: 578 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.109, std=0.077, range=[0.007, 0.197]
+    br1: n=100, mean=0.071, std=0.016, range=[0.015, 0.093]
+    br2: n=87, mean=0.044, std=0.009, range=[0.035, 0.060]
+    br3: n=87, mean=0.044, std=0.009, range=[0.035, 0.060]
+    br4: n=53, mean=0.186, std=0.019, range=[0.161, 0.215]
+    br5: n=37, mean=0.061, std=0.004, range=[0.056, 0.068]
+    br6: n=23, mean=0.163, std=0.000, range=[0.163, 0.163]
+    br7: n=91, mean=0.110, std=0.064, range=[0.007, 0.175]
+
+saved: Yuan/RL/intro_motivation/data/task_seed206_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed206_smm_joints.png
+seed=207, task L_max=1.500m, p_tgt=[ 0.2257483  -0.29737446  0.46505836]
+    filter: no_converge=62, near_limit(<0.05)=13, dup(<0.08)=37
+
+=== 3 SMM branches at seed 207 task start ===
+  br0: T=93, arc=2.76 rad, open, members=9
+  br1: T=185, arc=5.52 rad, open, members=15
+  br2: T=23, arc=0.66 rad, open, members=1
+
+  6-DOF strict rollout: 216 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=93, mean=0.024, std=0.005, range=[0.000, 0.037]
+    br1: n=100, mean=0.024, std=0.001, range=[0.021, 0.027]
+    br2: n=23, mean=0.024, std=0.003, range=[0.021, 0.029]
+
+saved: Yuan/RL/intro_motivation/data/task_seed207_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed207_smm_joints.png
+seed=208, task L_max=1.500m, p_tgt=[ 0.06149466 -0.35571718  0.47087744]
+    filter: no_converge=41, near_limit(<0.05)=11, dup(<0.08)=63
+
+=== 5 SMM branches at seed 208 task start ===
+  br0: T=66, arc=1.95 rad, open, members=5
+  br1: T=180, arc=5.37 rad, open, members=21
+  br2: T=12, arc=0.33 rad, open, members=1
+  br3: T=31, arc=0.90 rad, open, members=3
+  br4: T=35, arc=1.02 rad, open, members=3
+
+  6-DOF strict rollout: 244 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=66, mean=0.211, std=0.066, range=[0.129, 0.283]
+    br1: n=100, mean=0.289, std=0.032, range=[0.173, 0.313]
+    br2: n=12, mean=0.031, std=0.009, range=[0.011, 0.041]
+    br3: n=31, mean=0.294, std=0.002, range=[0.292, 0.296]
+    br4: n=35, mean=0.153, std=0.002, range=[0.149, 0.155]
+
+saved: Yuan/RL/intro_motivation/data/task_seed208_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed208_smm_joints.png
+seed=209, task L_max=1.500m, p_tgt=[ 0.26767957 -0.08935219  0.41527486]
+    filter: no_converge=28, near_limit(<0.05)=0, dup(<0.08)=75
+
+=== 3 SMM branches at seed 209 task start ===
+  br0: T=69, arc=2.04 rad, open, members=7
+  br1: T=199, arc=5.94 rad, open, members=20
+  br2: T=94, arc=2.79 rad, open, members=11
+
+  6-DOF strict rollout: 263 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=69, mean=0.359, std=0.063, range=[0.008, 0.385]
+    br1: n=100, mean=0.359, std=0.056, range=[0.008, 0.393]
+    br2: n=94, mean=0.376, std=0.022, range=[0.315, 0.389]
+
+saved: Yuan/RL/intro_motivation/data/task_seed209_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed209_smm_joints.png
+seed=210, task L_max=1.500m, p_tgt=[0.30667672 0.286692   0.2668232 ]
+    filter: no_converge=26, near_limit(<0.05)=0, dup(<0.08)=77
+
+=== 3 SMM branches at seed 210 task start ===
+  br0: T=80, arc=2.37 rad, open, members=8
+  br1: T=249, arc=7.44 rad, open, members=22
+  br2: T=117, arc=3.48 rad, open, members=8
+
+  6-DOF strict rollout: 280 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=80, mean=0.013, std=0.002, range=[0.011, 0.017]
+    br1: n=100, mean=0.014, std=0.002, range=[0.011, 0.017]
+    br2: n=100, mean=0.014, std=0.002, range=[0.012, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed210_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed210_smm_joints.png
+seed=211, task L_max=1.500m, p_tgt=[0.2185783  0.37199444 0.26442614]
+    filter: no_converge=86, near_limit(<0.05)=12, dup(<0.08)=29
+
+=== 4 SMM branches at seed 211 task start ===
+  br0: T=135, arc=4.02 rad, open, members=5
+  br1: T=102, arc=3.03 rad, open, members=3
+  br2: T=79, arc=2.34 rad, open, members=10
+  br3: T=79, arc=2.34 rad, open, members=4
+
+  6-DOF strict rollout: 358 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.337, std=0.028, range=[0.299, 0.377]
+    br1: n=100, mean=0.816, std=0.161, range=[0.475, 0.897]
+    br2: n=79, mean=0.409, std=0.005, range=[0.404, 0.417]
+    br3: n=79, mean=0.304, std=0.143, range=[0.015, 0.381]
+
+saved: Yuan/RL/intro_motivation/data/task_seed211_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed211_smm_joints.png
+seed=212, task L_max=1.500m, p_tgt=[ 0.2004825  -0.01686942  0.35118744]
+    filter: no_converge=36, near_limit(<0.05)=11, dup(<0.08)=28
+
+=== 3 SMM branches at seed 212 task start ===
+  br0: T=143, arc=4.26 rad, open, members=15
+  br1: T=38, arc=1.11 rad, open, members=2
+  br2: T=17, arc=0.48 rad, open, members=2
+
+  6-DOF strict rollout: 155 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.014, std=0.002, range=[0.000, 0.017]
+    br1: n=38, mean=0.014, std=0.003, range=[0.001, 0.017]
+    br2: n=17, mean=0.009, std=0.003, range=[0.000, 0.011]
+
+saved: Yuan/RL/intro_motivation/data/task_seed212_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed212_smm_joints.png
+seed=213, task L_max=1.500m, p_tgt=[0.2668313  0.01848448 0.28259444]
+    filter: no_converge=73, near_limit(<0.05)=4, dup(<0.08)=54
+
+=== 4 SMM branches at seed 213 task start ===
+  br0: T=54, arc=1.59 rad, open, members=6
+  br1: T=140, arc=4.17 rad, open, members=14
+  br2: T=45, arc=1.32 rad, open, members=6
+  br3: T=36, arc=1.05 rad, open, members=3
+
+  6-DOF strict rollout: 235 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=54, mean=0.017, std=0.003, range=[0.000, 0.019]
+    br1: n=100, mean=0.016, std=0.001, range=[0.016, 0.019]
+    br2: n=45, mean=0.016, std=0.001, range=[0.016, 0.019]
+    br3: n=36, mean=0.018, std=0.001, range=[0.015, 0.020]
+
+saved: Yuan/RL/intro_motivation/data/task_seed213_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed213_smm_joints.png
+seed=214, task L_max=1.500m, p_tgt=[-0.03582922  0.13992256  0.49229282]
+    filter: no_converge=31, near_limit(<0.05)=16, dup(<0.08)=47
+
+=== 3 SMM branches at seed 214 task start ===
+  br0: T=43, arc=1.26 rad, open, members=2
+  br1: T=172, arc=5.13 rad, open, members=20
+  br2: T=93, arc=2.76 rad, open, members=2
+
+  6-DOF strict rollout: 236 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=43, mean=0.012, std=0.004, range=[0.000, 0.016]
+    br1: n=100, mean=0.015, std=0.003, range=[0.000, 0.016]
+    br2: n=93, mean=0.014, std=0.004, range=[0.000, 0.017]
+
+saved: Yuan/RL/intro_motivation/data/task_seed214_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed214_smm_joints.png
+seed=215, task L_max=1.500m, p_tgt=[ 0.38779137 -0.08425054  0.38234705]
+    filter: no_converge=32, near_limit(<0.05)=6, dup(<0.08)=67
+
+=== 5 SMM branches at seed 215 task start ===
+  br0: T=214, arc=6.39 rad, open, members=26
+  br1: T=136, arc=4.05 rad, open, members=7
+  br2: T=39, arc=1.14 rad, open, members=5
+  br3: T=41, arc=1.20 rad, open, members=1
+  br4: T=39, arc=1.14 rad, open, members=3
+
+  6-DOF strict rollout: 319 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.014, std=0.003, range=[0.001, 0.017]
+    br1: n=100, mean=0.014, std=0.002, range=[0.011, 0.016]
+    br2: n=39, mean=0.015, std=0.001, range=[0.013, 0.016]
+    br3: n=41, mean=0.012, std=0.003, range=[0.001, 0.016]
+    br4: n=39, mean=0.015, std=0.001, range=[0.013, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed215_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed215_smm_joints.png
+seed=216, task L_max=1.500m, p_tgt=[ 0.02337509 -0.07217003  0.39574483]
+    filter: no_converge=37, near_limit(<0.05)=11, dup(<0.08)=28
+
+=== 2 SMM branches at seed 216 task start ===
+  br0: T=105, arc=3.12 rad, open, members=14
+  br1: T=64, arc=1.89 rad, open, members=7
+
+  6-DOF strict rollout: 164 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.233, std=0.143, range=[0.013, 0.363]
+    br1: n=64, mean=0.321, std=0.040, range=[0.256, 0.363]
+
+saved: Yuan/RL/intro_motivation/data/task_seed216_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed216_smm_joints.png
+seed=217, task L_max=1.500m, p_tgt=[0.4322688  0.19767931 0.10900358]
+    filter: no_converge=39, near_limit(<0.05)=19, dup(<0.08)=86
+
+=== 8 SMM branches at seed 217 task start ===
+  br0: T=64, arc=1.89 rad, open, members=7
+  br1: T=86, arc=2.55 rad, open, members=4
+  br2: T=102, arc=3.03 rad, open, members=10
+  br3: T=86, arc=2.55 rad, open, members=7
+  br4: T=109, arc=3.24 rad, open, members=7
+  br5: T=201, arc=6.00 rad, open, members=23
+  br6: T=49, arc=1.44 rad, open, members=3
+  br7: T=64, arc=1.89 rad, open, members=6
+
+  6-DOF strict rollout: 649 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=64, mean=0.111, std=0.030, range=[0.045, 0.135]
+    br1: n=86, mean=0.070, std=0.027, range=[0.023, 0.096]
+    br2: n=100, mean=0.100, std=0.048, range=[0.040, 0.157]
+    br3: n=86, mean=0.070, std=0.027, range=[0.023, 0.096]
+    br4: n=100, mean=0.050, std=0.027, range=[0.015, 0.084]
+    br5: n=100, mean=0.053, std=0.028, range=[0.008, 0.084]
+    br6: n=49, mean=0.029, std=0.017, range=[0.008, 0.053]
+    br7: n=64, mean=0.111, std=0.030, range=[0.045, 0.135]
+
+saved: Yuan/RL/intro_motivation/data/task_seed217_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed217_smm_joints.png
+seed=218, task L_max=1.500m, p_tgt=[-0.29311475  0.29501805  0.27071795]
+    filter: no_converge=77, near_limit(<0.05)=15, dup(<0.08)=56
+
+=== 8 SMM branches at seed 218 task start ===
+  br0: T=82, arc=2.43 rad, open, members=7
+  br1: T=26, arc=0.75 rad, open, members=3
+  br2: T=65, arc=1.92 rad, open, members=7
+  br3: T=34, arc=0.99 rad, open, members=3
+  br4: T=66, arc=1.95 rad, open, members=8
+  br5: T=88, arc=2.61 rad, open, members=10
+  br6: T=49, arc=1.44 rad, open, members=1
+  br7: T=67, arc=1.98 rad, open, members=6
+
+  6-DOF strict rollout: 477 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=82, mean=0.020, std=0.002, range=[0.015, 0.021]
+    br1: n=26, mean=0.021, std=0.000, range=[0.020, 0.021]
+    br2: n=65, mean=0.018, std=0.001, range=[0.017, 0.020]
+    br3: n=34, mean=0.017, std=0.001, range=[0.015, 0.019]
+    br4: n=66, mean=0.018, std=0.001, range=[0.017, 0.020]
+    br5: n=88, mean=0.016, std=0.001, range=[0.015, 0.017]
+    br6: n=49, mean=0.016, std=0.001, range=[0.015, 0.017]
+    br7: n=67, mean=0.016, std=0.002, range=[0.007, 0.019]
+
+saved: Yuan/RL/intro_motivation/data/task_seed218_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed218_smm_joints.png
+seed=219, task L_max=1.500m, p_tgt=[ 0.18895185 -0.38359013  0.51586884]
+    filter: no_converge=55, near_limit(<0.05)=7, dup(<0.08)=57
+
+=== 4 SMM branches at seed 219 task start ===
+  br0: T=77, arc=2.28 rad, open, members=4
+  br1: T=55, arc=1.62 rad, open, members=7
+  br2: T=121, arc=3.60 rad, open, members=15
+  br3: T=22, arc=0.63 rad, open, members=2
+
+  6-DOF strict rollout: 254 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=77, mean=0.063, std=0.019, range=[0.045, 0.163]
+    br1: n=55, mean=0.073, std=0.044, range=[0.043, 0.199]
+    br2: n=100, mean=0.051, std=0.008, range=[0.035, 0.064]
+    br3: n=22, mean=0.047, std=0.002, range=[0.045, 0.051]
+
+saved: Yuan/RL/intro_motivation/data/task_seed219_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed219_smm_joints.png
+seed=220, task L_max=1.500m, p_tgt=[-0.22502203  0.16353244  0.19264835]
+    filter: no_converge=78, near_limit(<0.05)=17, dup(<0.08)=54
+
+=== 6 SMM branches at seed 220 task start ===
+  br0: T=98, arc=2.91 rad, open, members=10
+  br1: T=43, arc=1.26 rad, open, members=5
+  br2: T=80, arc=2.37 rad, open, members=7
+  br3: T=53, arc=1.56 rad, open, members=6
+  br4: T=79, arc=2.34 rad, open, members=1
+  br5: T=40, arc=1.17 rad, open, members=1
+
+  6-DOF strict rollout: 393 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=98, mean=0.135, std=0.205, range=[0.032, 0.615]
+    br1: n=43, mean=0.109, std=0.038, range=[0.051, 0.149]
+    br2: n=80, mean=0.131, std=0.120, range=[0.043, 0.616]
+    br3: n=53, mean=0.065, std=0.041, range=[0.027, 0.155]
+    br4: n=79, mean=0.052, std=0.015, range=[0.032, 0.093]
+    br5: n=40, mean=0.153, std=0.172, range=[0.035, 0.416]
+
+saved: Yuan/RL/intro_motivation/data/task_seed220_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed220_smm_joints.png
+seed=221, task L_max=1.500m, p_tgt=[-0.0117294   0.10772155  0.49130479]
+    filter: no_converge=34, near_limit(<0.05)=12, dup(<0.08)=29
+
+=== 2 SMM branches at seed 221 task start ===
+  br0: T=147, arc=4.38 rad, open, members=17
+  br1: T=34, arc=0.99 rad, open, members=2
+
+  6-DOF strict rollout: 134 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.421, std=0.045, range=[0.357, 0.465]
+    br1: n=34, mean=0.067, std=0.021, range=[0.035, 0.097]
+
+saved: Yuan/RL/intro_motivation/data/task_seed221_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed221_smm_joints.png
+seed=222, task L_max=1.500m, p_tgt=[ 0.09150138 -0.39456117  0.39970297]
+    filter: no_converge=41, near_limit(<0.05)=3, dup(<0.08)=69
+
+=== 4 SMM branches at seed 222 task start ===
+  br0: T=194, arc=5.79 rad, open, members=22
+  br1: T=105, arc=3.12 rad, open, members=6
+  br2: T=34, arc=0.99 rad, open, members=4
+  br3: T=39, arc=1.14 rad, open, members=3
+
+  6-DOF strict rollout: 273 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.021, std=0.001, range=[0.019, 0.021]
+    br1: n=100, mean=0.021, std=0.001, range=[0.019, 0.024]
+    br2: n=34, mean=0.022, std=0.001, range=[0.021, 0.024]
+    br3: n=39, mean=0.020, std=0.001, range=[0.019, 0.021]
+
+saved: Yuan/RL/intro_motivation/data/task_seed222_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed222_smm_joints.png
+seed=223, task L_max=1.500m, p_tgt=[-0.24763522 -0.00274934  0.48831347]
+    filter: no_converge=29, near_limit(<0.05)=5, dup(<0.08)=49
+
+=== 4 SMM branches at seed 223 task start ===
+  br0: T=94, arc=2.79 rad, open, members=16
+  br1: T=81, arc=2.40 rad, open, members=12
+  br2: T=71, arc=2.10 rad, open, members=1
+  br3: T=99, arc=2.94 rad, open, members=6
+
+  6-DOF strict rollout: 345 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=94, mean=0.089, std=0.011, range=[0.071, 0.103]
+    br1: n=81, mean=0.067, std=0.017, range=[0.003, 0.085]
+    br2: n=71, mean=0.064, std=0.017, range=[0.001, 0.080]
+    br3: n=99, mean=0.090, std=0.012, range=[0.071, 0.108]
+
+saved: Yuan/RL/intro_motivation/data/task_seed223_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed223_smm_joints.png
+seed=224, task L_max=1.500m, p_tgt=[-0.14483824 -0.20877735  0.5155541 ]
+    filter: no_converge=20, near_limit(<0.05)=9, dup(<0.08)=54
+
+=== 4 SMM branches at seed 224 task start ===
+  br0: T=114, arc=3.39 rad, open, members=18
+  br1: T=112, arc=3.33 rad, open, members=10
+  br2: T=53, arc=1.56 rad, open, members=4
+  br3: T=56, arc=1.65 rad, open, members=3
+
+  6-DOF strict rollout: 309 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.132, std=0.033, range=[0.080, 0.172]
+    br1: n=100, mean=0.105, std=0.039, range=[0.000, 0.151]
+    br2: n=53, mean=0.111, std=0.039, range=[0.063, 0.164]
+    br3: n=56, mean=0.103, std=0.051, range=[0.000, 0.151]
+
+saved: Yuan/RL/intro_motivation/data/task_seed224_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed224_smm_joints.png
+seed=225, task L_max=1.500m, p_tgt=[-0.2774317   0.38860688  0.19324574]
+    filter: no_converge=42, near_limit(<0.05)=9, dup(<0.08)=62
+
+=== 6 SMM branches at seed 225 task start ===
+  br0: T=131, arc=3.90 rad, open, members=7
+  br1: T=86, arc=2.55 rad, open, members=10
+  br2: T=46, arc=1.35 rad, open, members=7
+  br3: T=41, arc=1.20 rad, open, members=4
+  br4: T=99, arc=2.94 rad, open, members=11
+  br5: T=69, arc=2.04 rad, open, members=6
+
+  6-DOF strict rollout: 441 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.033, std=0.009, range=[0.024, 0.051]
+    br1: n=86, mean=0.035, std=0.015, range=[0.024, 0.069]
+    br2: n=46, mean=0.028, std=0.002, range=[0.027, 0.032]
+    br3: n=41, mean=0.032, std=0.003, range=[0.027, 0.035]
+    br4: n=99, mean=0.041, std=0.017, range=[0.024, 0.067]
+    br5: n=69, mean=0.047, std=0.016, range=[0.024, 0.067]
+
+saved: Yuan/RL/intro_motivation/data/task_seed225_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed225_smm_joints.png
+seed=226, task L_max=1.500m, p_tgt=[-0.0971003  -0.3597422   0.12042543]
+    filter: no_converge=46, near_limit(<0.05)=6, dup(<0.08)=78
+
+=== 6 SMM branches at seed 226 task start ===
+  br0: T=172, arc=5.13 rad, open, members=18
+  br1: T=62, arc=1.83 rad, open, members=12
+  br2: T=105, arc=3.12 rad, open, members=8
+  br3: T=106, arc=3.15 rad, open, members=5
+  br4: T=61, arc=1.80 rad, open, members=4
+  br5: T=60, arc=1.77 rad, open, members=2
+
+  6-DOF strict rollout: 483 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.503, std=0.117, range=[0.264, 0.564]
+    br1: n=62, mean=0.349, std=0.081, range=[0.035, 0.385]
+    br2: n=100, mean=0.537, std=0.084, range=[0.264, 0.564]
+    br3: n=100, mean=0.343, std=0.251, range=[0.016, 0.564]
+    br4: n=61, mean=0.123, std=0.128, range=[0.035, 0.395]
+    br5: n=60, mean=0.392, std=0.001, range=[0.391, 0.393]
+
+saved: Yuan/RL/intro_motivation/data/task_seed226_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed226_smm_joints.png
+seed=227, task L_max=1.500m, p_tgt=[ 0.00056721 -0.30541128  0.24923047]
+    filter: no_converge=58, near_limit(<0.05)=21, dup(<0.08)=63
+
+=== 3 SMM branches at seed 227 task start ===
+  br0: T=87, arc=2.58 rad, open, members=9
+  br1: T=146, arc=4.35 rad, open, members=12
+  br2: T=79, arc=2.34 rad, open, members=4
+
+  6-DOF strict rollout: 266 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=87, mean=0.107, std=0.046, range=[0.047, 0.164]
+    br1: n=100, mean=0.111, std=0.049, range=[0.032, 0.171]
+    br2: n=79, mean=0.059, std=0.015, range=[0.020, 0.101]
+
+saved: Yuan/RL/intro_motivation/data/task_seed227_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed227_smm_joints.png
+seed=228, task L_max=1.500m, p_tgt=[ 0.31344706 -0.18742311  0.27335554]
+    filter: no_converge=58, near_limit(<0.05)=7, dup(<0.08)=78
+
+=== 6 SMM branches at seed 228 task start ===
+  br0: T=89, arc=2.64 rad, open, members=6
+  br1: T=198, arc=5.91 rad, open, members=14
+  br2: T=144, arc=4.29 rad, open, members=15
+  br3: T=25, arc=0.72 rad, open, members=2
+  br4: T=57, arc=1.68 rad, open, members=1
+  br5: T=25, arc=0.72 rad, open, members=3
+
+  6-DOF strict rollout: 396 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=89, mean=0.020, std=0.001, range=[0.017, 0.021]
+    br1: n=100, mean=0.020, std=0.001, range=[0.019, 0.021]
+    br2: n=100, mean=0.017, std=0.003, range=[0.009, 0.020]
+    br3: n=25, mean=0.017, std=0.000, range=[0.017, 0.017]
+    br4: n=57, mean=0.014, std=0.003, range=[0.009, 0.017]
+    br5: n=25, mean=0.017, std=0.000, range=[0.017, 0.017]
+
+saved: Yuan/RL/intro_motivation/data/task_seed228_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed228_smm_joints.png
+seed=229, task L_max=1.500m, p_tgt=[-0.00391377 -0.07871203  0.45096308]
+    filter: no_converge=0, near_limit(<0.05)=32, dup(<0.08)=35
+
+=== 2 SMM branches at seed 229 task start ===
+  br0: T=113, arc=3.36 rad, open, members=13
+  br1: T=142, arc=4.23 rad, open, members=8
+
+  6-DOF strict rollout: 200 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.469, std=0.161, range=[0.116, 0.549]
+    br1: n=100, mean=0.245, std=0.244, range=[0.020, 0.551]
+
+saved: Yuan/RL/intro_motivation/data/task_seed229_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed229_smm_joints.png
+seed=230, task L_max=1.500m, p_tgt=[ 0.40919322 -0.10286947  0.20943783]
+    filter: no_converge=43, near_limit(<0.05)=10, dup(<0.08)=92
+
+=== 8 SMM branches at seed 230 task start ===
+  br0: T=228, arc=6.81 rad, open, members=20
+  br1: T=85, arc=2.52 rad, open, members=7
+  br2: T=99, arc=2.94 rad, open, members=10
+  br3: T=171, arc=5.10 rad, open, members=12
+  br4: T=46, arc=1.35 rad, open, members=2
+  br5: T=56, arc=1.65 rad, open, members=2
+  br6: T=56, arc=1.65 rad, open, members=1
+  br7: T=89, arc=2.64 rad, open, members=2
+
+  6-DOF strict rollout: 631 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.032, std=0.004, range=[0.024, 0.043]
+    br1: n=85, mean=0.031, std=0.003, range=[0.024, 0.035]
+    br2: n=99, mean=0.034, std=0.005, range=[0.024, 0.040]
+    br3: n=100, mean=0.095, std=0.071, range=[0.009, 0.215]
+    br4: n=46, mean=0.116, std=0.074, range=[0.011, 0.187]
+    br5: n=56, mean=0.130, std=0.077, range=[0.043, 0.208]
+    br6: n=56, mean=0.130, std=0.077, range=[0.043, 0.207]
+    br7: n=89, mean=0.083, std=0.054, range=[0.009, 0.164]
+
+saved: Yuan/RL/intro_motivation/data/task_seed230_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed230_smm_joints.png
+seed=231, task L_max=1.500m, p_tgt=[0.03098833 0.30387616 0.46574575]
+    filter: no_converge=46, near_limit(<0.05)=9, dup(<0.08)=38
+
+=== 3 SMM branches at seed 231 task start ===
+  br0: T=80, arc=2.37 rad, open, members=14
+  br1: T=93, arc=2.76 rad, open, members=7
+  br2: T=57, arc=1.68 rad, open, members=6
+
+  6-DOF strict rollout: 230 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=80, mean=0.020, std=0.001, range=[0.019, 0.021]
+    br1: n=93, mean=0.021, std=0.001, range=[0.019, 0.021]
+    br2: n=57, mean=0.021, std=0.001, range=[0.020, 0.024]
+
+saved: Yuan/RL/intro_motivation/data/task_seed231_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed231_smm_joints.png
+seed=232, task L_max=1.500m, p_tgt=[ 0.15015557 -0.156611    0.5168299 ]
+    filter: no_converge=32, near_limit(<0.05)=5, dup(<0.08)=59
+
+=== 3 SMM branches at seed 232 task start ===
+  br0: T=212, arc=6.33 rad, open, members=20
+  br1: T=37, arc=1.08 rad, open, members=4
+  br2: T=45, arc=1.32 rad, open, members=6
+
+  6-DOF strict rollout: 182 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.024, std=0.004, range=[0.007, 0.031]
+    br1: n=37, mean=0.019, std=0.005, range=[0.000, 0.025]
+    br2: n=45, mean=0.027, std=0.002, range=[0.025, 0.031]
+
+saved: Yuan/RL/intro_motivation/data/task_seed232_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed232_smm_joints.png
+seed=233, task L_max=1.500m, p_tgt=[ 0.5464301  -0.26002875  0.29033428]
+    filter: no_converge=52, near_limit(<0.05)=4, dup(<0.08)=58
+
+=== 4 SMM branches at seed 233 task start ===
+  br0: T=79, arc=2.34 rad, open, members=5
+  br1: T=200, arc=5.97 rad, open, members=24
+  br2: T=41, arc=1.20 rad, open, members=1
+  br3: T=68, arc=2.01 rad, open, members=5
+
+  6-DOF strict rollout: 288 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=79, mean=0.020, std=0.006, range=[0.013, 0.031]
+    br1: n=100, mean=0.020, std=0.004, range=[0.011, 0.025]
+    br2: n=41, mean=0.017, std=0.003, range=[0.013, 0.021]
+    br3: n=68, mean=0.022, std=0.003, range=[0.007, 0.025]
+
+saved: Yuan/RL/intro_motivation/data/task_seed233_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed233_smm_joints.png
+seed=234, task L_max=1.500m, p_tgt=[ 0.42013317 -0.2388441   0.11031152]
+    filter: no_converge=65, near_limit(<0.05)=4, dup(<0.08)=71
+
+=== 3 SMM branches at seed 234 task start ===
+  br0: T=116, arc=3.45 rad, open, members=6
+  br1: T=231, arc=6.90 rad, open, members=18
+  br2: T=66, arc=1.95 rad, open, members=4
+
+  6-DOF strict rollout: 266 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.049, std=0.015, range=[0.037, 0.115]
+    br1: n=100, mean=0.067, std=0.043, range=[0.037, 0.200]
+    br2: n=66, mean=0.119, std=0.050, range=[0.037, 0.200]
+
+saved: Yuan/RL/intro_motivation/data/task_seed234_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed234_smm_joints.png
+seed=235, task L_max=1.500m, p_tgt=[-0.28056863 -0.28213173  0.10396938]
+    filter: no_converge=65, near_limit(<0.05)=10, dup(<0.08)=67
+
+=== 7 SMM branches at seed 235 task start ===
+  br0: T=120, arc=3.57 rad, open, members=5
+  br1: T=62, arc=1.83 rad, open, members=3
+  br2: T=66, arc=1.95 rad, open, members=10
+  br3: T=118, arc=3.51 rad, open, members=7
+  br4: T=149, arc=4.44 rad, open, members=11
+  br5: T=58, arc=1.71 rad, open, members=5
+  br6: T=62, arc=1.83 rad, open, members=6
+
+  6-DOF strict rollout: 548 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.319, std=0.073, range=[0.195, 0.373]
+    br1: n=62, mean=0.170, std=0.023, range=[0.141, 0.203]
+    br2: n=66, mean=0.249, std=0.081, range=[0.168, 0.357]
+    br3: n=100, mean=0.299, std=0.078, range=[0.168, 0.360]
+    br4: n=100, mean=0.298, std=0.077, range=[0.195, 0.373]
+    br5: n=58, mean=0.225, std=0.070, range=[0.033, 0.265]
+    br6: n=62, mean=0.170, std=0.023, range=[0.141, 0.203]
+
+saved: Yuan/RL/intro_motivation/data/task_seed235_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed235_smm_joints.png
+seed=236, task L_max=1.500m, p_tgt=[-0.11387546 -0.21942122  0.18594307]
+    filter: no_converge=56, near_limit(<0.05)=18, dup(<0.08)=65
+
+=== 10 SMM branches at seed 236 task start ===
+  br0: T=83, arc=2.46 rad, open, members=7
+  br1: T=87, arc=2.58 rad, open, members=6
+  br2: T=112, arc=3.33 rad, open, members=11
+  br3: T=42, arc=1.23 rad, open, members=8
+  br4: T=32, arc=0.93 rad, open, members=3
+  br5: T=85, arc=2.52 rad, open, members=8
+  br6: T=32, arc=0.93 rad, open, members=2
+  br7: T=84, arc=2.49 rad, open, members=5
+  br8: T=50, arc=1.47 rad, open, members=1
+  br9: T=64, arc=1.89 rad, open, members=1
+
+  6-DOF strict rollout: 659 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=83, mean=0.012, std=0.002, range=[0.007, 0.013]
+    br1: n=87, mean=0.014, std=0.001, range=[0.012, 0.016]
+    br2: n=100, mean=0.014, std=0.001, range=[0.012, 0.015]
+    br3: n=42, mean=0.014, std=0.001, range=[0.013, 0.015]
+    br4: n=32, mean=0.014, std=0.001, range=[0.009, 0.016]
+    br5: n=85, mean=0.013, std=0.000, range=[0.013, 0.015]
+    br6: n=32, mean=0.014, std=0.001, range=[0.012, 0.016]
+    br7: n=84, mean=0.010, std=0.002, range=[0.005, 0.013]
+    br8: n=50, mean=0.009, std=0.002, range=[0.005, 0.012]
+    br9: n=64, mean=0.011, std=0.002, range=[0.007, 0.015]
+
+saved: Yuan/RL/intro_motivation/data/task_seed236_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed236_smm_joints.png
+seed=237, task L_max=1.500m, p_tgt=[-0.18668438 -0.09700084  0.3618446 ]
+    filter: no_converge=36, near_limit(<0.05)=13, dup(<0.08)=40
+
+=== 4 SMM branches at seed 237 task start ===
+  br0: T=72, arc=2.13 rad, open, members=7
+  br1: T=81, arc=2.40 rad, open, members=11
+  br2: T=69, arc=2.04 rad, open, members=7
+  br3: T=78, arc=2.31 rad, open, members=5
+
+  6-DOF strict rollout: 300 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=72, mean=0.021, std=0.001, range=[0.020, 0.024]
+    br1: n=81, mean=0.020, std=0.001, range=[0.017, 0.020]
+    br2: n=69, mean=0.021, std=0.001, range=[0.020, 0.024]
+    br3: n=78, mean=0.020, std=0.001, range=[0.017, 0.024]
+
+saved: Yuan/RL/intro_motivation/data/task_seed237_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed237_smm_joints.png
+seed=238, task L_max=1.500m, p_tgt=[ 0.3659068  -0.19080204  0.10999154]
+    filter: no_converge=48, near_limit(<0.05)=13, dup(<0.08)=85
+
+=== 5 SMM branches at seed 238 task start ===
+  br0: T=57, arc=1.68 rad, open, members=10
+  br1: T=273, arc=8.16 rad, open, members=30
+  br2: T=124, arc=3.69 rad, open, members=8
+  br3: T=92, arc=2.73 rad, open, members=9
+  br4: T=25, arc=0.72 rad, open, members=2
+
+  6-DOF strict rollout: 374 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=57, mean=0.030, std=0.004, range=[0.024, 0.037]
+    br1: n=100, mean=0.051, std=0.057, range=[0.024, 0.368]
+    br2: n=100, mean=0.048, std=0.051, range=[0.024, 0.211]
+    br3: n=92, mean=0.074, std=0.076, range=[0.024, 0.369]
+    br4: n=25, mean=0.143, std=0.064, range=[0.035, 0.183]
+
+saved: Yuan/RL/intro_motivation/data/task_seed238_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed238_smm_joints.png
+seed=239, task L_max=1.500m, p_tgt=[-0.1400527  -0.3759593   0.35644728]
+    filter: no_converge=35, near_limit(<0.05)=3, dup(<0.08)=52
+
+=== 4 SMM branches at seed 239 task start ===
+  br0: T=67, arc=1.98 rad, open, members=8
+  br1: T=191, arc=5.70 rad, open, members=23
+  br2: T=131, arc=3.90 rad, open, members=6
+  br3: T=70, arc=2.07 rad, open, members=7
+
+  6-DOF strict rollout: 337 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=67, mean=0.022, std=0.001, range=[0.021, 0.024]
+    br1: n=100, mean=0.021, std=0.001, range=[0.019, 0.021]
+    br2: n=100, mean=0.022, std=0.001, range=[0.019, 0.027]
+    br3: n=70, mean=0.022, std=0.002, range=[0.016, 0.027]
+
+saved: Yuan/RL/intro_motivation/data/task_seed239_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed239_smm_joints.png
+seed=240, task L_max=1.500m, p_tgt=[-0.09645287  0.17516357  0.4841113 ]
+    filter: no_converge=25, near_limit(<0.05)=13, dup(<0.08)=37
+
+=== 2 SMM branches at seed 240 task start ===
+  br0: T=128, arc=3.81 rad, open, members=16
+  br1: T=46, arc=1.35 rad, open, members=3
+
+  6-DOF strict rollout: 146 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.366, std=0.064, range=[0.000, 0.385]
+    br1: n=46, mean=0.381, std=0.002, range=[0.377, 0.383]
+
+saved: Yuan/RL/intro_motivation/data/task_seed240_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed240_smm_joints.png
+seed=241, task L_max=1.500m, p_tgt=[0.21430035 0.2342791  0.50828415]
+    filter: no_converge=44, near_limit(<0.05)=17, dup(<0.08)=44
+
+=== 4 SMM branches at seed 241 task start ===
+  br0: T=125, arc=3.72 rad, open, members=19
+  br1: T=47, arc=1.38 rad, open, members=3
+  br2: T=50, arc=1.47 rad, open, members=3
+  br3: T=63, arc=1.86 rad, open, members=4
+
+  6-DOF strict rollout: 260 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.021, std=0.001, range=[0.020, 0.023]
+    br1: n=47, mean=0.022, std=0.001, range=[0.021, 0.024]
+    br2: n=50, mean=0.020, std=0.000, range=[0.019, 0.020]
+    br3: n=63, mean=0.021, std=0.001, range=[0.019, 0.021]
+
+saved: Yuan/RL/intro_motivation/data/task_seed241_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed241_smm_joints.png
+seed=242, task L_max=1.500m, p_tgt=[-0.18809327 -0.00904887  0.36874837]
+    filter: no_converge=40, near_limit(<0.05)=11, dup(<0.08)=5
+
+=== 2 SMM branches at seed 242 task start ===
+  br0: T=37, arc=1.08 rad, open, members=3
+  br1: T=36, arc=1.05 rad, open, members=4
+
+  6-DOF strict rollout: 73 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=37, mean=0.011, std=0.003, range=[0.000, 0.012]
+    br1: n=36, mean=0.014, std=0.001, range=[0.013, 0.016]
+
+saved: Yuan/RL/intro_motivation/data/task_seed242_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed242_smm_joints.png
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/lqin/one/Yuan/RL/intro_motivation/v18_smm_task.py", line 460, in <module>
+    main()
+  File "/home/lqin/one/Yuan/RL/intro_motivation/v18_smm_task.py", line 403, in main
+    raise RuntimeError('no valid IK candidates after filter')
+RuntimeError: no valid IK candidates after filter
+seed=243, task L_max=1.500m, p_tgt=[-0.11933923  0.07726886  0.37754253]
+    filter: no_converge=35, near_limit(<0.05)=0, dup(<0.08)=0
+seed=244, task L_max=1.500m, p_tgt=[0.46293682 0.3045514  0.2018426 ]
+    filter: no_converge=62, near_limit(<0.05)=5, dup(<0.08)=77
+
+=== 7 SMM branches at seed 244 task start ===
+  br0: T=208, arc=6.21 rad, open, members=26
+  br1: T=74, arc=2.19 rad, open, members=9
+  br2: T=71, arc=2.10 rad, open, members=5
+  br3: T=72, arc=2.13 rad, open, members=7
+  br4: T=48, arc=1.41 rad, open, members=5
+  br5: T=58, arc=1.71 rad, open, members=6
+  br6: T=85, arc=2.52 rad, open, members=4
+
+  6-DOF strict rollout: 508 q0 samples
+
+  per-branch L_self / L_max:
+    br0: n=100, mean=0.017, std=0.002, range=[0.013, 0.020]
+    br1: n=74, mean=0.012, std=0.003, range=[0.001, 0.016]
+    br2: n=71, mean=0.015, std=0.001, range=[0.013, 0.017]
+    br3: n=72, mean=0.015, std=0.001, range=[0.013, 0.017]
+    br4: n=48, mean=0.015, std=0.002, range=[0.013, 0.019]
+    br5: n=58, mean=0.017, std=0.002, range=[0.015, 0.020]
+    br6: n=85, mean=0.018, std=0.003, range=[0.012, 0.020]
+
+saved: Yuan/RL/intro_motivation/data/task_seed244_summary.png
+saved: Yuan/RL/intro_motivation/data/task_seed244_smm_joints.png

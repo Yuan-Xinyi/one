@@ -1,0 +1,51 @@
+dataset:
+  buckets:
+    medium:
+    - 0.2
+    - 0.3
+    medium-weak:
+    - 0.15
+    - 0.2
+    strong:
+    - 0.3
+    - .inf
+    weak:
+    - 0.1
+    - 0.15
+  pilot_npz: Yuan/seed_selection/runs/pilot_20k/pilot_20k.npz
+  plane_collision_npz: Yuan/seed_selection/runs/pilot_20k/pilot_20k.plane_collision.npz
+  task_seed: 42
+  total_target: 10000
+diffusion:
+  cfg_w: 1.5
+  ckpt: Yuan/seed_selection/runs/pilot_20k/q0_20k_cfg_mirror_ckpts/step_300000.pt
+  ddim_steps: 50
+  ik:
+    enabled: true
+  mirror_eval: false
+  n_samples: 8
+  sample_seed: 42
+  use_ema: true
+env:
+  config_yaml: Yuan/RL_controller/config.yaml
+  n_envs: 256
+  target_distance_m: 1.5
+metrics:
+  catastrophic_progress_m: 0.15
+  progress_thresholds_m:
+  - 0.3
+  - 0.5
+  - 0.75
+  recovery_fraction_oracle: 0.9
+output:
+  cell_results_pattern: cell_{cell}_results.npz
+  eval_set_name: eval_set_10k.npz
+  root: Yuan/system_eval/runs/_curr_ckpt_eval
+rl_controller:
+  ckpt_dir: Yuan/system_eval/runs/_curr_ckpt_eval
+  tau_enter: 0.98
+  tau_exit: 0.98
+  variant: B
+runner:
+  ckpt_every_tasks: 500
+  device: cuda

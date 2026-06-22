@@ -49,6 +49,7 @@ coverage.xml
 # Environments
 .env
 .venv
+env/
 venv/
 ENV/
 env.bak/
@@ -66,22 +67,30 @@ venv.bak/
 Thumbs.db
 
 # Project specific
-Yuan/seed_selection/runs/
-Yuan/system_eval/runs/
-Yuan/RL_controller/runs/
 *.npz
 scene.xml
 scene_free.xml
-*.pt
-*.npy
-*.npz
-*.log
-*.txt
-*.png
-*.jpg
-*.pdf
 *.jsonl
+*.json
+*.npy
+*.jpg
+*.png
 *.pkl
+*.pt
+*.md
+# ...but DO track the published docs site (mkdocs reads these; CI needs them committed)
+!docs/
+!docs/**
+*.svg
+*.pt
+*.out
+*.log
+*.pdf
+*.hdf5
+kurabo/
+coripps/
+# mkdocs build output
+site/
 
-*.wandb
-wandb/
+# Claude Code local config
+.claude/

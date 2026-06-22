@@ -1,0 +1,77 @@
+site_name: one
+site_description: >-
+  A self-contained robotics library -- kinematics, scene, mesh geometry,
+  collision, grasp planning, motion, viewer.
+site_url: https://wanweiwei07.github.io/one/
+repo_url: https://github.com/wanweiwei07/one
+repo_name: wanweiwei07/one
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  # embed runnable examples verbatim via `--8<-- "examples/<name>.py"`,
+  # so the docs stay in sync with the live code (base_path = repo root).
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: installation.md
+      - Quick Start: quickstart.md
+  - Development:
+      - Comment Style: COMMENT_STYLE.md
+  - Tutorials:
+      - Kinematics: tutorials/kinematics.md
+      - Scene & Geometry: tutorials/scene_geometry.md
+      - Collision: tutorials/collision.md
+      - Grasp Planning: tutorials/grasp_planning.md
+      - Motion Planning: tutorials/motion_planning.md
+      - End-Effectors & Tool Change: tutorials/end_effectors.md
+      - Humanoid (L1): tutorials/humanoid.md
+      - MuJoCo: tutorials/mujoco.md
+  - API:
+      - Overview: api/index.md
+      - one.utils: api/utils.md
+      - one.scene: api/scene.md
+      - one.geom: api/geom.md
+      - one.collider: api/collider.md
+      - one.grasp: api/grasp.md
+      - one.motion: api/motion.md
+      - one.physics: api/physics.md
+      - one.robots: api/robots.md
+      - one.viewer: api/viewer.md
+      - one.stream: api/stream.md
+      - one.devices: api/devices.md
+      - Full Index: API_INDEX.md

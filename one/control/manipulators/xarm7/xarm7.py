@@ -16,24 +16,29 @@ This controller exposes two regimes:
 The xHand is mounted on the flange as the end-effector, so this class controls
 the arm only -- it has no native gripper.
 
+This driver depends ONLY on the official xArm-Python-SDK (``xarm``) and SciPy --
+no WRS. Install the SDK with ``pip install xArm-Python-SDK``.
+
 Reference: XArm Developer Manual
            XArm Python SDK (https://github.com/xArm-Developer/xArm-Python-SDK)
 """
 import time
 from typing import Optional, Callable
 import numpy as np
+from scipy.spatial.transform import Rotation as _Rotation
+from xarm.wrapper import XArmAPI
 
-import wrs.basis.robot_math as rm
-import wrs.drivers.xarm.wrapper.xarm_api as arm
+__VERSION__ = '0.2.0'
 
-try:
-    import wrs.motion.trajectory.piecewisepoly_toppra as pwp
 
-    TOPPRA_EXIST = True
-except Exception:
-    TOPPRA_EXIST = False
+def _rotmat_to_rpy(rotmat: np.ndarray) -> np.ndarray:
+    """3x3 rotation matrix -> xArm RPY (rad), extrinsic XYZ."""
+    return _Rotation.from_matrix(np.asarray(rotmat)).as_euler('xyz')
 
-__VERSION__ = '0.1.0'
+
+def _rpy_to_rotmat(rpy) -> np.ndarray:
+    """xArm RPY (rad), extrinsic XYZ -> 3x3 rotation matrix."""
+    return _Rotation.from_euler('xyz', np.asarray(rpy, dtype=float)).as_matrix()
 
 
 class XArm7X(object):
@@ -48,7 +53,7 @@ class XArm7X(object):
         # round-trip the controller just to know which mode it is in.
         self._mode_cache = None
 
-        self._arm_x = arm.XArmAPI(port=ip)
+        self._arm_x = XArmAPI(port=ip)
         driver_v = self._arm_x.version_number
         # ensure the xarm driver is >= 1.9.0 (servo-streaming support)
         assert driver_v >= (1, 9, 0)
@@ -69,13 +74,13 @@ class XArm7X(object):
 
     # ------------------------------------------------------------------ units
     @staticmethod
-    def pos_unit_xarm2wrs(arr: np.ndarray) -> np.ndarray:
-        """Convert a position from the XArm API (mm) to the WRS system (m)."""
+    def mm_to_m(arr: np.ndarray) -> np.ndarray:
+        """Convert a position (mm -> m)."""
         return np.asarray(arr) / 1000
 
     @staticmethod
-    def pos_unit_wrs2xarm(arr: np.ndarray) -> np.ndarray:
-        """Convert a position from the WRS system (m) to the XArm API (mm)."""
+    def m_to_mm(arr: np.ndarray) -> np.ndarray:
+        """Convert a position (m -> mm)."""
         return np.asarray(arr) * 1000
 
     # ------------------------------------------------------------------ status
@@ -148,14 +153,14 @@ class XArm7X(object):
     # ------------------------------------------------------------------ kinematics
     def ik(self, tgt_pos: np.ndarray, tgt_rot: Optional[np.ndarray]) -> np.ndarray:
         """Inverse kinematics via the controller.
-        :param tgt_pos: position in the WRS system (m)
+        :param tgt_pos: position (m)
         :param tgt_rot: 3x3 rotation matrix or 1x3 RPY (rad); None keeps the current
         :return: 1x7 joint solution (rad)
         """
-        tgt_pos = self.pos_unit_wrs2xarm(tgt_pos)
+        tgt_pos = self.m_to_mm(tgt_pos)
         if tgt_rot is not None:
             tgt_rot = np.asarray(tgt_rot)
-            tgt_rpy = rm.rotmat_to_euler(tgt_rot) if tgt_rot.shape == (3, 3) else tgt_rot.flatten()[:3]
+            tgt_rpy = _rotmat_to_rpy(tgt_rot) if tgt_rot.shape == (3, 3) else tgt_rot.flatten()[:3]
         else:
             tgt_rpy = np.zeros(3)
         tgt_pose = tgt_pos.tolist() + np.asarray(tgt_rpy).tolist()
@@ -174,7 +179,7 @@ class XArm7X(object):
         """Current flange pose: (position[m] (3,), rotation matrix (3,3))."""
         code, pose = self._arm_x.get_position(is_radian=True)
         self._ex_ret_code(code)
-        return self.pos_unit_xarm2wrs(np.array(pose[:3])), rm.rotmat_from_euler(*pose[3:])
+        return self.mm_to_m(np.array(pose[:3])), _rpy_to_rotmat(pose[3:])
 
     # ------------------------------------------------------------------ blocking moves
     def move_j(self,
@@ -215,12 +220,12 @@ class XArm7X(object):
         assert path_rad is None or path_rad >= 0
         self.enter_position_mode()
         if pos is not None:
-            pos = self.pos_unit_wrs2xarm(np.array(pos))
+            pos = self.m_to_mm(np.array(pos))
         else:
             pos = [None] * 3
         if rot is not None:
             rot = np.array(rot)
-            rpy = rm.rotmat_to_euler(rot) if rot.shape == (3, 3) else rot.flatten()[:3]
+            rpy = _rotmat_to_rpy(rot) if rot.shape == (3, 3) else rot.flatten()[:3]
         else:
             rpy = [None] * 3
         suc = self._arm_x.set_position(x=pos[0], y=pos[1], z=pos[2],
@@ -256,48 +261,55 @@ class XArm7X(object):
         :param is_tool_coord: interpret the pose in the tool frame
         :return: API return code (0 = ok)
         """
-        pos = self.pos_unit_wrs2xarm(np.array(pos))
+        pos = self.m_to_mm(np.array(pos))
         rot = np.array(rot)
-        rpy = rm.rotmat_to_euler(rot) if rot.shape == (3, 3) else rot.flatten()[:3]
+        rpy = _rotmat_to_rpy(rot) if rot.shape == (3, 3) else rot.flatten()[:3]
         mvpose = pos.tolist() + np.asarray(rpy).tolist()
         self.enter_servo_mode()
         return self._arm_x.set_servo_cartesian(mvpose, is_radian=True, is_tool_coord=is_tool_coord)
 
+    @staticmethod
+    def _resample(path, dt, max_jntvel=None):
+        """Linearly densify a waypoint list to one point per ``dt``. With
+        ``max_jntvel`` (rad/s, scalar or 1x7) each segment is spread over enough
+        cycles that no joint exceeds it; without it each input segment becomes a
+        single cycle (the caller must then supply already-dense waypoints)."""
+        path = [np.asarray(p, dtype=float) for p in path]
+        if len(path) < 2:
+            return path
+        out = [path[0]]
+        for q0, q1 in zip(path[:-1], path[1:]):
+            if max_jntvel is None:
+                n = 1
+            else:
+                mv = np.asarray(max_jntvel, dtype=float)
+                n = max(1, int(np.ceil(float(np.max(np.abs(q1 - q0) / mv)) / dt)))
+            for i in range(1, n + 1):
+                out.append(q0 + (q1 - q0) * (i / n))
+        return out
+
     def stream_jnt_path(self,
                         path,
                         control_freq: float = 100.0,
-                        interp: bool = True,
-                        max_jntvel: list = None,
-                        max_jntacc: list = None,
-                        start_frame_id: int = 1) -> None:
+                        max_jntvel=None,
+                        start_frame_id: int = 0) -> None:
         """Real-time stream a joint-space path in servo mode at ``control_freq`` Hz.
 
-        With ``interp`` and TOPPRA available the path is first time-parameterised so
-        the velocity/acceleration limits are respected; otherwise the raw waypoints
-        are streamed as-is (the caller is then responsible for spacing them densely
-        enough). Blocks until the path is exhausted, pacing each set-point with a
-        wall-clock timer so the stream stays at the requested rate.
+        The waypoints are linearly resampled to one set-point per control cycle
+        (velocity-capped when ``max_jntvel`` is given, see ``_resample``), then
+        streamed, pacing each set-point with a wall-clock timer so the stream stays
+        at the requested rate.
 
         :param path: [q0, q1, ...] joint waypoints (each 1x7)
         :param control_freq: streaming rate (Hz)
-        :param interp: TOPPRA time-parameterise before streaming
-        :param max_jntvel: per-joint max velocity for TOPPRA
-        :param max_jntacc: per-joint max acceleration for TOPPRA
-        :param start_frame_id: drop this many leading interpolated frames
+        :param max_jntvel: per-joint max velocity (rad/s); None spreads one input
+                           segment over one cycle (waypoints must already be dense)
+        :param start_frame_id: drop this many leading resampled frames
         """
         if not path:
             raise ValueError("The given path is empty!")
         dt = 1.0 / control_freq
-        if interp:
-            if not TOPPRA_EXIST:
-                raise NotImplementedError("TOPPRA is unavailable; call with interp=False")
-            tpply = pwp.PiecewisePolyTOPPRA()
-            path = tpply.interpolate_by_max_spdacc(path=path,
-                                                   control_frequency=dt,
-                                                   max_vels=max_jntvel,
-                                                   max_accs=max_jntacc,
-                                                   toggle_debug=False)
-            path = path[start_frame_id:]
+        path = self._resample(path, dt, max_jntvel)[start_frame_id:]
         self.enter_servo_mode()
         next_t = time.perf_counter()
         for jnt_values in path:
@@ -347,10 +359,9 @@ class XArm7X(object):
 
     # backward-compatible name from the lite6 controller
     def move_jntspace_path(self, path, max_jntvel=None, max_jntacc=None,
-                           start_frame_id=1, toggle_debug=False):
-        """Deprecated alias of ``stream_jnt_path`` (TOPPRA-interpolated streaming)."""
-        self.stream_jnt_path(path, control_freq=100.0, interp=True,
-                             max_jntvel=max_jntvel, max_jntacc=max_jntacc,
+                           start_frame_id=0, toggle_debug=False):
+        """Deprecated alias of ``stream_jnt_path`` (``max_jntacc`` is ignored)."""
+        self.stream_jnt_path(path, control_freq=100.0, max_jntvel=max_jntvel,
                              start_frame_id=start_frame_id)
 
     def __del__(self):
@@ -358,3 +369,10 @@ class XArm7X(object):
             self._arm_x.disconnect()
         except Exception:
             pass
+
+
+if __name__ == "__main__":
+    import numpy as np
+
+    robot = XArm7X(ip="192.168.1.205")
+    print("current joint values (rad):", np.round(robot.get_jnt_values(), 4))

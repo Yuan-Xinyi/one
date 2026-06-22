@@ -32,7 +32,10 @@ _SRC_ID = 0xFE          # PC
 _DEST_ID = 0x80         # hand
 _CMD_MOVE = 0x02
 _CMD_VERSION = 0x13
-_FINGER_STATE_SIZE = 22  # bytes per finger state (see data_type.FINGER_STATE_FORMAT)
+# bytes per finger state -- derived from the wire format so it can't drift out of
+# sync with it (the literal 22 here was wrong: the format packs to 24, which a live
+# reply confirms -- 2208 = 12x24 fingers + 5x384 tactile blocks).
+_FINGER_STATE_SIZE = struct.calcsize(xhand_bt.FINGER_STATE_FORMAT)  # 24
 N_FINGERS = 12
 
 # default position-mode gains / limits for a finger command

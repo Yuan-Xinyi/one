@@ -77,7 +77,7 @@ class XHandRight(oremx.DexHandMixin, orbmb.MechBase):
                         'middle_joint0': 1.0, 'middle_joint1': 1.0},
             'pads': ('thumb_rota_link2', ['index_rota_link2', 'mid_link2']),
         },
-        'power': {   # all five fingers envelop -- not a parallel jaw
+        'power': {   # all five fingers envelop
             'preshape': {},
             'closing': {'thumb_joint0': 1.75, 'thumb_joint1': 0.7,
                         'thumb_joint2': 0.5,
@@ -85,7 +85,13 @@ class XHandRight(oremx.DexHandMixin, orbmb.MechBase):
                         'middle_joint0': 1.2, 'middle_joint1': 1.0,
                         'ring_joint0': 1.2, 'ring_joint1': 1.0,
                         'pinky_joint0': 1.2, 'pinky_joint1': 1.0},
-            'pads': None,
+            # The envelope wraps with all five fingers (see closing above), but
+            # to PLAN it the dominant opposition is modelled as thumb vs the
+            # central middle finger, so spawn_jaw('power') can present it to the
+            # parallel-jaw antipodal planner (same trick the O6 hand uses). The
+            # pose / width come from this opposition; execution still curls all
+            # five fingers. None here would make power un-plannable.
+            'pads': ('thumb_rota_link2', ['mid_link2']),
         },
     }
 
@@ -118,6 +124,12 @@ class XHandRight(oremx.DexHandMixin, orbmb.MechBase):
                      oum.tf_from_pos_rotmat(
                          pos=np.array([0.03, -0.085, 0.12], dtype=np.float32),
                          rotmat=self._GRASP_ROT))
+        # tripod_center: the third (middle) finger pad sits next to the index, so
+        # the tripod's opposition center coincides with the pinch's -- spawn_jaw
+        # ('tripod') looks up '<primitive>_center', so register it explicitly
+        # (matches the grasp_inventory, which maps tripod -> pinch_center).
+        self.add_tcp('tripod_center', self.runtime_root_lnk,
+                     self.tcp('pinch_center').loc_tf)
 
     def grasp_spec(self, primitive):
         """Resolve _GRASP_TABLE[primitive] to a DexGraspSpec. Tuck = every

@@ -88,6 +88,33 @@ _GPU batch triangle-mesh collision detection (pyglet/OpenGL compute)._
 - **class `SIMDCollider`**
   - methods: `is_collided`
 
+## `one.control.end_effector.xhand.data_type`
+
+- `crc16(data)` — Compute CRC-16 using the same algorithm as the C implementation.
+- `create_full_packet(command, data)` — Create a full packet for RS-485 communication
+- `parse_rs485_response(response)`
+- `send_and_receive_rs485(port, baudrate, command_packet)`
+- **class `FingerState`**
+  - methods: `from_bytes`
+- **class `SensorData`**
+  - methods: `from_bytes`
+- **class `FingerCommand`**
+  - methods: `to_bytes`
+- **class `FingerCommandPackage`**
+  - methods: `set_command`, `to_bytes`
+
+## `one.control.end_effector.xhand.xhand_x`
+_Real-time control interface for the XHand (12-DOF dexterous hand) over RS-485._
+
+- **class `XHandX`**
+  - methods: `close`, `calculate_crc`, `send_command`, `read_response`, `get_version`, `parse_finger_states`, `parse_sensor_states`, `move`, `move_read_full`, `move_to`, `goto_given_conf`, `stream_positions`
+
+## `one.control.manipulators.xarm7.xarm7`
+_Real-time control interface for the UFACTORY xArm7 (7-DOF)._
+
+- **class `XArm7X`**
+  - methods: `mm_to_m`, `m_to_mm`, `mode`, `state`, `cmd_num`, `has_err_warn`, `clean_error`, `enter_position_mode`, `enter_servo_mode`, `reset`, `homeconf`, `ik`, `get_jnt_values`, `get_pose`, `move_j`, `move_p`, `servo_j`, `servo_p`, `stream_jnt_path`, `realtime_loop`, `move_jntspace_path`
+
 ## `one.devices.cubemars`
 
 - **class `CubeMarsNativeCAN`** — CubeMars servo CAN packet builder (extended CAN frame).
@@ -317,7 +344,7 @@ _Approach / depart motion primitives._
 
 - **class `Mounting`**
 - **class `MechBase`**
-  - methods: `structure`, `attach_to`, `detach_from`, `set_pos_rotmat`, `fk`, `mount`, `unmount`, `get_solver`, `add_chain`, `chain`, `chains`, `add_tcp`, `tcp`, `tcps`, `toggle_tcp`, `ik`, `ik_partial`, `clone`, `ndof`, `runtime_root_lnk`, `is_free`, `home_qs`, `tf`, `rotmat`, `quat`, `pos`, `toggle_render_collision`, `rgba`, `rgb`, `alpha`
+  - methods: `structure`, `attach_to`, `detach_from`, `set_pos_rotmat`, `fk`, `mount`, `unmount`, `get_solver`, `add_chain`, `chain`, `chains`, `add_tcp`, `tcp`, `tcps`, `toggle_tcp`, `ik`, `ik_partial`, `clone`, `ndof`, `runtime_root_lnk`, `is_floating`, `home_qs`, `tf`, `rotmat`, `quat`, `pos`, `toggle_render_collision`, `rgba`, `rgb`, `alpha`
 
 ## `one.robots.base.mech_structure`
 
@@ -325,7 +352,7 @@ _Approach / depart motion primitives._
 - **class `Joint`**
   - methods: `zero_tf`, `motion_tf`
 - **class `MechStruct`**
-  - methods: `get_chain`, `add_lnk`, `add_jnt`, `ignore_collision`, `ignore_env_collision`, `compile`, `collision_ignores_objs`, `n_jnts`, `n_lnks`, `compiled`
+  - methods: `get_chain`, `add_lnk`, `add_jnt`, `ignore_collision`, `compile`, `collision_ignores_objs`, `n_jnts`, `n_lnks`, `compiled`
 - **class `FlatMechStructure`** — flat representation of RobotStructure for efficient computation
   - methods: `resolve_all_qs`, `is_active_jnt`
 
@@ -494,11 +521,53 @@ _Approach / depart motion primitives._
 - **class `Rtq2F85`**
   - methods: `set_jaw_width`, `clone`
 
+## `one.robots.end_effectors.xhand.force_plotter`
+_Real-time ECG-style strip chart of the XHand right's fingertip forces._
+
+- `main()`
+- **class `ForcePlotter`**
+  - methods: `update`, `run`
+
+## `one.robots.end_effectors.xhand.force_visualizer`
+_Interactive real-time fingertip-force visualizer for the XHand right (12-DOF_
+
+- `main()`
+- **class `FingerForceViz`**
+  - methods: `update`
+
+## `one.robots.end_effectors.xhand.sphere_collision_checker`
+
+- **class `SphereCollisionChecker`**
+  - methods: `compute_self_collision_dist`, `self_collision_cost`, `check_collisions`, `compute_sphere_positions`, `update`
+
+## `one.robots.end_effectors.xhand.sphere_collision_util`
+
+- `jax_cache_on()`
+- `load_link_spheres(json_path, solution_index=-1)` — Load a single link's collision spheres from a SPaSM ``*-spheres.json``.
+- `rgb_to_hex(r, g, b)` — Converts RGB color values [0 - 255] to a hexadecimal value 0x.
+- `white_hex()` — Returns the hexadecimal color code for white.
+- `purple_hex()` — Returns the hexadecimal color code for purple.
+- `gray_hex()` — Returns the hexadecimal color code for gray.
+- `dark_blue_grey()`
+- `rpy_to_matrix(roll, pitch, yaw)` — Converts RPY angles to a 3x3 rotation matrix.
+- `xyzrpy_to_matrix(xyz, rpy)` — Converts XYZ translation and RPY rotation to a 4x4 homogeneous transformation matrix.
+- `axis_angle_to_matrix(axis, angle)` — Creates a 4x4 rotation matrix from an axis and angle.
+- `distance(a, b)` — Computes the distance between two 4x4 transformation matrices.
+- `matrix_to_angle_axis(R)` — Converts a rotation matrix to an angle-axis representation.
+- `matrix_to_zyx(R)` — Converts a rotation matrix to ZYX Euler angles.
+- `zyx_to_matrix(zyx)` — Converts ZYX Euler angles to a rotation matrix.
+
 ## `one.robots.end_effectors.xhand.xhand_right`
 
 - `prepare_mechstruct(collision_type=ouc.CollisionType.MESH)` — Load the XHand right (12-dof dexterous hand) from its URDF into a
 - **class `XHandRight`** — XHand right: a 12-dof dexterous hand as a mountable MechBase EE with the
   - methods: `grasp_spec`, `goto_given_conf`, `rand_conf`
+
+## `one.robots.end_effectors.xhand.xhand_right_withcc`
+_XHandRight with a transparent self-collision-sphere overlay._
+
+- **class `XHandRight`**
+  - methods: `collision_checker`, `collision_sphere_world`, `gen_collision_spheres`, `show_collision_spheres`, `hide_collision_spheres`
 
 ## `one.robots.humanoids.linx.l1.l1`
 
@@ -576,6 +645,12 @@ _GENERATED by gen_q4_pencil_coeffs.py - do not edit by hand._
 - `prepare_mechstruct()`
 - **class `Lite6`**
 
+## `one.robots.manipulators.xarm.xarm7.xarm7`
+_XArm7 (7-DOF UFACTORY arm) as a `one`-native MechBase robot._
+
+- `prepare_mechstruct(collision_type=ouc.CollisionType.MESH)`
+- **class `XArm7`** — xArm7 as a MechBase. Registers the 'main' arm chain (link_base -> link7,
+
 ## `one.robots.vehicle.xytheta`
 
 - `prepare_mechstruct()`
@@ -648,7 +723,7 @@ _Mesh geometry operations on raw (vertices, faces) arrays: surface_
 ## `one.scene.scene_object`
 
 - **class `SceneObject`**
-  - methods: `from_file`, `attach_to`, `detach_from`, `add_visual`, `add_collision`, `clone`, `set_inertia`, `collision_group`, `collision_affinity`, `is_free`, `rgb`, `alpha`, `rgba`, `inrtmat`, `com`, `mass`
+  - methods: `from_file`, `attach_to`, `detach_from`, `add_visual`, `add_collision`, `clone`, `set_inertia`, `collision_group`, `collision_affinity`, `is_floating`, `rgb`, `alpha`, `rgba`, `inrtmat`, `com`, `mass`
 
 ## `one.scene.scene_object_primitive`
 
@@ -667,7 +742,7 @@ _Mesh geometry operations on raw (vertices, faces) arrays: surface_
 - `plane(pos=(0, 0, 0), normal=ouc.StandardAxis.Z, size=(100.0, 100.0), thickness=0.001, rgb=ouc.BasicColor.GRAY, alpha=1.0)`
 - `point_cloud(vs, vrgbs, alpha=1.0)` — Build a point-cloud SceneObject from per-vertex positions and colors.
 - `frustrum(base_center=(0, 0, 0), top_center=(0, 0, 0.05), bottom_length=0.05, top_length=0.03, rgb=ouc.BasicColor.DEFAULT, alpha=1.0, **kwargs)`
-- `mesh(vs, fs, collision_type=None, is_free=False, rgb=ouc.BasicColor.DEFAULT, alpha=1.0, **kwargs)` — Build a SceneObject from user-specified vertices/faces.
+- `mesh(vs, fs, collision_type=None, is_floating=False, rgb=ouc.BasicColor.DEFAULT, alpha=1.0, **kwargs)` — Build a SceneObject from user-specified vertices/faces.
 
 ## `one.stream.websocket_server`
 
@@ -694,7 +769,7 @@ _Mesh geometry operations on raw (vertices, faces) arrays: surface_
 - **class `JntType`**
 - **class `CollisionType`**
 - **class `CollisionGroup`**
-- **class `CollisionMatrix`** — Default collision permission table
+- **class `CollisionMatrix`** — Default collision permission table: which groups each group collides with.
 - **class `DefaultPhy`**
 
 ## `one.utils.decorator`

@@ -37,6 +37,10 @@ _CMD_VERSION = 0x13
 # reply confirms -- 2208 = 12x24 fingers + 5x384 tactile blocks).
 _FINGER_STATE_SIZE = struct.calcsize(xhand_bt.FINGER_STATE_FORMAT)  # 24
 N_FINGERS = 12
+# the 12 finger states are trailed by one tactile block per fingertip pad; each
+# packs to 384 bytes (a live 2208-byte reply = 12x24 finger + 5x384 tactile).
+_SENSOR_DATA_SIZE = struct.calcsize(xhand_bt.SENSOR_DATA_FORMAT)  # 384
+N_SENSORS = 5   # one 3-axis fingertip pad per finger (thumb/index/middle/ring/pinky)
 
 # default position-mode gains / limits for a finger command
 _DEFAULT_KP, _DEFAULT_KI, _DEFAULT_KD = 100, 0, 10
@@ -158,6 +162,21 @@ class XHandX:
                     data[i * _FINGER_STATE_SIZE:(i + 1) * _FINGER_STATE_SIZE])
                 for i in range(N_FINGERS)]
 
+    @staticmethod
+    def parse_sensor_states(data):
+        """Extract the 5 fingertip tactile SensorData records (one 3-axis pad per
+        finger) that trail the 12 finger states in a reply payload. Each carries a
+        net (fx, fy, fz) plus the 120-taxel force grid. Returns None if the reply
+        is too short to contain them."""
+        off = _FINGER_STATE_SIZE * N_FINGERS
+        end = off + _SENSOR_DATA_SIZE * N_SENSORS
+        if data is None or len(data) < end:
+            return None
+        return [xhand_bt.SensorData.from_bytes(
+                    data[off + i * _SENSOR_DATA_SIZE:
+                         off + (i + 1) * _SENSOR_DATA_SIZE])
+                for i in range(N_SENSORS)]
+
     def move(self, jnt_values,
              kp=_DEFAULT_KP, ki=_DEFAULT_KI, kd=_DEFAULT_KD,
              tor_max=_DEFAULT_TOR_MAX, mode=_DEFAULT_MODE, read=False):
@@ -175,6 +194,22 @@ class XHandX:
         reply = self.send_command(_CMD_MOVE, data, read=read)
         self._last_target = np.asarray(jnt_values, dtype=float)
         return self.parse_finger_states(reply) if read else None
+
+    def move_read_full(self, jnt_values,
+                       kp=_DEFAULT_KP, ki=_DEFAULT_KI, kd=_DEFAULT_KD,
+                       tor_max=_DEFAULT_TOR_MAX, mode=_DEFAULT_MODE):
+        """Stream ONE 12-finger set-point and parse BOTH the 12 finger states and
+        the 5 fingertip tactile sensors from the single reply (closed loop +
+        tactile). Same wire cost as ``move(read=True)`` -- the tactile blocks ride
+        in every reply -- it just also decodes them.
+
+        :return: ``(list[FingerState], list[SensorData])``; either element is None
+                 if the reply was incomplete.
+        """
+        data = self._finger_package(jnt_values, kp, ki, kd, tor_max, mode)
+        reply = self.send_command(_CMD_MOVE, data, read=True)
+        self._last_target = np.asarray(jnt_values, dtype=float)
+        return self.parse_finger_states(reply), self.parse_sensor_states(reply)
 
     def move_to(self, target, speed=1.0, freq=100.0, start=None,
                 sync=False, read_feedback=False, **move_kwargs):

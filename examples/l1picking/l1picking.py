@@ -134,6 +134,21 @@ def chain_planning_context(robot, mjc, chain_name):
     return omppc.PlanningContext(collider=mjc, joint_limits=(lo, hi))
 
 
+def plan_segment(planner, start, goal, max_iters=4000):
+    """RRT-Connect a single joint-space segment ``start -> goal``.
+
+    Thin wrapper over ``planner.solve`` returning a list of joint configs
+    (densified, ``path[0] == start`` .. ``path[-1] == goal``) so callers can
+    concatenate it with cartesian sub-paths (``traj += descend[1:]``).
+    Raises if no collision-free path is found."""
+    path = planner.solve(np.asarray(start, np.float64),
+                         np.asarray(goal, np.float64), max_iters=max_iters)
+    if path is None:
+        raise RuntimeError("plan_segment: RRT-Connect found no path "
+                           "start -> goal (unreachable or blocked)")
+    return list(path)
+
+
 def load_world_grasps(cyl):
     """Load the cylinder-local grasps and map them onto the cylinder's world
     pose. Returns [(pose_world, pre_world, jaw_width, score), ...]."""

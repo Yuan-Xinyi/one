@@ -36,9 +36,9 @@ class XArm7(orbmb.MechBase):
     def _build_structure(cls):
         return prepare_mechstruct()
 
-    def __init__(self, rotmat=None, pos=None, home_qs=None, is_free=False):
+    def __init__(self, rotmat=None, pos=None, home_qs=None, is_floating=False):
         super().__init__(rotmat=rotmat, pos=pos,
-                         home_qs=home_qs, is_free=is_free)
+                         home_qs=home_qs, is_floating=is_floating)
         c = self.structure.compiled
         self.add_chain('main', c.root_lnk, c.tip_lnks[0])   # numeric SELIK
         self.add_tcp('flange', self.runtime_lnks[-1])

@@ -11,6 +11,7 @@ RL_controller/
 ├── algorithms/           PPO 算法与训练入口
 ├── env/                  Torch-batched 环境、任务分布、经典 nullspace 基线、单 episode rollout 工具
 ├── eval/                 训练后评估：RL vs 经典对照、步级 RL↔Cls 混合控制
+├── self_improve/         Self-improvement 闭环：hybrid 作为策略改进算子 + BC 蒸馏 + PPO 微调
 └── runs/                 训练日志、ckpt、eval 缓存（如 p0_progress_only_30M_0520）
 ```
 
@@ -38,6 +39,15 @@ RL_controller/
 |------|------|
 | [eval/rl_vs_classical.py](eval/rl_vs_classical.py) | 对比评估：RL 与 classical 在同一组 N 个任务上各跑一次，落 `rollouts.npz`（含整段 q_traj，供后续切片分析无需 re-run）+ `per_task.csv`。 |
 | [eval/hybrid.py](eval/hybrid.py) | 步级 state-conditional 混合控制：每步基于 `max\|q_norm(q_t)\|` 与滞回阈值 `(tau_enter, tau_exit)` 在 RL ↔ Classical 间切换。把所有 (tau_enter, tau_exit) 组合 tile 到同一个大 env 一次并行评。 |
+
+### self_improve/
+
+| 文件 | 功能 |
+|------|------|
+| [self_improve/collect.py](self_improve/collect.py) | Round-k 数据收集：hybrid(π_k, classical) 在训练分布上 rollout，记录所有 classical 接管步 (obs, a_cls)；同任务再跑 pure π_k，**task-level win filter** 只保留 hybrid 严格胜出任务的 rescue 步（已验证的改进信号）。 |
+| [self_improve/loop.py](self_improve/loop.py) | 外循环编排：collect → PPO+BC 联合微调（warm-start，`L = L_PPO + bc_coef·‖tanh(μ)−a_cls‖²`，轮内退火）→ 10k 集 eval（L/L_oracle、frac(hyb>pure)、switches，per-task 落缓存）。收敛判据：frac(hybrid>pure)→0 即算子无油水（rescue 行为完全内化）。round 目录兼作标准 ckpt_dir。 |
+
+ppo.py 的 `train()` 支持可选 `bc_obs/bc_actions/bc_coef/bc_anneal`（DAPG 式辅助 BC 损失）；不传时行为与原来完全一致。
 
 ## 关键设计
 

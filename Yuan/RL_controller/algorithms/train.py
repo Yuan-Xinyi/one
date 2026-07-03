@@ -116,6 +116,16 @@ def main():
         feasibility_threshold_m=threshold_m,
     )
 
+    # Danger-start mixing (train env only; eval stays on the pure task dist).
+    ds_cfg = cfg_yaml.get("danger_starts", {})
+    if ds_cfg.get("enabled", False):
+        from Yuan.RL_controller.self_improve.danger_starts import MixedLineDistribution
+        train_env.line_dist = MixedLineDistribution(
+            train_env.line_dist, ds_cfg["pool_path"],
+            float(ds_cfg.get("p_danger", 0.4)), device, train_env.kin.dtype)
+        print(f"[train] danger starts ON: pool={ds_cfg['pool_path']}, "
+              f"p_danger={ds_cfg.get('p_danger', 0.4)}")
+
     eval_env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": eval_cfg["n_holdout"]})
     print(f"[train] building eval env (n_envs={eval_env_cfg.n_envs})")
     eval_env = NSRLBatchedEnv(eval_env_cfg, line_dist=None, device=device)
@@ -158,11 +168,13 @@ def main():
         log_file.flush()
         # Concise stdout: one line per PPO update with the metrics we care about
         if "update" in d:
+            guide_str = (f"  guide {d['train/guide_frac']:.3f}"
+                         if "train/guide_frac" in d else "")
             print(
                 f"upd {d['update']:>4}  step {d['global_step']:>9}  "
                 f"r/prog {d.get('reward/progress', 0):+.3f}  "
                 f"v_loss {d.get('train/v_loss', 0):.4f}  "
-                f"entropy {d.get('train/entropy', 0):.2f}",
+                f"entropy {d.get('train/entropy', 0):.2f}" + guide_str,
                 flush=True)
         elif "eval_at_step" in d:
             print(
@@ -178,6 +190,26 @@ def main():
             else:
                 wandb_run.log(payload)
 
+    # Guided switch (RL-native self-improvement): classical rescues enter the
+    # PPO buffer as advantage-gated experience. Enabled via `guide:` yaml section.
+    guide_cfg = cfg_yaml.get("guide", {})
+    guide_fn = None
+    if guide_cfg.get("enabled", False):
+        from Yuan.RL_controller.env.classical_nullspace import (
+            ClassicalNullspaceController, cn_action_fn)
+        guide_fn = cn_action_fn(ClassicalNullspaceController(train_env.kin))
+        print(f"[train] guided switch ON: tau_enter={guide_cfg.get('tau_enter', 0.98)}, "
+              f"tau_exit={guide_cfg.get('tau_exit', 0.94)}")
+
+    # Critic floor: V(s) >= V_cls(s)/scale (see self_improve/vcls.py).
+    floor_cfg = cfg_yaml.get("critic_floor", {})
+    floor_fn = None
+    if floor_cfg.get("enabled", False):
+        from Yuan.RL_controller.self_improve.vcls import load_vcls
+        floor_fn = load_vcls(floor_cfg["vcls_path"], device)
+        print(f"[train] critic floor ON: vcls={floor_cfg['vcls_path']}, "
+              f"coef={floor_cfg.get('coef', 0.5)}")
+
     eval_fn = _make_eval_fn(eval_env)
     n_updates = ppo_cfg.total_timesteps // (ppo_cfg.n_steps * env_cfg.n_envs)
     print(f"[train] starting PPO: total={ppo_cfg.total_timesteps}, updates={n_updates}")
@@ -187,7 +219,14 @@ def main():
                       log_fn=log_fn,
                       ckpt_path=ckpt_path,
                       ckpt_every_n_updates=train_cfg.get("ckpt_every_n_updates", 10),
-                      resume_from_ckpt=args.resume_from_ckpt)
+                      resume_from_ckpt=args.resume_from_ckpt,
+                      guide_action_fn=guide_fn,
+                      guide_tau_enter=float(guide_cfg.get("tau_enter", 0.98)),
+                      guide_tau_exit=float(guide_cfg.get("tau_exit", 0.94)),
+                      guide_anneal_start=guide_cfg.get("anneal_start", None),
+                      guide_anneal_end=float(guide_cfg.get("anneal_end", 0.9)),
+                      critic_floor_fn=floor_fn,
+                      critic_floor_coef=float(floor_cfg.get("coef", 0.5)))
     log_file.close()
     if wandb_run is not None:
         wandb_run.finish()

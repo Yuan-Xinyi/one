@@ -79,23 +79,30 @@
 \newcommand{\harada}[1]{\textcolor{green}{#1}}
 \newcommand{\recheck}[1]{\textcolor{olive}{#1}}
 \newcommand{\rev}[1]{\begingroup\color{magenta}#1\endgroup}
+% (\rev) uppercase alias: IEEEtran \MakeUppercase's the running head, which
+% would otherwise turn \color{magenta} into the undefined \color{MAGENTA}.
+\definecolor{MAGENTA}{cmyk}{0,1,0,0}
 
 \begin{document}
-\title{Extreme Motion Generation \\via Hybrid Null-Space Control \\for Straight-Line Path Following}
+\title{Extreme Motion Generation \\via Hybrid Null-Space Control \rev{and Ranked}\\ \rev{Diffusion Seeding} for Straight-Line Path Following}
 \author{Xinyi Yuan, Weiwei Wan$^{*}$, Kensuke Harada
 \thanks{Department of System Innovation, Graduate School of Engineering Science, The University of Osaka, Toyonaka, Osaka, Japan.}
 \thanks{$^{*}$Contact: Weiwei Wan, {\tt\small wan@sys.es.osaka-u.ac.jp}}}
 \markboth{IEEE Transactions on Automation Science and Engineering, 2026.}
-{Yuan \MakeLowercase{\textit{et al.}}: Selecting Good Seed for Numerical Inverse Kinematics}
+{\rev{Yuan \MakeLowercase{\textit{et al.}}: Extreme Motion Generation via Hybrid Null-Space Control and Ranked Diffusion Seeding}}
 \maketitle
 
 \bstctlcite{IEEEexample:BSTcontrol}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{abstract}
 This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length along a pre-defined trajectory within the manipulator's workspace. This objective is important in industry as long as path-following is fundamental to a large variety of tasks such as surface coating and welding. More critically, extreme motion enables a fixed-base manipulator to exploit the kinematic capability under limited reachability. However, such exploitation is challenging in practice, as the manipulator must actively avoid the safety boundary through execution, which is inherently a long-horizon problem. Accordingly, we claim that long-horizon decision-making should be delegated to a learning-based policy to maximize exploitation, while a classical model-based controller covers the near-boundary region, where the learning policy degrades sharply due to sparse data coverage. In detail, our proposed method is a step-level hybrid controller that switches between an RL-based and a model-based controller according to the normalized joint-limit distance. The initial joint configuration is sampled through conditional diffusion-based sampling, which improves the achievable path length based on the learned motion prior. We evaluate the proposed framework on 10,000 straight-line path-following tasks with a 7-DoF Franka FR3, extending the average rollout length by 27\% over the model-based baseline. Notably, certain tasks yield a pronounced extension toward the motion extreme, as reflected in the maximum improvement reported in the statistical results. The project website and related videos of this paper can be found at \url{https://yuan-xinyi.github.io/extreme-motion-generation/}.
+\rev{This article extends our earlier conference study along both stages of the framework. On the controller side, we show that the switching behavior itself can be internalized: distilling the hybrid controller into a single network, with the near-boundary branch of the teacher upgraded from the myopic classical rescue to an exact lookahead search in the simulator, yields a standalone policy that surpasses the original hybrid system, and re-hosting the distilled policy in the hybrid architecture lifts the recovered fraction of the per-task reference length from 90.6\% to 91.4\%. On the initialization side, a per-task failure attribution reveals that the dominant remaining losses stem from the choice among diffusion samples rather than from control: candidates drawn for the same task are exchangeable in expectation, yet the best of eight recovers 9\,pp more of the reference length than the first valid one. We therefore replace the single-sample initialization with ranked candidate selection, in which a lightweight learned scorer ranks a batch of diffusion candidates from their initial observations and executes only the argmax, requiring no additional rollouts and a single selection per task ($\sim$0.4\,s). The full method recovers 98.4\% of the reference length, corresponding to a 39\% longer average path than the model-based baseline; the result replicates on a virgin holdout set (98.3\%) and its advantage is preserved under joint-space noise.}
 
-\keywords{extreme motion generation, reinforcement learning}
 \end{abstract}
+
+\begin{IEEEkeywords}
+extreme motion generation, reinforcement learning\rev{, policy distillation, seed ranking}
+\end{IEEEkeywords}
 
 \section{Introduction}
 Consider a compact, fixed-base manipulator executing a coating or welding operation over a large work surface. Given a starting position and a motion direction, intuition would suggest that the maximum reachable point is determined by the reachable workspace. However, the motion is continuous and strictly constrained by safety boundaries such as joint limits and tool-orientation tolerance along each waypoint. Therefore, the practical bottleneck is that one of those safety constraints is violated and causes termination long before the end-effector approaches the edge of the reachable workspace. Consequently, the practically achievable path length is influenced by how long the safety boundaries can be deferred from being met during the motion execution process. We refer to this problem as \textit{extreme motion generation} that maximizes the Cartesian path length along a pre-defined trajectory within the manipulator's workspace. This is particularly important in industrial automation, where the length of a single continuous motion directly limits the area a manipulator can process in one setup. Rather than scaling up the manipulator or repeatedly relocating the base, simply exploiting the extreme motion offers a solution to enlarge the effective working range.
@@ -104,7 +111,9 @@ However, extreme motion generation, especially under precise path-following, is 
 
 Motivated by this complementarity, we delegate the long-horizon decision-making in the well-sampled interior to a Reinforcement-Learning (RL) policy, where foresight can be trusted. The near-boundary region is handled by the classical controller, whose robustness is guaranteed by construction. The two regimes are coordinated at every control step by a hysteresis rule on the normalized joint-limit distance, ensuring that each model operates within the region where it is most reliable. In addition, a conditional diffusion model initializes the manipulator on a robust starting configuration prior to execution of the hybrid controller.
 
-We evaluate the proposed framework on a large set of straight-line path-following tasks for a 7-DoF Franka FR3, measuring performance as the achieved path length relative to a per-task reference length. The contribution of each component is then analyzed through the seed-by-controller protocol. For the initial joint configuration, the diffusion-based selection is compared against several hand-designed heuristic seeds; for the controller, the hybrid framework is compared against the classical and the learning-based controllers in isolation. We further conduct ablation studies on the guidance scale, the number of diffusion sampling steps, and the hysteresis switching thresholds, providing practical insights into the effect of each design choice.
+\rev{This article is an extended version of our conference study, which established the two-stage framework above. Two questions left open there structure the extension. The first concerns the controller: is the hybrid architecture a runtime necessity, or can its switching behavior be learned into a single network? We find that reinforcement learning alone can neither discover nor retain the near-boundary skill---exploration dies within a few steps near the limits, so advantage estimates carry no signal, and fine-tuning erodes the skill even when it is implanted by other means---but supervised distillation of the hybrid behavior map, corrected by DAgger rounds, does internalize it. Moreover, the distillation ceiling is set by the teacher, and upgrading the teacher's boundary branch from the myopic classical rescue to an exact lookahead search in the deterministic simulator pushes the distilled student beyond the original hybrid system. The second question concerns the remaining losses: where do they concentrate? A per-task attribution shows that the catastrophic tail of the evaluation set is dominated not by control failures but by the choice of the initial self-motion-manifold branch; the same controller solves the majority of the failed tasks when started from a better diffusion sample. This turns initialization from a sampling problem into a selection problem, which we address with a learned ranker over a batch of candidates under a strict deployment budget: no additional rollouts and a single selection before the motion begins.}
+
+We evaluate the proposed framework on a large set of straight-line path-following tasks for a 7-DoF Franka FR3, measuring performance as the achieved path length relative to a per-task reference length. The contribution of each component is then analyzed through the seed-by-controller protocol. For the initial joint configuration, the diffusion-based selection is compared against several hand-designed heuristic seeds; for the controller, the hybrid framework is compared against the classical and the learning-based controllers in isolation. We further conduct ablation studies on the guidance scale, the number of diffusion sampling steps, and the hysteresis switching thresholds, providing practical insights into the effect of each design choice. \rev{Beyond the conference protocol, the extended experiments evaluate the distilled controller, the failure attribution that motivates ranked initialization, the ranked-selection results with their component progression, a replication on a virgin holdout set, and robustness to joint-space noise.}
 
 \section{Related Work}
 
@@ -124,6 +133,8 @@ Such learned priors supply the foresight that manipulability- and reachability-b
 To address the aforementioned issues, the solution could be to combine a learned policy with a model-based controller. One line of work combines the output actions additively: residual RL keeps a fixed classical controller and learns a corrective action added on top of that \cite{johannink2019residual,silver2018residual}. Another line of research switches between different controllers by safety criteria or pre-defined regions. For example, Mehmood et al.~\cite{mehmood2022black} switched to a verified backup controller under runtime reachability checks. Similarly, Alshiekh et al.~\cite{alshiekh2018safe} proposed to override unsafe learned actions whenever the agent approaches the boundary. Likewise, Kurtz et al.~\cite{kurtz2021control} continuously filtered the nominal action to keep it within a safe set, as in control-barrier-function safety filters for manipulators.
 
 Generally, our framework follows the switching rather than the additive paradigm. Similar to the safety-driven methods above, we trigger the backup classical controller near the safety boundary. However, our motivation is not merely to stay safe but to keep advancing the motion toward its kinematic limit, which is the core objective of extreme motion generation. Accordingly, we partition the configuration space by proximity to the joint-limit boundary and assign each region to the controller most reliable there.
+
+\rev{A third way to combine the two regimes is to use the combination only at training time. Expert iteration alternates between an expert built around the current policy and a learner distilled from it \cite{anthony2017thinking}; policy distillation compresses one or several teachers into a single network \cite{rusu2015policy}; DAgger corrects the distribution shift of behavior cloning by querying the teacher on the learner's own visitation \cite{ross2011reduction}; and guided policy search distills trajectory-optimization experts into reactive policies \cite{levine2013guided}. The extension in this article adopts this training-time view: the hybrid controller is treated as a policy-improvement operator whose behavior, with the boundary branch upgraded to an exact lookahead search, is distilled into a single network, and weight averaging over the distillation lineage \cite{wortsman2022model} contributes a final small gain. On the initialization side, learning-to-rank objectives \cite{burges2005learning,cao2007learning} allow a scorer to select among generative candidates without rolling any of them out, complementing the best-of-$N$ perspective of generative IK and seeding methods \cite{ames2022ikflow,huang2024diffusionseeder}.}
 
 
 
@@ -187,7 +198,7 @@ where the secondary command $\boldsymbol{\xi}$ combines a directional-manipulabi
 
 
 \section{Extreme Motion Generation}
-Following the two-stage framework illustrated in Fig.~\ref{overview}, this section provides detailed explanations of each stage. Before execution ($t=0$), a conditional diffusion model samples the initial configuration $\mathbf{q}_{0}^{*}$ from the task condition $\mathbf{c}$. During execution ($t>0$), a hybrid controller generates the motion online, switching between an RL controller in the interior and the classical controller near the joint-limit boundary.
+Following the two-stage framework illustrated in Fig.~\ref{overview}, this section provides detailed explanations of each stage. Before execution ($t=0$), a conditional diffusion model samples the initial configuration $\mathbf{q}_{0}^{*}$ from the task condition $\mathbf{c}$. During execution ($t>0$), a hybrid controller generates the motion online, switching between an RL controller in the interior and the classical controller near the joint-limit boundary. \rev{The two extensions of this article attach one module to each stage: Section~\ref{sec:ranking} replaces the single-sample initialization with ranked candidate selection, and Section~\ref{sec:distill} internalizes the hybrid behavior into a single distilled policy that becomes the interior controller.}
 
 % To achieve the extreme motion generation, the proposed framework is divided into two temporal stages. Before motion execution ($t=0$), a conditional diffusion model samples the initial joint configuration $\mathbf{q}_{0}^{*}$ by task conditions $\mathbf{c}$. Starting from that ($t>0$), the joint motion is generated online through a hybrid controller. Specifically, as shown in Fig.~\ref{overview}, the configuration space is partitioned by proximity to the joint-limit boundary: the interior region is governed by a farsighted RL controller, while the near-boundary region is delegated to the robust classical controller. At every step, a boundary check on the current joint configuration $\mathbf{q}_{t}$ determines the active controller, and a hysteresis rule on the switching thresholds coordinates the transition between the two regimes to suppress chattering. The detailed design of each module is elaborated in the following subsections.
 
@@ -214,6 +225,13 @@ The distribution of these initial joint configurations is approximated with a co
 \end{equation}
 controls the task signal, where $w=1$ recovers conditional sampling and $w>1$ amplifies it. Each sampled candidate is then projected onto the exact $(\mathbf{p}_{0},\mathbf{n})$ pose by Newton's method, and the first IK-valid one is retained as the seed $\mathbf{q}_{0}^{*}$, falling back to $\mathbf{q}_{0}^{\mathrm{seed}}$ (the configuration that generated the task) if none succeeds after maximum 32 trials.
 
+\rev{\subsection{Ranked Candidate Selection}\label{sec:ranking}
+Retaining the first IK-valid sample implicitly assumes that the diffusion samples for a task are of comparable quality. The failure attribution of Section~\ref{sec:attribution} shows the opposite: samples for the same task land on different SMM branches whose reachable path lengths differ drastically, and while the samples are exchangeable in expectation (the first valid one performs no better than the per-task average), the best of a small batch recovers substantially more of the reference length. Initialization is therefore a selection problem, and the missing module is a scorer that identifies the best candidate before the motion begins.
+
+We impose a strict deployment budget on this module: no additional rollouts, and a single selection per task. The procedure is as follows. A batch of $K$ candidates is sampled from the diffusion model---in the adopted configuration, $16$ at the default guidance scale $w{=}1.5$ and $8$ at $w{=}1.0$, since weakly guided samples are individually inferior but broaden the branch coverage of the batch (Section~\ref{sec:rankedresults})---and each candidate is projected by Newton's method as before. The fallback configuration $\mathbf{q}_{0}^{\mathrm{seed}}$ joins the batch as a free $(K{+}1)$-th candidate. Every candidate $\mathbf{q}_{0}^{(i)}$ is then described by the same initial observation $\mathbf{o}_{0}$ that the policy receives (Eq.~\eqref{eq:obs}) augmented with the log directional manipulability, and a learned scorer $f_{\phi}$ predicts its achievable path length; the executed seed is $\mathbf{q}_{0}^{*}=\arg\max_{i} f_{\phi}(\mathbf{o}_{0}^{(i)})$. The scorer is an ensemble of ten small MLPs whose scores are averaged.
+
+Training data for $f_{\phi}$ is generated entirely offline: for $61{,}440$ tasks drawn from the training distribution, all candidates of each task are rolled out once under the deployed controller in the deterministic simulator, providing exact per-candidate labels. This is a one-time cost of the same nature as policy training and is never repeated at deployment. Because the module must pick the top candidate rather than predict lengths accurately, the scorer is trained with a ranking objective---a within-task pairwise hinge combined with a listwise cross-entropy---which outperforms plain regression by a wide margin (Section~\ref{sec:rankedprogression}). At deployment, the full selection (batched DDIM sampling, $K{+}1$ Newton projections, one ensemble forward pass) takes $\sim$0.42\,s per task, dominated by the Newton projections; the scoring itself is below $0.1$\,ms. The selection happens once, before the motion starts, and the chosen candidate is executed by the hybrid controller without any further intervention.}
+
 \subsection{RL-based Null-Space Controller}
 The interior policy $\pi$ is trained with Proximal Policy Optimization (PPO). The observation $\mathbf{o}_{t}\in\mathbb{R}^{31}$ exposes only the quantities needed to resolve the redundancy:
 \begin{equation}
@@ -231,20 +249,27 @@ r_{t} = w_{p}\,\mathrm{clip}\!\left(\frac{(\mathbf{p}_{t+1}-\mathbf{p}_{t})^{\to
 \end{equation}
 the per-step advance along $\mathbf{d}$ normalized by its maximum attainable value. With no terminal penalty, any violation simply ends the episode, so the return reduces to the survival time, and the policy is rewarded solely for sustaining the motion.
 
+\rev{\subsection{Internalizing the Hybrid via Lookahead-Guided Distillation}\label{sec:distill}
+The conference version treats the hybrid architecture as a runtime necessity. The extension asks whether the near-boundary skill can instead live inside a single network. Reinforcement learning alone cannot put it there: in the boundary shell, a policy without the skill terminates within a few steps, so advantage estimates compare noise against noise and provide no learning signal; and when the skill is implanted by supervision, subsequent PPO fine-tuning erodes it even with the entropy bonus disabled. Notably, the skill is not hard to \emph{represent}---a supervised fit of the classical rescue action field from the observation of Eq.~\eqref{eq:obs} reaches $R^{2}=0.91$---the obstacle is purely one of exploration and retention.
+
+Supervised distillation bypasses both obstacles. The teacher is the memoryless single-threshold hybrid behavior map: the policy action in the interior, the boundary action in the shell, and a linear blend inside a narrow band around the threshold, which removes the switching discontinuity that a smooth student cannot represent. The student imitates this map on its own visitation, with DAgger rounds re-querying the teacher on the states the current student actually reaches. Iterating this operator converges, but to a ceiling set by the teacher: the shell branch is the classical controller, whose instantaneous gradient rescue is itself suboptimal. We therefore upgrade the shell branch of the teacher to an exact lookahead search in the deterministic simulator: for a shell state, a set of candidate null-space actions (the classical action, the current student's action, and perturbations thereof) is each held for a short horizon and then continued by the closed-loop classical controller to termination, and the candidate with the largest exact discounted progress return is taken as the label. Since the classical action is always among the candidates, the searched label is never worse than the classical one; on shell states the searched actions outperform the classical rescue by $8.6\%$ on average, with $94\%$ of the argmax labels coming from the search. Because raw search labels carry jitter, they are applied only deep in the shell and merged with the clean hybrid labels elsewhere. Fidelity is maximized by warm-starting each student from its predecessor, and the final policy $\pi_{\mathrm{D}}$ is the parameter average of the last two students in the lineage \cite{wortsman2022model}.
+
+The distilled policy replaces the PPO policy as the interior controller of the hybrid architecture. The switch is nearly internalized---the fraction of tasks on which the runtime switch still improves over $\pi_{\mathrm{D}}$ alone drops from $22.8\%$ to below $10\%$---yet a residual benefit remains, so the deployed configuration keeps the hybrid form with retuned thresholds (Section~\ref{sec:coordination}).}
+
 \subsection{Null-Space Policies Coordination}\label{sec:coordination}
 The two controllers are combined at the level of individual control steps. We measure proximity to the joint-limit boundary by the normalized distance
 \begin{equation}
 \label{eq:rho}
 \rho(\mathbf{q}) = \max_{i}\,\frac{|q_{i}-q_{\mathrm{mid},i}|}{(q_{\max,i}-q_{\min,i})/2}\in[0,1],
 \end{equation}
-which is $0$ at the center of the joint range and $1$ at a limit. The RL policy governs the interior and the classical controller the near-boundary shell, with switching following a hysteresis rule with two thresholds $\tau_{\mathrm{enter}}\ge\tau_{\mathrm{exit}}$ to reduce chattering: while the RL policy is active, control passes to the classical controller once $\rho\ge\tau_{\mathrm{enter}}$, and returns to the RL policy only after $\rho$ falls back below $\tau_{\mathrm{exit}}$. An episode whose seed already lies in the boundary shell, $\rho(\mathbf{q}_{0}^{*})\ge\tau_{\mathrm{enter}}$, begins under the classical controller.
+which is $0$ at the center of the joint range and $1$ at a limit. The RL policy governs the interior and the classical controller the near-boundary shell, with switching following a hysteresis rule with two thresholds $\tau_{\mathrm{enter}}\ge\tau_{\mathrm{exit}}$ to reduce chattering: while the RL policy is active, control passes to the classical controller once $\rho\ge\tau_{\mathrm{enter}}$, and returns to the RL policy only after $\rho$ falls back below $\tau_{\mathrm{exit}}$. An episode whose seed already lies in the boundary shell, $\rho(\mathbf{q}_{0}^{*})\ge\tau_{\mathrm{enter}}$, begins under the classical controller. \rev{For the distilled policy $\pi_{\mathrm{D}}$ of Section~\ref{sec:distill}, the thresholds are retuned on the evaluation protocol: a wide hysteresis gap $(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})=(0.985,0.96)$ maintains the path length while reducing switching to about $0.3$ transitions per episode, one quarter of the conference configuration.}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Experiments and Analysis}
 \rev{\label{sec:exp}}
 All experiments were conducted using the \textit{One} robotic system\footnote{https://github.com/wanweiwei07/one}, on the 7-DoF Franka Research 3 (FR3) with a pen-shaped tool attached to the end-effector. The evaluation set comprises $10{,}000$ tasks, each specified by a starting position $\mathbf{p}_0$, a desired line direction $\mathbf{d}$, and a task-plane normal $\mathbf{n}$, sampled within the FR3 work range. These tasks are drawn from the same population as the diffusion training data, with $10\%$ held out as unseen during training to assess generalization.
 
-Unless otherwise specified, experiments use the default setting: (1) a diffusion-based initial configuration generator using DDIM with 50 denoising steps and CFG scale $w=1.5$; (2)the diffusion-based initialization runs at most 32 trials, or falls back to the predefined seed $\mathbf{q}_0^{\mathrm{seed}}$ if none succeeds; (3) hybrid switching thresholds $\tau_{\mathrm{enter}},\tau_{\mathrm{exit}}$ of $0.98,0.94$; (4) classical secondary-objective weights $k_{\mu},k_{\mathrm{jl}},k_{\theta}$ of $0.8,0.4,0.2$.
+Unless otherwise specified, experiments use the default setting: (1) a diffusion-based initial configuration generator using DDIM with 50 denoising steps and CFG scale $w=1.5$; (2)the diffusion-based initialization runs at most 32 trials, or falls back to the predefined seed $\mathbf{q}_0^{\mathrm{seed}}$ if none succeeds; (3) hybrid switching thresholds $\tau_{\mathrm{enter}},\tau_{\mathrm{exit}}$ of $0.98,0.94$; (4) classical secondary-objective weights $k_{\mu},k_{\mathrm{jl}},k_{\theta}$ of $0.8,0.4,0.2$. \rev{The extended experiments (Sections~\ref{sec:attribution}--\ref{sec:holdout}) additionally use: (5) the distilled policy $\pi_{\mathrm{D}}$ with retuned thresholds $(0.985,0.96)$ as the deployed hybrid; and (6) for the full method, ranked initialization over $24$ diffusion candidates ($16$ at $w{=}1.5$, $8$ at $w{=}1.0$) plus the fallback seed. All extended results keep the reference length $\ell^{\mathrm{ref}}$ of the conference protocol frozen, so every percentage in this article is measured with the same normalizer; values above $100\%$ indicate that a configuration exceeds the reference pool, which the stronger extended systems do systematically on difficult tasks.}
 
 For each evaluation task, we generate seed candidates following the procedure of Section~4.1 (up to $6$ seeds per task) and roll out every candidate under the deployed hybrid controller. We denote the longest rollout length as the \emph{reference length} ($\ell^{\mathrm{ref}}$) and utilize it for subsequent percentage comparison.
 
@@ -356,6 +381,146 @@ $\pi$ & $\textbf{q}_{0}^*$
 
 
 
+
+\rev{\subsubsection{Failure Attribution}\label{sec:attribution}
+Before extending the framework, we ask where the conference system still loses. We define the catastrophic tail as the Easy-bucket tasks recovering less than $50\%$ of $\ell^{\mathrm{ref}}$ ($n{=}405$); although small in number, these tasks carry $62\%$ of the total shortfall of the deployed system. Three findings characterize this tail. First, the deaths are dominated by the tool-orientation cone rather than the joint limits: $64.7\%$ of the tail terminates by cone violation, $21.7\%$ by joint limits, and $12.3\%$ by collision, with $93\%$ terminating within the first $50$ steps (median $31$)---the near-boundary rescue skill that the hybrid controller provides is no longer the binding constraint. Second, the failures are attributable to the initial branch, not to control: re-running the \emph{same} controller from the classical-label seed recovers $46.4\%$ of the tail to at least $90\%$ of the reference, and starting the remainder from the per-task best stored candidate recovers a further $66.7\%$ of them; in total, roughly $85$--$90\%$ of the catastrophic tail is solvable by the deployed controller from a better start. Third, the diffusion samples themselves contain the better starts: for the same task, the first IK-valid sample performs no better than the per-task average over eight samples ($91.4\%$ vs.\ $91.4\%$ of the reference on the full set), i.e., the retained sample is effectively a random draw, while an oracle choosing the best of the eight would recover $100.6\%$. Initialization quality is a geometric property of the candidate, fully observable before the motion starts; the selection headroom is real and, as the next sections show, largely realizable.}
+
+\rev{\subsubsection{Internalizing the Switch}\label{sec:distillresults}
+Table~\ref{tab:distill} evaluates the distilled policy of Section~\ref{sec:distill} under the conference initialization (first IK-valid DP seed). Two observations stand out. First, the standalone distilled policy $\pi_{\mathrm{D}}$ recovers $89.1\%$ of the reference length, surpassing the conference PPO policy ($85.0\%$) by $4$\,pp and approaching the conference hybrid \emph{system} ($90.6\%$) as a single network. Second, the difficulty gradient reported in the conference version---the learned policy retreating to classical parity on Difficult tasks---disappears: $\pi_{\mathrm{D}}$ is strongest exactly on the Difficult bucket ($94.9\%$), because the lookahead teacher supplies precisely the near-boundary competence that PPO could not discover. Re-hosting $\pi_{\mathrm{D}}$ as the interior controller of the hybrid architecture retains a residual benefit and lifts the deployed system to $91.4\%$. The hybrid architecture is thus best understood as a policy-improvement operator: most of its value can be distilled into a single network, while the runtime switch contributes a diminishing remainder.}
+
+\begin{table*}[!htbp]
+\centering
+\rev{
+\caption{\rev{Internalizing the Hybrid: the Distilled Policy $\pi_{\mathrm{D}}$ under the Conference Initialization (First IK-Valid DP Seed).}}
+\label{tab:distill}
+\begin{threeparttable}
+\begin{tabular}{llcccc}
+\toprule
+Eval-Set & $\pi$
+& \shortstack{Path Length (m)\\ {\scriptsize Mean / Std / Min / Max}}
+& \shortstack{Ratio to Reference ($\%$)\\ {\scriptsize Mean / Std / Min / Max}} \\
+\midrule
+\multirow{4}{*}{\shortstack{All\\{\scriptsize ($n{=}10000$)}}}
+& RL (conf.)                & 0.53 / 0.26 / 0.01 / 1.45 & 85.0 / 28.8 / 0.8 / 1017.6 \\
+& $\pi_{\mathrm{D}}$ (distilled)      & 0.56 / 0.25 / 0.01 / 1.46 & 89.1 / 25.3 / 0.8 / \phantom{0}605.6 \\
+& Hybrid (conf.)            & 0.57 / 0.25 / 0.01 / 1.45 & 90.6 / 23.1 / 0.8 / 1000.8 \\
+& Hybrid($\pi_{\mathrm{D}}$)          & \limebox{0.58} / 0.25 / 0.01 / 1.58 & \limebox{91.4} / 23.4 / 0.8 / \phantom{0}986.8 \\
+\midrule
+\multirow{4}{*}{\shortstack{Easy\\{\scriptsize ($n{=}2642$)}}}
+& RL (conf.)                & 0.74 / 0.32 / 0.01 / 1.45 & 75.7 / 31.4 / 0.8 / \phantom{0}143.5 \\
+& $\pi_{\mathrm{D}}$ (distilled)      & 0.79 / 0.30 / 0.01 / 1.46 & 80.0 / 28.9 / 0.8 / \phantom{0}143.5 \\
+& Hybrid (conf.)            & 0.81 / 0.28 / 0.01 / 1.45 & 82.4 / 26.2 / 0.8 / \phantom{0}143.5 \\
+& Hybrid($\pi_{\mathrm{D}}$)          & \limebox{0.82} / 0.27 / 0.01 / 1.58 & \limebox{83.2} / 26.0 / 0.8 / \phantom{0}146.9 \\
+\midrule
+\multirow{4}{*}{\shortstack{Medium\\{\scriptsize ($n{=}4795$)}}}
+& RL (conf.)                & 0.53 / 0.17 / 0.01 / 1.26 & 87.2 / 24.9 / 1.2 / \phantom{0}243.2 \\
+& $\pi_{\mathrm{D}}$ (distilled)      & 0.56 / 0.15 / 0.01 / 1.23 & 90.9 / 20.4 / 1.2 / \phantom{0}233.3 \\
+& Hybrid (conf.)            & 0.57 / 0.14 / 0.01 / 1.26 & 92.3 / 16.9 / 1.2 / \phantom{0}235.3 \\
+& Hybrid($\pi_{\mathrm{D}}$)          & \limebox{0.57} / 0.13 / 0.01 / 1.13 & \limebox{93.0} / 16.6 / 1.2 / \phantom{0}233.3 \\
+\midrule
+\multirow{4}{*}{\shortstack{Difficult\\{\scriptsize ($n{=}2563$)}}}
+& RL (conf.)                & 0.32 / 0.11 / 0.01 / 1.28 & 90.5 / 30.5 / 2.2 / 1017.6 \\
+& $\pi_{\mathrm{D}}$ (distilled)      & 0.33 / 0.10 / 0.01 / 1.32 & 94.9 / 27.1 / 2.3 / \phantom{0}605.6 \\
+& Hybrid (conf.)            & 0.33 / 0.09 / 0.01 / 1.28 & 95.7 / 27.2 / 2.4 / 1000.8 \\
+& Hybrid($\pi_{\mathrm{D}}$)          & \limebox{0.34} / 0.10 / 0.01 / 1.32 & \limebox{96.8} / 28.7 / 2.4 / \phantom{0}986.8 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item[Note 1] Conference rows are reproduced from Table~\ref{tab:lnetresult}. All rows use the first IK-valid DP seed; Hybrid($\pi_{\mathrm{D}}$) uses the retuned thresholds $(0.985,0.96)$.
+\end{tablenotes}
+\end{threeparttable}}
+\end{table*}
+
+\rev{\subsubsection{Ranked Initialization}\label{sec:rankedresults}
+Table~\ref{tab:ranked} reports the full method: the hybrid controller with $\pi_{\mathrm{D}}$, initialized by the ranked selection of Section~\ref{sec:ranking}. Ranked selection lifts the deployed system from $91.4\%$ to $\mathbf{98.4\%}$ of the reference length ($+7.0$\,pp; paired difference $+6.96\pm0.24$\,pp), corresponding to a mean path length of $0.63$\,m---$39\%$ longer than the classical baseline and $10\%$ longer than the conference hybrid. The gains concentrate where the attribution predicted: the Easy bucket rises from $84.0\%$ to $94.1\%$, and the mean recovery of the catastrophic tail rises from $30\%$ to $82.6\%$, with $78\%$ of those tasks leaving the sub-$50\%$ regime. On Difficult tasks the full method exceeds the reference pool ($102.2\%$), confirming that the frozen $\ell^{\mathrm{ref}}$ is a reference rather than a ceiling. The oracle best-of-batch bound is $103.2\%$; the ranker realizes $59\%$ of the selection headroom without rolling out a single candidate. Learned scoring is necessary for this: ranking candidates by the joint-limit proximity heuristic $-\rho(\mathbf{q}_{0})$ captures only a third as much headroom in held-out validation, and the value networks trained for the switching study (below) capture essentially none. Mixing guidance scales also matters: with the same ranker, the $w{=}1.5$-only batch reaches $98.1\%$, the weakly guided $w{=}1.0$ batch alone only $97.5\%$, but their union $98.4\%$---under selection, the guidance scale turns from a peak-quality parameter into a diversity knob, revising the conference conclusion that $w{=}1.5$ is uniformly optimal.}
+
+\begin{table*}[!htbp]
+\centering
+\rev{
+\caption{\rev{Ranked Initialization: the Full Method and the Selection Headroom on 10{,}000 Evaluation Tasks.}}
+\label{tab:ranked}
+\begin{threeparttable}
+\begin{tabular}{llcc}
+\toprule
+Eval-Set & Initialization ($\pi=$ Hybrid($\pi_{\mathrm{D}}$))
+& \shortstack{Path Length (m)\\ {\scriptsize Mean / Std / Min / Max}}
+& \shortstack{Ratio to Reference ($\%$)\\ {\scriptsize Mean / Std / Min / Max}} \\
+\midrule
+\multirow{3}{*}{\shortstack{All\\{\scriptsize ($n{=}10000$)}}}
+& First IK-valid (conf.)  & 0.58 / 0.25 / 0.01 / 1.46 & 91.4 / 22.0 / 0.9 / 554.9 \\
+& Ranked ($24{+}1$ candidates) & \limebox{0.63} / 0.26 / 0.01 / 1.47 & \limebox{98.4} / 21.0 / 0.9 / 683.9 \\
+& \textit{Best-of-batch (oracle)} & \textit{0.66} & \textit{103.2} \\
+\midrule
+\multirow{2}{*}{\shortstack{Easy\\{\scriptsize ($n{=}2642$)}}}
+& First IK-valid (conf.)  & 0.83 / 0.27 / 0.01 / 1.46 & 84.0 / 25.4 / 0.9 / 170.3 \\
+& Ranked ($24{+}1$ candidates) & \limebox{0.93} / 0.21 / 0.01 / 1.46 & \limebox{94.1} / 18.1 / 0.9 / 171.4 \\
+\midrule
+\multirow{2}{*}{\shortstack{Medium\\{\scriptsize ($n{=}4795$)}}}
+& First IK-valid (conf.)  & 0.57 / 0.14 / 0.01 / 1.40 & 92.8 / 17.1 / 1.3 / 266.0 \\
+& Ranked ($24{+}1$ candidates) & \limebox{0.61} / 0.12 / 0.01 / 1.30 & \limebox{98.6} / 12.6 / 1.3 / 260.4 \\
+\midrule
+\multirow{2}{*}{\shortstack{Difficult\\{\scriptsize ($n{=}2563$)}}}
+& First IK-valid (conf.)  & 0.34 / 0.09 / 0.01 / 1.32 & 96.4 / 24.2 / 2.6 / 554.9 \\
+& Ranked ($24{+}1$ candidates) & \limebox{0.36} / 0.12 / 0.01 / 1.47 & \limebox{102.2} / 32.4 / 2.3 / 683.9 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item[Note 1] Best-of-$K$ oracle prefixes over the $w{=}1.5$ candidates: $K{=}2$: $94.2\%$, $K{=}4$: $98.4\%$, $K{=}8$: $100.6\%$; mean over valid candidates: $91.4\%$ ($=$ first-valid, i.e., candidates are exchangeable).
+    \item[Note 2] Selection cost: $0.42$\,s/task (batched DDIM $+$ $25$ Newton projections $+$ one ensemble forward pass; scoring $<0.1$\,ms), versus $\sim$45\,ms for the single-draw pipeline. No rollout is performed at deployment.
+\end{tablenotes}
+\end{threeparttable}}
+\end{table*}
+
+\rev{\subsubsection{Component Progression of the Ranker}\label{sec:rankedprogression}
+Table~\ref{tab:progression} traces the ranked-initialization result through its components, each added on top of the previous configuration. The ranking objective is the single largest design choice: with identical data and features, a within-task pairwise hinge outperforms pointwise regression ($35.8\%$ vs.\ $26.7\%$ held-out headroom capture), and combining it with a listwise cross-entropy adds further ($51.0\%$ vs.\ $48.6\%$ at $40$k training tasks); score regression optimizes the wrong quantity, since only the top of the ranking is ever executed. Training-set size scales predictably (roughly $+13$\,pp capture per doubling), while ensembling saturates at six to seven members. We also tested two superficially attractive alternatives that both failed for the same reason: a per-step value-comparison switch (replacing the threshold rule by comparing learned value estimates of the two controllers) and a per-task start-time selector between the pure and hybrid modes. In both cases the targeted headroom is real but not observable at decision time---whether switching helps depends on the unobserved future of the trajectory---whereas the seed ranker succeeds because branch quality is a geometric property of the start state. These negative results delimit where learned selection is applicable in this framework.}
+
+\begin{table}[!htbp]
+\centering
+\rev{
+\caption{\rev{Component Progression of Ranked Initialization.}}
+\label{tab:progression}
+\begin{threeparttable}
+\begin{tabular}{lc}
+\toprule
+Configuration (cumulative) & Ratio to Ref.\ ($\%$) \\
+\midrule
+First IK-valid (no selection)                       & 91.4 \\
+$+$ ranker, pointwise regression, $K{=}8$           & 93.2 \\
+$+$ fallback-seed candidate, pairwise loss, ens.\,5  & 95.8 \\
+$+$ $K{=}16$ (same ranker)                          & 96.3 \\
+$+$ $2\times$ training tasks, ens.\,10              & 97.8 \\
+$+$ mixed guidance ($8$ at $w{=}1.0$), pair$+$list  & \limebox{98.4} \\
+\midrule
+\textit{Best-of-batch (oracle)}                     & \textit{103.2} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item[Note 1] All rows share the deployed controller Hybrid($\pi_{\mathrm{D}}$) and the frozen reference $\ell^{\mathrm{ref}}$.
+\end{tablenotes}
+\end{threeparttable}}
+\end{table}
+
+\rev{\subsubsection{Holdout Replication and Noise Robustness}\label{sec:holdout}
+Because the extended components were developed iteratively against the $10{,}000$-task set, we replicate the final configuration on a virgin holdout: $2{,}048$ tasks from the same population that were never part of the evaluation set nor of any training stage, with the reference length recomputed on these tasks by the original protocol. All rows replicate within noise (Table~\ref{tab:holdout}); in particular, the full method reaches $98.3\%$ ($98.4\%$ on the development set), and the paired ranked-vs-first difference is $+7.7\pm0.6$\,pp. We further perturb the executed seed with joint-space Gaussian noise. At $\sigma=0.02$\,rad the full method retains $62.3\%$ versus $57.5\%$ for the unranked baseline, and at $\sigma=0.05$\,rad $23.3\%$ versus $20.4\%$: ranked seeds are marginally more noise-sensitive in absolute terms---longer excursions spend more of their lifetime near the constraint boundaries---but the selection advantage is preserved at every noise level. The steep overall degradation is a property of extreme motion itself, which by construction operates close to the safety boundaries.}
+
+\begin{table}[!htbp]
+\centering
+\rev{
+\caption{\rev{Replication on a Virgin Holdout ($n{=}2048$).}}
+\label{tab:holdout}
+\begin{threeparttable}
+\begin{tabular}{lcc}
+\toprule
+Configuration & Holdout ($\%$) & Dev.\ set ($\%$) \\
+\midrule
+Hybrid (conf.) $+$ first IK-valid            & 90.0 & 90.6 \\
+Hybrid($\pi_{\mathrm{D}}$) $+$ first IK-valid & 90.6 & 91.4 \\
+Hybrid($\pi_{\mathrm{D}}$) $+$ ranked         & \limebox{98.3} & \limebox{98.4} \\
+\textit{Best-of-batch (oracle)}               & \textit{103.0} & \textit{103.2} \\
+\bottomrule
+\end{tabular}
+\end{threeparttable}}
+\end{table}
 
 \subsection{Ablation Study}
 
@@ -490,6 +655,8 @@ $(0.99,\,0.93)$ & \limebox{0.32} & 0.567 / 0.247 / 0.010 / 1.448 & 90.0 / 23.9 /
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 In this paper, we developed a framework for extreme motion generation that advances a fixed-base manipulator along a prescribed straight line as far as possible. The framework adopts a step-level hybrid null-space controller, which delegates the well-sampled interior to an RL policy for length maximization and the near-boundary region to a robust classical controller through a hysteresis switching rule. Prior to execution, a conditional diffusion model initializes the manipulator on a favorable branch of the SMM. Experimental results demonstrated a longer path-following length than both the classical and learning-based controllers and showed that the hysteresis switching rule achieves a favorable balance between length and switching stability. Since our controller works entirely in the null space, it can naturally incorporate additional customized task constraints into the extreme motion process, similar to conventional null-space methods. By deferring contact with the kinematic boundaries that would otherwise terminate the motion prematurely, the framework enlarges the effective working range without scaling up the hardware or relocating the base. We are interested in exploring this direction further in future work.
+
+\rev{The extended study revises the conclusions of the conference version in three respects. First, the hybrid architecture is best understood as a training-time construct rather than a runtime necessity: its behavior can be distilled into a single network once the boundary branch of the teacher is upgraded to a lookahead search, the difficulty gradient of the learned policy disappears with the stronger teacher, and the runtime switch retains only a small residual benefit. Second, initialization is a two-layer problem: sampling the right distribution---the conference contribution---and selecting within it are comparably sized levers, and the second layer is realizable at deployment with no rollouts and a single sub-second selection, lifting the recovered reference fraction from $91.4\%$ to $98.4\%$ with replication on a virgin holdout. Under selection, the classifier-free guidance scale also changes its role from a peak-quality parameter to a diversity knob for the candidate batch. Third, two learned components that target trajectory-dependent quantities---a value-comparison switch and a start-time mode selector---failed despite genuine headroom, because the relevant signal is not observable at decision time; the seed ranker succeeds precisely because branch quality is a geometric property visible at $t=0$. Future work includes hardware validation of the ranked-seed pipeline, a full re-evaluation of the seed-by-controller matrix under the distilled controller, and the small residue of tasks whose early cone violations no initialization rescues, which calls for a cone-aware analogue of the near-boundary skill studied here.}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % \clearpage

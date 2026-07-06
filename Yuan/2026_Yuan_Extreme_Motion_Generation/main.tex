@@ -256,40 +256,51 @@ The conference version treats the hybrid architecture as a runtime necessity. Th
 
 Supervised distillation bypasses both obstacles. The teacher is the memoryless single-threshold hybrid behavior map: the policy action in the interior, the boundary action in the shell, and a linear blend inside a narrow band around the threshold, which removes the switching discontinuity that a smooth student cannot represent. The student imitates this map on its own visitation, with DAgger rounds re-querying the teacher on the states the current student actually reaches. Iterating this operator converges, but to a ceiling set by the teacher: the shell branch is the classical controller, whose instantaneous gradient rescue is itself suboptimal. We therefore upgrade the shell branch of the teacher to an exact lookahead search in the deterministic simulator: for a shell state, a set of candidate null-space actions (the classical action, the current student's action, and perturbations thereof) is each held for a short horizon and then continued by the closed-loop classical controller to termination, and the candidate with the largest exact discounted progress return is taken as the label. Since the classical action is always among the candidates, the searched label is never worse than the classical one; on shell states the searched actions outperform the classical rescue by $8.6\%$ on average, with $94\%$ of the argmax labels coming from the search. Because raw search labels carry jitter, they are applied only deep in the shell and merged with the clean hybrid labels elsewhere. Fidelity is maximized by warm-starting each student from its predecessor, and the final policy $\pi_{\mathrm{D}}$ is the parameter average of the last two students in the lineage \cite{wortsman2022model}.
 
-The distilled policy replaces the PPO policy as the interior controller of the hybrid architecture. The switch is nearly internalized---the fraction of tasks on which the runtime switch still improves over $\pi_{\mathrm{D}}$ alone drops from $22.8\%$ to below $10\%$---yet a residual benefit remains, so the deployed configuration keeps the hybrid form with retuned thresholds (Section~\ref{sec:coordination}). Algorithm~\ref{alg:distill} summarizes the loop in the notation of expert iteration \cite{anthony2017thinking}: the expert is the region-partitioned behavior map built around the current apprentice, whose own action is always among the search candidates, so that improving the apprentice improves the expert; the loop terminates when the runtime switch no longer improves on the apprentice (the improvement operator is exhausted).}
+The distilled policy replaces the PPO policy as the interior controller of the hybrid architecture. The switch is nearly internalized---the fraction of tasks on which the runtime switch still improves over $\pi_{\mathrm{D}}$ alone drops from $22.8\%$ to below $10\%$---yet a residual benefit remains, so the deployed configuration keeps the hybrid form with retuned thresholds (Section~\ref{sec:coordination}). Algorithms~\ref{alg:exit} and~\ref{alg:expert} summarize the two levels separately, in the notation of expert iteration \cite{anthony2017thinking}: Algorithm~\ref{alg:exit} is the outer improvement loop, and Algorithm~\ref{alg:expert} is the expert it repeatedly rebuilds---the region-partitioned behavior map around the current apprentice. The apprentice's own action is always among the search candidates (line~5 of Algorithm~\ref{alg:expert}), so improving the apprentice improves the expert; the loop terminates when the runtime switch no longer improves on the apprentice, i.e., the improvement operator is exhausted.}
 
 \begin{algorithm}[!htbp]
 {\color{magenta}
-\caption{Lookahead-guided distillation of the hybrid controller, in the notation of expert iteration \cite{anthony2017thinking}.}
-\label{alg:distill}
-\SetKwFunction{FInit}{initial\_policy}
-\SetKwFunction{FExpert}{build\_expert}
-\SetKwFunction{FRoll}{sample\_rollouts}
-\SetKwFunction{FTrain}{train\_policy}
-\SetKwFunction{FSearch}{search}
-\SetKwFunction{FAvg}{weight\_average}
-\SetKwProg{Fn}{Function}{:}{}
-$\hat{\pi}_{0} \leftarrow \FInit()$ \tcp*{PPO, Sec.~IV-C}
-$\pi^{*}_{0} \leftarrow \FExpert(\hat{\pi}_{0})$;\quad $\mathcal{D} \leftarrow \emptyset$\;
+\caption{Expert-iteration distillation of the hybrid controller.}
+\label{alg:exit}
+\KwIn{PPO-trained apprentice $\hat{\pi}_{0}$ (Sec.~IV-C); rounds $N$}
+\KwOut{distilled policy $\pi_{\mathrm{D}}$}
+$\pi^{*}_{0} \leftarrow \mathrm{BuildExpert}(\hat{\pi}_{0})$ \tcp*{Alg.~\ref{alg:expert}}
+$\mathcal{D} \leftarrow \emptyset$\;
 \For{$i \leftarrow 1$ \KwTo $N$}{
-  $\mathcal{S}_{i} \leftarrow \FRoll(\hat{\pi}_{i-1})$ \tcp*{closed-loop, training tasks}
-  $\mathcal{D}_{i} \leftarrow \{(\mathbf{s},\, \pi^{*}_{i-1}(\mathbf{s})) \mid \mathbf{s} \in \mathcal{S}_{i}\}$\;
+  $\mathcal{S}_{i} \leftarrow$ states visited by $\hat{\pi}_{i-1}$ in closed loop on training tasks\;
+  $\mathcal{D}_{i} \leftarrow \{(\mathbf{s},\, \pi^{*}_{i-1}(\mathbf{s})) \mid \mathbf{s} \in \mathcal{S}_{i}\}$ \tcp*{expert labels}
   $\mathcal{D} \leftarrow \mathcal{D} \cup \mathcal{D}_{i}$ \tcp*{DAgger aggregation}
-  $\hat{\pi}_{i} \leftarrow \FTrain(\mathcal{D};\ \mathrm{init}=\hat{\pi}_{i-1})$ \tcp*{warm start}
-  $\pi^{*}_{i} \leftarrow \FExpert(\hat{\pi}_{i})$\;
-  \lIf{switch gain of $\hat{\pi}_{i} \approx 0$}{\textbf{break}}
+  $\hat{\pi}_{i} \leftarrow \arg\min_{\pi}\sum_{(\mathbf{s},\mathbf{a})\in\mathcal{D}}\|\pi(\mathbf{s})-\mathbf{a}\|^{2}$, initialized at $\hat{\pi}_{i-1}$\;
+  $\pi^{*}_{i} \leftarrow \mathrm{BuildExpert}(\hat{\pi}_{i})$\;
+  \If{the runtime switch no longer improves on $\hat{\pi}_{i}$}{
+    \textbf{break} \tcp*{improvement operator exhausted}
+  }
 }
-\Return $\FAvg(\hat{\pi}_{N-1}, \hat{\pi}_{N})$ \tcp*{soup over the lineage}
-\vspace{2pt}
-\Fn{\FExpert{$\hat{\pi}$}}{
-  $\pi^{*}(\mathbf{s}) \leftarrow \hat{\pi}(\mathbf{s})$ \textbf{if} $\rho(\mathbf{s}) < \tau{-}b$ \tcp*{interior}
-  $\pi^{*}(\mathbf{s}) \leftarrow \mathrm{mix}_{\lambda}\big(\hat{\pi}(\mathbf{s}), \FSearch(\mathbf{s},\hat{\pi})\big)$ \textbf{if} $\rho \in [\tau{-}b, \tau)$\;
-  $\pi^{*}(\mathbf{s}) \leftarrow \FSearch(\mathbf{s},\hat{\pi})$ \textbf{if} $\rho(\mathbf{s}) \ge \tau$ \tcp*{shell}
+\Return $\pi_{\mathrm{D}} \leftarrow$ weight average of $\hat{\pi}_{N-1}$ and $\hat{\pi}_{N}$\;
 }
-\Fn{\FSearch{$\mathbf{s}, \hat{\pi}$}}{
-  $\mathcal{A} \leftarrow \{\mathbf{a}_{\mathrm{cls}}(\mathbf{s}),\, \hat{\pi}(\mathbf{s})\} \cup \mathrm{perturb} \cup \mathrm{uniform}$\;
-  \Return $\arg\max_{\mathbf{a}\in\mathcal{A}} G(\mathbf{s},\mathbf{a})$ \tcp*{hold $H$ steps, classical continuation, exact return}
+\end{algorithm}
+
+\begin{algorithm}[!htbp]
+{\color{magenta}
+\caption{BuildExpert: region-partitioned expert with lookahead search, queried at state $\mathbf{s}$.}
+\label{alg:expert}
+\KwIn{apprentice $\hat{\pi}$; thresholds $\tau$, band $b$; candidates $K_{a}$; hold horizon $H$}
+\KwOut{expert action $\pi^{*}(\mathbf{s})$}
+$\rho \leftarrow$ normalized joint-limit distance of $\mathbf{s}$, Eq.~\eqref{eq:rho}\;
+\If{$\rho < \tau - b$}{
+  \Return $\hat{\pi}(\mathbf{s})$ \tcp*{interior: the apprentice is the expert}
 }
+\tcp{lookahead search in the boundary shell}
+$\mathcal{A} \leftarrow \{\mathbf{a}_{\mathrm{cls}}(\mathbf{s}),\ \hat{\pi}(\mathbf{s})\} \cup \{\text{perturbations, uniform}\}$,\ $|\mathcal{A}| = K_{a}$\;
+\ForEach{$\mathbf{a} \in \mathcal{A}$}{
+  $G(\mathbf{s},\mathbf{a}) \leftarrow$ exact discounted return in the simulator: hold $\mathbf{a}$ for $H$ steps, then run the classical controller to termination\;
+}
+$\mathbf{a}^{\dagger} \leftarrow \arg\max_{\mathbf{a}\in\mathcal{A}} G(\mathbf{s},\mathbf{a})$ \tcp*{never worse than $\mathbf{a}_{\mathrm{cls}}$}
+\If{$\rho \ge \tau$}{
+  \Return $\mathbf{a}^{\dagger}$ \tcp*{deep shell: searched action}
+}
+$\lambda \leftarrow \big(\rho - (\tau - b)\big)/b$\;
+\Return $(1-\lambda)\,\hat{\pi}(\mathbf{s}) + \lambda\,\mathbf{a}^{\dagger}$ \tcp*{soft blend in the band}
 }
 \end{algorithm}
 

@@ -134,7 +134,9 @@ To address the aforementioned issues, the solution could be to combine a learned
 
 Generally, our framework follows the switching rather than the additive paradigm. Similar to the safety-driven methods above, we trigger the backup classical controller near the safety boundary. However, our motivation is not merely to stay safe but to keep advancing the motion toward its kinematic limit, which is the core objective of extreme motion generation. Accordingly, we partition the configuration space by proximity to the joint-limit boundary and assign each region to the controller most reliable there.
 
-\rev{A third way to combine the two regimes is to use the combination only at training time. Expert iteration alternates between an expert built around the current policy and a learner distilled from it \cite{anthony2017thinking}; policy distillation compresses one or several teachers into a single network \cite{rusu2015policy}; DAgger corrects the distribution shift of behavior cloning by querying the teacher on the learner's own visitation \cite{ross2011reduction}; and guided policy search distills trajectory-optimization experts into reactive policies \cite{levine2013guided}. The extension in this article adopts this training-time view: the hybrid controller is treated as a policy-improvement operator whose behavior, with the boundary branch upgraded to an exact lookahead search, is distilled into a single network, and weight averaging over the distillation lineage \cite{wortsman2022model} contributes a final small gain. On the initialization side, learning-to-rank objectives \cite{burges2005learning,cao2007learning} allow a scorer to select among generative candidates without rolling any of them out, complementing the best-of-$N$ perspective of generative IK and seeding methods \cite{ames2022ikflow,huang2024diffusionseeder}.}
+\rev{A third way to combine the two regimes is to use the combination only at training time. Expert iteration alternates between an expert built around the current policy and a learner distilled from it \cite{anthony2017thinking}; policy distillation compresses one or several teachers into a single network \cite{rusu2015policy}; DAgger corrects the distribution shift of behavior cloning by querying the teacher on the learner's own visitation \cite{ross2011reduction}; and guided policy search distills trajectory-optimization experts into reactive policies \cite{levine2013guided}. The extension in this article adopts this training-time view: the hybrid controller is treated as a policy-improvement operator whose behavior, with the boundary branch upgraded to an exact lookahead search, is distilled into a single network, and weight averaging over the distillation lineage \cite{wortsman2022model} contributes a final small gain. On the initialization side, learning-to-rank objectives \cite{burges2005learning,cao2007learning} allow a scorer to select among generative candidates without rolling any of them out, complementing the best-of-$N$ perspective of generative IK and seeding methods \cite{ames2022ikflow,huang2024diffusionseeder}; the ranked initialization of this article can be read as test-time compute spent on selection with a learned verifier rather than on control.}
+
+\rev{We deliberately do not adopt the planning-with-learned-model descendants of this lineage. MuZero and its sampled-action variant replace the known environment with a learned value-equivalent latent model searched by tree expansion \cite{schrittwieser2020mastering,hubert2021learning}, and the Dreamer family trains actor--critic agents inside a learned latent world model \cite{hafner2025mastering}. Both address premises that are absent here: our kinematic simulator is exact, deterministic, and batched-cheap, so a learned model can only introduce bias, and precisely in the near-boundary region where accuracy matters most; sample efficiency is likewise not the binding constraint. Conversely, the failure modes that do bind in this problem---the absence of exploration signal on the narrow survival manifold and the non-retention of implanted skills under policy-gradient fine-tuning (Section~\ref{sec:distill})---are not addressed by learned-model planning but are addressed by search-as-teacher distillation. The deployment contract of a reactive policy with no online search further rules out tree search at inference; search appears only at training time, as in the distillation half of the AlphaZero-style recipe. Learned dynamics models become relevant to this framework only where the exact-model premise fails, most notably in hardware transfer, which we leave to future work.}
 
 
 
@@ -254,7 +256,42 @@ The conference version treats the hybrid architecture as a runtime necessity. Th
 
 Supervised distillation bypasses both obstacles. The teacher is the memoryless single-threshold hybrid behavior map: the policy action in the interior, the boundary action in the shell, and a linear blend inside a narrow band around the threshold, which removes the switching discontinuity that a smooth student cannot represent. The student imitates this map on its own visitation, with DAgger rounds re-querying the teacher on the states the current student actually reaches. Iterating this operator converges, but to a ceiling set by the teacher: the shell branch is the classical controller, whose instantaneous gradient rescue is itself suboptimal. We therefore upgrade the shell branch of the teacher to an exact lookahead search in the deterministic simulator: for a shell state, a set of candidate null-space actions (the classical action, the current student's action, and perturbations thereof) is each held for a short horizon and then continued by the closed-loop classical controller to termination, and the candidate with the largest exact discounted progress return is taken as the label. Since the classical action is always among the candidates, the searched label is never worse than the classical one; on shell states the searched actions outperform the classical rescue by $8.6\%$ on average, with $94\%$ of the argmax labels coming from the search. Because raw search labels carry jitter, they are applied only deep in the shell and merged with the clean hybrid labels elsewhere. Fidelity is maximized by warm-starting each student from its predecessor, and the final policy $\pi_{\mathrm{D}}$ is the parameter average of the last two students in the lineage \cite{wortsman2022model}.
 
-The distilled policy replaces the PPO policy as the interior controller of the hybrid architecture. The switch is nearly internalized---the fraction of tasks on which the runtime switch still improves over $\pi_{\mathrm{D}}$ alone drops from $22.8\%$ to below $10\%$---yet a residual benefit remains, so the deployed configuration keeps the hybrid form with retuned thresholds (Section~\ref{sec:coordination}).}
+The distilled policy replaces the PPO policy as the interior controller of the hybrid architecture. The switch is nearly internalized---the fraction of tasks on which the runtime switch still improves over $\pi_{\mathrm{D}}$ alone drops from $22.8\%$ to below $10\%$---yet a residual benefit remains, so the deployed configuration keeps the hybrid form with retuned thresholds (Section~\ref{sec:coordination}). Algorithm~\ref{alg:distill} summarizes the loop in the notation of expert iteration \cite{anthony2017thinking}: the expert is the region-partitioned behavior map built around the current apprentice, whose own action is always among the search candidates, so that improving the apprentice improves the expert; the loop terminates when the runtime switch no longer improves on the apprentice (the improvement operator is exhausted).}
+
+\begin{algorithm}[!htbp]
+{\color{magenta}
+\caption{Lookahead-guided distillation of the hybrid controller, in the notation of expert iteration \cite{anthony2017thinking}.}
+\label{alg:distill}
+\SetKwFunction{FInit}{initial\_policy}
+\SetKwFunction{FExpert}{build\_expert}
+\SetKwFunction{FRoll}{sample\_rollouts}
+\SetKwFunction{FTrain}{train\_policy}
+\SetKwFunction{FSearch}{search}
+\SetKwFunction{FAvg}{weight\_average}
+\SetKwProg{Fn}{Function}{:}{}
+$\hat{\pi}_{0} \leftarrow \FInit()$ \tcp*{PPO, Sec.~IV-C}
+$\pi^{*}_{0} \leftarrow \FExpert(\hat{\pi}_{0})$;\quad $\mathcal{D} \leftarrow \emptyset$\;
+\For{$i \leftarrow 1$ \KwTo $N$}{
+  $\mathcal{S}_{i} \leftarrow \FRoll(\hat{\pi}_{i-1})$ \tcp*{closed-loop, training tasks}
+  $\mathcal{D}_{i} \leftarrow \{(\mathbf{s},\, \pi^{*}_{i-1}(\mathbf{s})) \mid \mathbf{s} \in \mathcal{S}_{i}\}$\;
+  $\mathcal{D} \leftarrow \mathcal{D} \cup \mathcal{D}_{i}$ \tcp*{DAgger aggregation}
+  $\hat{\pi}_{i} \leftarrow \FTrain(\mathcal{D};\ \mathrm{init}=\hat{\pi}_{i-1})$ \tcp*{warm start}
+  $\pi^{*}_{i} \leftarrow \FExpert(\hat{\pi}_{i})$\;
+  \lIf{switch gain of $\hat{\pi}_{i} \approx 0$}{\textbf{break}}
+}
+\Return $\FAvg(\hat{\pi}_{N-1}, \hat{\pi}_{N})$ \tcp*{soup over the lineage}
+\vspace{2pt}
+\Fn{\FExpert{$\hat{\pi}$}}{
+  $\pi^{*}(\mathbf{s}) \leftarrow \hat{\pi}(\mathbf{s})$ \textbf{if} $\rho(\mathbf{s}) < \tau{-}b$ \tcp*{interior}
+  $\pi^{*}(\mathbf{s}) \leftarrow \mathrm{mix}_{\lambda}\big(\hat{\pi}(\mathbf{s}), \FSearch(\mathbf{s},\hat{\pi})\big)$ \textbf{if} $\rho \in [\tau{-}b, \tau)$\;
+  $\pi^{*}(\mathbf{s}) \leftarrow \FSearch(\mathbf{s},\hat{\pi})$ \textbf{if} $\rho(\mathbf{s}) \ge \tau$ \tcp*{shell}
+}
+\Fn{\FSearch{$\mathbf{s}, \hat{\pi}$}}{
+  $\mathcal{A} \leftarrow \{\mathbf{a}_{\mathrm{cls}}(\mathbf{s}),\, \hat{\pi}(\mathbf{s})\} \cup \mathrm{perturb} \cup \mathrm{uniform}$\;
+  \Return $\arg\max_{\mathbf{a}\in\mathcal{A}} G(\mathbf{s},\mathbf{a})$ \tcp*{hold $H$ steps, classical continuation, exact return}
+}
+}
+\end{algorithm}
 
 \subsection{Null-Space Policies Coordination}\label{sec:coordination}
 The two controllers are combined at the level of individual control steps. We measure proximity to the joint-limit boundary by the normalized distance

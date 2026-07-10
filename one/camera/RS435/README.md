@@ -1,5 +1,48 @@
 # Cameras / RS435 — D435 eye-to-hand 标定
 
+## 点云配准标定(xArm7 + XHand,交互式)
+
+`register_camera_extrinsics.py`:把 D435 实测点云与仿真 xArm7+XHand 表面点云
+在 base 系下交互配准,直接得到 `T_base_cam`。不需要标定板。
+
+**反向模式(默认):相机点云固定不动,键盘移动的是渲染里的机械臂**。相机点云用
+一个冻结外参 `T_view` 投到 base 系显示一次、之后不动;机械臂在显示里的刚体位姿
+记为 `M`(初始为单位阵)。把机械臂调到与相机点云重合后,外参反算得到:
+
+    显示重合:  M @ sim_pts  ≈  T_view @ cam_pts
+    反解外参:  T_base_cam = inv(M) @ T_view
+
+```bash
+conda activate one
+
+# 在线:连 xArm 读关节角 + D435 采点云
+python register_camera_extrinsics.py --ip 192.168.1.205
+
+# 离线:载入上次保存的采集数据继续调(不需要硬件)
+python register_camera_extrinsics.py --load camera_extrinsics_capture.npz
+
+# 从已有外参出发作为冻结视角 T_view
+python register_camera_extrinsics.py --ip 192.168.1.205 --init camera_extrinsics.yaml
+```
+
+键位(移动的是机械臂):`W/S A/D Q/E` 沿 base XYZ 平移;`U/O I/K J/L` 绕 XYZ 旋转;
+`-`/`=` 步长减半/加倍;`G` 把机械臂平移到与相机点云质心重合;`T` ICP 精配准;
+`C` 重新采集;`B` 回初始位姿(`M=` 单位阵);**ENTER 保存** `camera_extrinsics.yaml`
+(+ `*_capture.npz`);ESC 退出。
+
+流程建议:启动后先 `G` 粗对齐 → 键盘把机械臂调到与相机点云大致重合 → `T` 跑 ICP →
+ENTER 保存。再次运行会自动把上次保存的外参当作冻结视角 `T_view` 继续。
+
+- 仿真点云由 `sim_xarm7_xhand_cloud.py` 生成(子进程自动用 **wrs** 环境的
+  python 跑,依赖 `/home/lqin/wrs_xinyi` 的 `XArm7XHR` 模型)。
+- XHand 手指在仿真里是张开(零位)姿态,采集前把真手也张开。
+- 相机点云在 **color 光学系**(与下面 ChArUco 流程同一约定),`T_base_cam`
+  两种方法可互相对照/互为初值(`--init calibration_result.yaml`)。
+
+---
+
+## ChArUco 手眼标定(历史流程)
+
 Intel RealSense **D435**(固定俯视)+ **xArm7** 的 eye-to-hand 外参标定与验证。
 标定板:ChArUco(`DICT_4X4_50`, 6×8, square 0.018 m, marker 0.012 m),固定在法兰上。
 

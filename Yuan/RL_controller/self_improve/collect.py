@@ -162,6 +162,7 @@ def collect_buffer(ckpt_dir, out_path, *, n_tasks: int = 16384,
                    seed: int = 7001, tau_enter: float = 0.98,
                    tau_exit: float = 0.94, chunk_size: int = 4096,
                    device: torch.device | str | None = None,
+                   restrict_idx=None,
                    verbose: bool = True) -> dict:
     """Collect the win-filtered rescue buffer for one self-improvement round.
 
@@ -192,6 +193,14 @@ def collect_buffer(ckpt_dir, out_path, *, n_tasks: int = 16384,
         feasibility_threshold_m=threshold_m,
         verbose=verbose,
     )
+    if restrict_idx is not None:
+        # Leak-safety: restrict the pool to a task-index subset (e.g. the 95k
+        # train split) so collected DAgger data never touches held-out test tasks.
+        m = torch.zeros(pool.valid_mask.shape[0], dtype=torch.bool, device=pool.valid_mask.device)
+        m[torch.as_tensor(restrict_idx, device=m.device, dtype=torch.long)] = True
+        pool.valid_mask = pool.valid_mask & m
+        if verbose:
+            print(f"[collect] restricted pool to {int(pool.valid_mask.sum())} tasks (train-split only)")
     gen = torch.Generator(device=device).manual_seed(int(seed))
     tasks = pool.sample(n_tasks, generator=gen)
     del proxy

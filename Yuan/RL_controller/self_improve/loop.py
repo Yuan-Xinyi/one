@@ -188,6 +188,10 @@ def main():
     parser.add_argument("--collect-chunk", type=int, default=4096)
     parser.add_argument("--collect-seed-base", type=int, default=7000,
                         help="collect seed = base + round (fresh tasks/round)")
+    parser.add_argument("--train-idx-npz", default=None,
+                        help="if set, restrict BOTH the PPO train pool and the "
+                             "collect pool to the 'train_idx' array in this NPZ "
+                             "(leak-safety: never touch held-out test tasks).")
     parser.add_argument("--tau-enter", type=float, default=0.98)
     parser.add_argument("--tau-exit", type=float, default=0.94)
     parser.add_argument("--min-frac-win", type=float, default=0.01,
@@ -224,6 +228,14 @@ def main():
         env_cfg=train_env_cfg,
         feasibility_threshold_m=threshold_m,
     )
+    restrict_idx = None
+    if args.train_idx_npz is not None:
+        restrict_idx = np.load(args.train_idx_npz)["train_idx"]
+        _m = torch.zeros(train_env.line_dist.valid_mask.shape[0], dtype=torch.bool, device=device)
+        _m[torch.as_tensor(restrict_idx, device=device, dtype=torch.long)] = True
+        train_env.line_dist.valid_mask = train_env.line_dist.valid_mask & _m
+        print(f"[loop] LEAK-SAFE: train pool restricted to {int(train_env.line_dist.valid_mask.sum())} "
+              f"train-split tasks (test held out)")
 
     # Round-0 reference eval of pi_0 (cached; skipped if present).
     round0_eval = out_root / "round0_eval_10k.npz"
@@ -256,7 +268,8 @@ def main():
                 n_tasks=args.n_collect_tasks,
                 seed=args.collect_seed_base + k,
                 tau_enter=args.tau_enter, tau_exit=args.tau_exit,
-                chunk_size=args.collect_chunk, device=device)
+                chunk_size=args.collect_chunk, device=device,
+                restrict_idx=restrict_idx)
             buf = np.load(buffer_path)
 
         if stats["n_kept_steps"] == 0 or stats["frac_win"] < args.min_frac_win:

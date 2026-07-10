@@ -36,7 +36,9 @@ LABEL_KWARGS = dict(
     n_ik_restarts=5,
     sample_per_branch=5,
     k=3,
-    K_prime=6,
+    K_prime=64,   # retain ~all rolled-out candidates+L (kept-task mean 23, max ~61);
+                  # tau_robust=0 so this is pure storage, zero extra rollout compute.
+                  # Feeds ranker (full good/bad spread) + diffusion (within-3% positives).
     tau_robust=0.0,
     n_perturb=4,
     perturb_d_deg=3.0,
@@ -63,6 +65,12 @@ def parse_args():
     p.add_argument('--label-seed-base', type=int, default=None,
                    help='per-task numpy seed = label_seed_base + i. Default: --seed '
                         '(so disjoint chunks of line_dist get disjoint per-task seeds).')
+    p.add_argument('--task-npz', default=None,
+                   help='if set, source tasks from this NPZ (keys q0_native, cs_p0, '
+                        'cs_line_dir, cs_n_target) sliced [seed:seed+n_tasks] instead '
+                        'of the LineDistribution valid_idx pool.')
+    p.add_argument('--out-dir', default=None,
+                   help='override the default output directory (pilot_20k).')
     return p.parse_args()
 
 
@@ -82,25 +90,39 @@ def main():
     env = NSRLBatchedEnv(rollout_env_cfg, line_dist=None, device=device)
     controller = ClassicalNullspaceController(env.kin)
 
-    line_dist = LineDistribution.load_or_build(
-        kin=env.kin, collision=env.collision,
-        n_pool=line_cfg["n_pool"],
-        n_target_noise_deg=line_cfg["n_target_noise_deg"],
-        seed=line_cfg["train_seed"],
-        env_cfg=train_env_cfg,
-        feasibility_threshold_m=threshold_m,
-    )
-    valid_idx = torch.nonzero(line_dist.valid_mask, as_tuple=False).squeeze(-1)
-    n_valid = int(valid_idx.shape[0])
     lo = args.seed
     hi = lo + args.n_tasks
-    if hi > n_valid:
-        raise SystemExit(f"--seed + --n-tasks = {hi} exceeds {n_valid} valid tasks")
-    pick = valid_idx[lo:hi]
-    qs = line_dist.q_pool[pick]
-    line_dirs = line_dist.line_dir_pool[pick]
-    n_targets = line_dist.n_target_pool[pick]
-    p_tcps, _, _, _ = env.kin.tcp_fk_jac(qs)
+    if args.task_npz is not None:
+        # Source tasks from an explicit NPZ (e.g. pipeline_v2 train split),
+        # sliced [lo:hi]. q0_native is the seed config; cs_p0 is its FK TCP.
+        import numpy as np
+        z = np.load(args.task_npz)
+        n_avail = int(z['q0_native'].shape[0])
+        if hi > n_avail:
+            raise SystemExit(f"--seed + --n-tasks = {hi} exceeds {n_avail} tasks in {args.task_npz}")
+        dt = env.kin.dtype
+        qs = torch.as_tensor(z['q0_native'][lo:hi], device=device, dtype=dt)
+        line_dirs = torch.as_tensor(z['cs_line_dir'][lo:hi], device=device, dtype=dt)
+        n_targets = torch.as_tensor(z['cs_n_target'][lo:hi], device=device, dtype=dt)
+        p_tcps = torch.as_tensor(z['cs_p0'][lo:hi], device=device, dtype=dt)
+    else:
+        line_dist = LineDistribution.load_or_build(
+            kin=env.kin, collision=env.collision,
+            n_pool=line_cfg["n_pool"],
+            n_target_noise_deg=line_cfg["n_target_noise_deg"],
+            seed=line_cfg["train_seed"],
+            env_cfg=train_env_cfg,
+            feasibility_threshold_m=threshold_m,
+        )
+        valid_idx = torch.nonzero(line_dist.valid_mask, as_tuple=False).squeeze(-1)
+        n_valid = int(valid_idx.shape[0])
+        if hi > n_valid:
+            raise SystemExit(f"--seed + --n-tasks = {hi} exceeds {n_valid} valid tasks")
+        pick = valid_idx[lo:hi]
+        qs = line_dist.q_pool[pick]
+        line_dirs = line_dist.line_dir_pool[pick]
+        n_targets = line_dist.n_target_pool[pick]
+        p_tcps, _, _, _ = env.kin.tcp_fk_jac(qs)
 
     cs = [
         {"p0": p_tcps[i].clone(),
@@ -128,12 +150,14 @@ def main():
     ckpt_int = args.checkpoint_interval if args.checkpoint_interval is not None \
                else max(args.n_tasks // 4, 25)
     label_seed_base = args.label_seed_base if args.label_seed_base is not None else args.seed
+    out_dir = Path(args.out_dir) if args.out_dir is not None else OUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     out_path = build_dataset(
         cs, q0_seeds,
         kin=env.kin, collision=env.collision,
         env=env, controller=controller,
-        out_dir=OUT_DIR,
+        out_dir=out_dir,
         cache_name=cache_name,
         hyperparams=hyperparams,
         label_kwargs=LABEL_KWARGS,

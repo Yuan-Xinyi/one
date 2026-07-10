@@ -52,6 +52,11 @@ def parse_args():
                    help='delay between launching procs to avoid simultaneous CUDA init')
     p.add_argument('--keep-chunks', action='store_true',
                    help='do not delete the per-chunk NPZ/meta after merging')
+    p.add_argument('--task-npz', default=None,
+                   help='source tasks from this NPZ instead of LineDistribution; '
+                        'chunks slice it contiguously by --start-seed offset.')
+    p.add_argument('--out-dir', default=None,
+                   help='override default output directory (pilot_20k).')
     return p.parse_args()
 
 
@@ -147,7 +152,10 @@ def _detect_chunk_state(chunk_cache: str) -> tuple[str, int]:
 
 
 def main():
+    global OUT_DIR
     args = parse_args()
+    if args.out_dir is not None:
+        OUT_DIR = Path(args.out_dir)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Split into K chunks (last chunk gets the remainder).
@@ -224,6 +232,10 @@ def main():
             '--cache-name', c['cache'],
             '--checkpoint-interval', str(args.checkpoint_interval),
         ]
+        if args.task_npz is not None:
+            cmd += ['--task-npz', args.task_npz]
+        if args.out_dir is not None:
+            cmd += ['--out-dir', args.out_dir]
         log_file = open(log_path, mode)
         if c['state'] == 'partial':
             log_file.write(f'\n\n===== RESUME from partial-{c["n_done"]} at {time.strftime("%Y-%m-%d %H:%M:%S")} =====\n\n')

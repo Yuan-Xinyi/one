@@ -1,0 +1,161 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldcontentsline\contentsline
+\gdef\contentsline#1#2#3#4{\oldcontentsline{#1}{#2}{#3}}
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\contentsline\oldcontentsline
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{IEEEexample:BSTcontrol}
+\providecommand \oddpage@label [2]{}
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{section.1}\protected@file@percent }
+\citation{yoshikawa1985manipulability}
+\citation{jin2017manipulability}
+\citation{shen2023adaptive}
+\citation{cai2025just}
+\citation{yang2009placement}
+\citation{makhal2018reuleaux}
+\citation{feng2025predictive}
+\citation{jauhri2022robot}
+\citation{selim2022safe}
+\citation{malik2022deep}
+\citation{ames2022ikflow}
+\citation{zhang2025ikdiffuser}
+\citation{huang2024diffusionseeder}
+\citation{yoon2023learning}
+\citation{johannink2019residual,silver2018residual}
+\citation{mehmood2022black}
+\citation{alshiekh2018safe}
+\citation{kurtz2021control}
+\citation{ross2011reduction}
+\citation{rusu2015policy}
+\citation{anthony2017thinking}
+\citation{levine2013guided}
+\@writefile{toc}{\contentsline {section}{\numberline {II}Related Work}{2}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-A}}Manipulability and Reachability}{2}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-B}}Learning-based Motion Generation}{2}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-C}}Combining Learning- and Model-based Control}{2}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-D}}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}Learning-Based Policy Improvement\end  {CJK*}}}{2}{subsection.2.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Overview of the two-stage framework for extreme motion generation.\relax }}{3}{figure.caption.1}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{overview}{{1}{3}{Overview of the two-stage framework for extreme motion generation.\relax }{figure.caption.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {III}Problem Formulation}{3}{section.3}\protected@file@percent }
+\newlabel{cond}{{1}{3}{Problem Formulation}{equation.3.1}{}}
+\newlabel{eq:ori_constraint}{{4}{3}{Problem Formulation}{equation.3.4}{}}
+\newlabel{eq:jl_constraint}{{5}{3}{Problem Formulation}{equation.3.5}{}}
+\newlabel{eq:nullspace}{{6}{3}{Problem Formulation}{equation.3.6}{}}
+\newlabel{eq:secondary}{{7}{3}{Problem Formulation}{equation.3.7}{}}
+\citation{yuan2026iksel}
+\citation{ho2020denoising}
+\citation{ho2022classifier}
+\@writefile{toc}{\contentsline {section}{\numberline {IV}Extreme Motion Generation}{4}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}Initial Joint Configuration Selection\end  {CJK*}}}{4}{subsection.4.1}\protected@file@percent }
+\newlabel{sec:ranking}{{\mbox  {IV-A}}{4}{\xinyi {Initial Joint Configuration Selection}}{subsection.4.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Self-motion manifold for a fixed end-effector pose. (a) The continuous manifold without joint-limit constraints; (b)--(d) Configurations from the disconnected branches induced by the joint limits, sharing the same pose but differing sharply in joint space and reachable path length. (e) Joint trajectories of the three branches in b--d along the arc length, with circles marking the joint at its limit: branch\nobreakspace  {}b bounded by $\mathbf  {q}_{1}$ and $\mathbf  {q}_{7}$, branch\nobreakspace  {}c by $\mathbf  {q}_{1}$, and $\mathbf  {q}_{2}$ branch\nobreakspace  {}d by $q_{2}$ and $\mathbf  {q}_{3}$.\relax }}{4}{figure.caption.2}\protected@file@percent }
+\newlabel{smm}{{2}{4}{Self-motion manifold for a fixed end-effector pose. (a) The continuous manifold without joint-limit constraints; (b)--(d) Configurations from the disconnected branches induced by the joint limits, sharing the same pose but differing sharply in joint space and reachable path length. (e) Joint trajectories of the three branches in b--d along the arc length, with circles marking the joint at its limit: branch~b bounded by $\mathbf {q}_{1}$ and $\mathbf {q}_{7}$, branch~c by $\mathbf {q}_{1}$, and $\mathbf {q}_{2}$ branch~d by $q_{2}$ and $\mathbf {q}_{3}$.\relax }{figure.caption.2}{}}
+\newlabel{eq:cfg}{{8}{4}{\xinyi {Initial Joint Configuration Selection}}{equation.4.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}Student Policy:\end  {CJK*}} RL-based Null-Space Controller}{4}{subsection.4.2}\protected@file@percent }
+\newlabel{eq:obs}{{9}{4}{\xinyi {Student Policy:} RL-based Null-Space Controller}{equation.4.9}{}}
+\citation{ross2011reduction}
+\citation{wortsman2022model}
+\newlabel{eq:reward}{{10}{5}{\xinyi {Student Policy:} RL-based Null-Space Controller}{equation.4.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-C}}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}Teacher Policy: Hybrid Null-Space Controller\end  {CJK*}}}{5}{subsection.4.3}\protected@file@percent }
+\newlabel{sec:coordination}{{\mbox  {IV-C}}{5}{\xinyi {Teacher Policy: Hybrid Null-Space Controller}}{subsection.4.3}{}}
+\newlabel{eq:rho}{{11}{5}{\xinyi {Teacher Policy: Hybrid Null-Space Controller}}{equation.4.11}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-D}}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}Expert Iteration: Policy Self-Improvement\end  {CJK*}}}{5}{subsection.4.4}\protected@file@percent }
+\newlabel{sec:distill}{{\mbox  {IV-D}}{5}{\xinyi {Expert Iteration: Policy Self-Improvement}}{subsection.4.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {V}Experiments and Analysis}{5}{section.5}\protected@file@percent }
+\newlabel{sec:exp}{{V}{5}{Experiments and Analysis}{section.5}{}}
+\@writefile{loa}{\contentsline {algocf}{\numberline {1}{\ignorespaces Expert-iteration distillation of the hybrid controller.\relax }}{6}{algocf.1}\protected@file@percent }
+\newlabel{alg:exit}{{1}{6}{\xinyi {Teacher Policy: Hybrid Null-Space Controller}}{algocf.1}{}}
+\@writefile{loa}{\contentsline {algocf}{\numberline {2}{\ignorespaces BuildExpert: the hybrid behavior map, queried at state $\mathbf  {s}$.\relax }}{6}{algocf.2}\protected@file@percent }
+\newlabel{alg:expert}{{2}{6}{\xinyi {Teacher Policy: Hybrid Null-Space Controller}}{algocf.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Results Analysis}{6}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-A}1}Evaluation Set Analysis}{6}{subsubsection.5.1.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces (a) Distribution of the reference length $\ell ^{\mathrm  {ref}}$ over the $10{,}000$ evaluation tasks. The dashed grey line marks the task-difficulty threshold.\relax }}{6}{figure.caption.5}\protected@file@percent }
+\newlabel{fig:eval_dist}{{3}{6}{(a) Distribution of the reference length $\ell ^{\mathrm {ref}}$ over the $10{,}000$ evaluation tasks. The dashed grey line marks the task-difficulty threshold.\relax }{figure.caption.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Qualitative comparison on a representative task: executed motion (top) and joint\nobreakspace  {}6 trajectory (bottom), with color denoting the active controller. The dashed grey lines mark the $\tau _{\mathrm  {enter}}/\tau _{\mathrm  {exit}}$ thresholds mapped to the joint\nobreakspace  {}6 limits.\relax }}{6}{figure.caption.6}\protected@file@percent }
+\newlabel{fig:main_result}{{4}{6}{Qualitative comparison on a representative task: executed motion (top) and joint~6 trajectory (bottom), with color denoting the active controller. The dashed grey lines mark the $\tau _{\mathrm {enter}}/\tau _{\mathrm {exit}}$ thresholds mapped to the joint~6 limits.\relax }{figure.caption.6}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-A}2}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}System Evaluation\end  {CJK*}}}{6}{subsubsection.5.1.2}\protected@file@percent }
+\newlabel{sec:distillresults}{{\mbox  {V-A}3}{6}{\xinyi {Expert Iteration Analysis}}{subsubsection.5.1.3}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-A}3}{\color  {darkorange}\begin  {CJK*}{UTF8}{gkai}Expert Iteration Analysis\end  {CJK*}}}{6}{subsubsection.5.1.3}\protected@file@percent }
+\citation{burges2005learning}
+\citation{cao2007learning}
+\citation{xia2008listwise}
+\citation{burges2010ranknet}
+\citation{khosla2020supervised}
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces \begingroup \color  {magenta}The Distilled Policy $\pi _{\mathrm  {D}}$ against the Individual Controllers under the First IK-Valid DP Seed.\endgroup \relax }}{7}{table.caption.7}\protected@file@percent }
+\newlabel{tab:distill}{{I}{7}{\rev {The Distilled Policy $\pi _{\mathrm {D}}$ against the Individual Controllers under the First IK-Valid DP Seed.}\relax }{table.caption.7}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-A}4}Initial Configuration Selection}{7}{subsubsection.5.1.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Ablation Study}{7}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-B}1}Classical Null-Space Controller Hyperparameters}{7}{subsubsection.5.2.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Performance of the Proposed Initial Configuration Selection Method Compared with Heuristic Designs.\relax }}{8}{table.caption.10}\protected@file@percent }
+\newlabel{tab:seedsel}{{II}{8}{Performance of the Proposed Initial Configuration Selection Method Compared with Heuristic Designs.\relax }{table.caption.10}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces \begingroup \color  {magenta}Ranked Initialization: the Full Method and the Selection Headroom on the Test Set.\endgroup \relax }}{8}{table.caption.12}\protected@file@percent }
+\newlabel{tab:ranked}{{III}{8}{\rev {Ranked Initialization: the Full Method and the Selection Headroom on the Test Set.}\relax }{table.caption.12}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Multi-modal initial configurations sampled by the diffusion model. The dashed grey line denotes the actual motion direction, while the solid lines are laterally offset for clearer visualization.\relax }}{8}{figure.caption.9}\protected@file@percent }
+\newlabel{fig:diversity}{{5}{8}{Multi-modal initial configurations sampled by the diffusion model. The dashed grey line denotes the actual motion direction, while the solid lines are laterally offset for clearer visualization.\relax }{figure.caption.9}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {IV}{\ignorespaces \begingroup \color  {magenta}Ablations of Ranked Initialization.\endgroup {\color  {darkgreen}\begin  {CJK*}{UTF8}{gkai}需要列举出来对比的ranking method\end  {CJK*}}\relax }}{8}{table.caption.14}\protected@file@percent }
+\newlabel{tab:progression}{{IV}{8}{\rev {Ablations of Ranked Initialization.}\xinyitodo {需要列举出来对比的ranking method}\relax }{table.caption.14}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-B}2}Classifier-Free Guidance Scale}{8}{subsubsection.5.2.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces Ablation of the Classical Secondary-Objective Weights.\relax }}{9}{table.caption.16}\protected@file@percent }
+\newlabel{tab:ablate_classical}{{V}{9}{Ablation of the Classical Secondary-Objective Weights.\relax }{table.caption.16}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces Effect of the Guidance Scale $w$ on Path Length and Seed-Generation Cost.\relax }}{9}{table.caption.18}\protected@file@percent }
+\newlabel{tab:ablate_cfg}{{VI}{9}{Effect of the Guidance Scale $w$ on Path Length and Seed-Generation Cost.\relax }{table.caption.18}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {VII}{\ignorespaces Effect of the DDIM Sampling Steps on Seed Quality and Time Cost.\relax }}{9}{table.caption.20}\protected@file@percent }
+\newlabel{tab:ablate_steps}{{VII}{9}{Effect of the DDIM Sampling Steps on Seed Quality and Time Cost.\relax }{table.caption.20}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-B}3}Number of Diffusion Sampling Steps}{9}{subsubsection.5.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-B}4}Hybrid Switching Hyperparameters}{9}{subsubsection.5.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-B}5}Expert Iteration Convergence}{9}{subsubsection.5.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Conclusions and Future Work}{9}{section.6}\protected@file@percent }
+\newlabel{sec:conclusion}{{VI}{9}{Conclusions and Future Work}{section.6}{}}
+\bibstyle{IEEEtran}
+\bibdata{citations.bib}
+\bibcite{yoshikawa1985manipulability}{{1}{}{{}}{{}}}
+\bibcite{jin2017manipulability}{{2}{}{{}}{{}}}
+\bibcite{shen2023adaptive}{{3}{}{{}}{{}}}
+\bibcite{cai2025just}{{4}{}{{}}{{}}}
+\bibcite{yang2009placement}{{5}{}{{}}{{}}}
+\bibcite{makhal2018reuleaux}{{6}{}{{}}{{}}}
+\bibcite{feng2025predictive}{{7}{}{{}}{{}}}
+\bibcite{jauhri2022robot}{{8}{}{{}}{{}}}
+\bibcite{selim2022safe}{{9}{}{{}}{{}}}
+\bibcite{malik2022deep}{{10}{}{{}}{{}}}
+\bibcite{ames2022ikflow}{{11}{}{{}}{{}}}
+\bibcite{zhang2025ikdiffuser}{{12}{}{{}}{{}}}
+\bibcite{huang2024diffusionseeder}{{13}{}{{}}{{}}}
+\@writefile{lot}{\contentsline {table}{\numberline {VIII}{\ignorespaces Ablation of the Switching Thresholds $(\tau _{\mathrm  {enter}},\tau _{\mathrm  {exit}})$.\relax }}{10}{table.caption.22}\protected@file@percent }
+\newlabel{tab:ablate_switch}{{VIII}{10}{Ablation of the Switching Thresholds $(\tau _{\mathrm {enter}},\tau _{\mathrm {exit}})$.\relax }{table.caption.22}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {IX}{\ignorespaces \begingroup \color  {magenta}Convergence of Expert Iteration over Rounds.\endgroup \relax }}{10}{table.caption.24}\protected@file@percent }
+\newlabel{tab:ablate_exit}{{IX}{10}{\rev {Convergence of Expert Iteration over Rounds.}\relax }{table.caption.24}{}}
+\bibcite{yoon2023learning}{{14}{}{{}}{{}}}
+\bibcite{johannink2019residual}{{15}{}{{}}{{}}}
+\bibcite{silver2018residual}{{16}{}{{}}{{}}}
+\bibcite{mehmood2022black}{{17}{}{{}}{{}}}
+\bibcite{alshiekh2018safe}{{18}{}{{}}{{}}}
+\bibcite{kurtz2021control}{{19}{}{{}}{{}}}
+\bibcite{ross2011reduction}{{20}{}{{}}{{}}}
+\bibcite{rusu2015policy}{{21}{}{{}}{{}}}
+\bibcite{anthony2017thinking}{{22}{}{{}}{{}}}
+\bibcite{levine2013guided}{{23}{}{{}}{{}}}
+\bibcite{yuan2026iksel}{{24}{}{{}}{{}}}
+\bibcite{ho2020denoising}{{25}{}{{}}{{}}}
+\bibcite{ho2022classifier}{{26}{}{{}}{{}}}
+\bibcite{wortsman2022model}{{27}{}{{}}{{}}}
+\bibcite{burges2005learning}{{28}{}{{}}{{}}}
+\bibcite{cao2007learning}{{29}{}{{}}{{}}}
+\bibcite{xia2008listwise}{{30}{}{{}}{{}}}
+\bibcite{burges2010ranknet}{{31}{}{{}}{{}}}
+\bibcite{khosla2020supervised}{{32}{}{{}}{{}}}
+\providecommand\NAT@force@numbers{}\NAT@force@numbers
+\gdef \@abspage@last{11}

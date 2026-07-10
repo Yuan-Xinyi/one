@@ -11,8 +11,8 @@ _Shared grasp-domain helpers (depend on end-effector runtime links and_
 _Antipodal grasp planning: 2-point opposing pinch (force-closure) grasps_
 
 - `build_grasp_rotmat_batch(ray_dirs, open_dir)` — ray_dirs: (N,3) unit vectors
-- `antipodal_iter(gripper, target_sobj, density=0.02, normal_tol_deg=20, roll_step_deg=30, clearance=0.002, score_weights=(0.7, 0.3), exclude_regions=None, pre_open=0.5)` — Generator: yields (pose, pre_pose, jaw_width, score, collided).
-- `antipodal(gripper, target_sobj, density=0.02, normal_tol_deg=20, roll_step_deg=30, clearance=0.002, max_grasps=50, score_weights=(0.7, 0.3), exclude_regions=None, pre_open=0.5)` — Collects non-colliding grasps only.
+- `antipodal_iter(gripper, target_sobj, density=0.02, normal_tol_deg=20, roll_step_deg=30, clearance=0.002, score_weights=(0.7, 0.3), exclude_regions=None, pre_open=0.5, candidate_filter=None)` — Generator: yields (pose, pre_pose, jaw_width, score, collided).
+- `antipodal(gripper, target_sobj, density=0.02, normal_tol_deg=20, roll_step_deg=30, clearance=0.002, max_grasps=50, score_weights=(0.7, 0.3), exclude_regions=None, pre_open=0.5, candidate_filter=None)` — Collects non-colliding grasps only.
 
 ## `one.grasp.monocontact`
 _Monocontact: single-contact ("one contact pad") surface-approach_

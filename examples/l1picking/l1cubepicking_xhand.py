@@ -21,6 +21,17 @@ envelope (not a jaw) and is rejected by spawn_jaw.
 Keys: F step  G play/pause  R replay  C collision spheres on/off  ENTER run on robot
 Headless (plan only): ONE_HEADLESS=1
 
+Cube pose source (instead of the hardcoded CUBE_POS/CUBE_ROT), by priority:
+  * ONE_FP=1     -> FoundationPose (PREFERRED, full 6D, most accurate). First run,
+    in env_isaaclab: `python RealExperiments/foundationpose_then_play.py --no_play`
+    to write camera_T_cube to /tmp/foundationpose_cube_pose.npy; this script maps
+    it into the base frame with the D435 extrinsic. Override path via ONE_FP_POSE.
+  * ONE_CAMERA=1 -> in-house point-cloud clustering (one/camera/RS435/detect_cube).
+    Yaw only, lower accuracy; CUBE_RGB="r,g,b" (0-1) biases the colour match.
+The robot base frame == sim-world axes with origin at ROBOT_BASE_POS, so the sim
+cube is placed at ROBOT_BASE_POS + p_base. Combine with ONE_REAL=1 to close the
+loop: see the cube -> plan -> grasp it.
+
 Real hardware (opt-in: ONE_REAL=1): on startup the arm's CURRENT joints are read
 and used as the planning start / IK seed (instead of HOME_DEG), and ENTER streams
 the selected candidate's pick to the real xArm7 + XHand. The grasp itself is
@@ -88,9 +99,42 @@ GRASP_PRIMITIVE = os.environ.get('GRASP_PRIMITIVE', 'pinch')   # opposition only
 
 # antipodal grasp-planning parameters (mirrors o6cylstlplanning.py's PLAN_KW):
 # surface sampling density, contact-normal opposition tolerance, roll resolution,
-# how many collision-free grasps to keep, and extra jaw clearance per grasp.
-PLAN_KW = dict(density=0.0015, normal_tol_deg=25, roll_step_deg=30,
-               max_grasps=60, clearance=0.003)
+# how many collision-free central grasps to keep, and extra jaw clearance per
+# grasp. Off-centre samples are removed before expensive hand collision checks.
+# density 0.0006 matches test_xhand_cube_grasp.py: a 6 cm cube has few large faces,
+# so sample densely -- at the old 0.0015 only ~14 surface points were drawn and the
+# best-seated grasp swung wildly run to run (1-7 mm); 0.0006 settles it near ~1 mm.
+PLAN_KW = dict(density=0.0006, normal_tol_deg=25, roll_step_deg=30,
+               max_grasps=120, clearance=0.003)
+
+# Approach-tilt preference. The XHand pinch seats both pads LEVEL on two vertical
+# faces only when the hand is TILTED, not top-down: its thumb and index pads are
+# offset ~31 mm along the approach axis (the thumb reaches ~3 cm further), so a
+# straight top-down pinch lands them at different heights (screening: top-down best
+# seating 4.8 mm vs 0.9 mm at a tilt). A downward tilt also clears the table and is
+# more arm-reachable than a near-horizontal side approach. So prefer grasps whose
+# approach points ~GRASP_TILT_DEG below horizontal, ranked JOINTLY with pad seating.
+# Pad SEATING is the primary quality (and already disfavours top-down, which seats
+# worst); tilt is a GENTLE rail so it never overrides a real seating advantage --
+# 0.01 m/rad means a 20 deg tilt gap costs only ~3.5 mm of seating, enough to break
+# near-ties toward the reachable/table-clearing band but not to pick a worse pinch.
+GRASP_TILT_DEG = float(os.environ.get('GRASP_TILT_DEG', 40.0))   # below horizontal
+GRASP_TILT_W = float(os.environ.get('GRASP_TILT_W', 0.01))       # seat-m per rad err
+
+# Centroid offset: the line joining the two contact points should pass CLOSE to the
+# object's centre of mass, else the grip has a moment arm and the object twists out
+# (unstable). Reject clearly off-centre contact lines before doing expensive IK,
+# then use the remaining perpendicular offset as a soft ranking term.
+GRASP_CENTER_W = float(os.environ.get('GRASP_CENTER_W', 1.0))    # cost-m per offset-m
+GRASP_CENTER_MAX = float(os.environ.get('GRASP_CENTER_MAX', 0.012))  # hard limit (m)
+
+# Antipodal surface sampling is random and the reachable band is narrow, so the
+# best reachable grasp varies run to run. Re-plan up to PLAN_ATTEMPTS times, KEEP
+# the lowest-COST result (cost = seat + centroid offset + tilt, so this optimises
+# the whole objective, not just seating), stop early once cost <= COST_OK. Makes the
+# picked grasp reliably good, not luck-dependent. COST_OK ~ seat 3mm + offset 10mm.
+PLAN_ATTEMPTS = int(os.environ.get('GRASP_ATTEMPTS', 4))
+COST_OK = float(os.environ.get('GRASP_COST_OK', 0.015))         # m, good-enough cost
 
 # ----------------------------- real hardware (opt-in) -----------------------------
 # Enabled only when ONE_REAL=1, so the plain run stays pure-simulation. When on,
@@ -117,7 +161,7 @@ HAND_CONTACT_IDS = {'thumb': (1, 2), 'index': (4, 5),
 # secured (per opposition primitive; the antipodal pinch opposes thumb<->index).
 REQUIRED_FINGERS = {'pinch': ('thumb', 'index'),
                     'tripod': ('thumb', 'index', 'middle')}
-CONTACT_TORQUE = 100.0   # |FingerState.torque| at/above this = "pressed" (TUNE on hw)
+CONTACT_TORQUE = 150.0   # 50% of driver tor_max=300; tune cautiously on hardware
 HAND_CLOSE_SPEED = 0.35  # finger slew speed while closing to contact (rad/s)
 HAND_CTRL_FREQ = 50.0    # feedback-close loop rate (Hz; each cycle is a read move)
 # The planned grasp pose is only sim's contact ESTIMATE -- on hardware the finger
@@ -255,6 +299,56 @@ def tactile_close(hand_x, start12, target12, required,
 
 
 # ============================== grasp planning ==============================
+def pad_seating(jaw, pose_local, jw):
+    """Robust contact-patch distance from the pinch pads to the cube surface.
+
+    The cube is axis-aligned at the origin in ``pose_local``. For each pad, score
+    the mean of its nearest 10 percent of mesh vertices instead of the single
+    nearest vertex. This prevents one pad corner grazing a cube edge from looking
+    like a well-seated contact. Absolute signed distance is used so small mesh
+    penetration is penalised rather than rewarded.
+
+    antipodal scores a grasp by contact-normal alignment + jaw centering, NOT by
+    whether the pads actually reach the object. On a symmetric cube EVERY opposing
+    face-pair ties on that score, so the score can't tell a flat, well-seated pinch
+    from one cocked over an edge. This metric supplies that missing distinction."""
+    half = CUBE_SIZE / 2
+    jaw.grip_at(pose_local[:3, 3], pose_local[:3, :3], jw)
+    pads = [jaw._spec.thumb_pad] + list(jaw._spec.opp_pads)
+    total = 0.0
+    for link in pads:
+        v = jaw._world_vs(link)                     # pad vertices (cube-local frame)
+        a = np.abs(v) - half                        # signed dist to the cube box
+        signed_d = (np.linalg.norm(np.maximum(a, 0.0), axis=1)
+                    + np.minimum(a.max(1), 0.0))
+        surface_d = np.abs(signed_d)
+        n_patch = min(len(surface_d), max(3, int(np.ceil(0.1 * len(surface_d)))))
+        nearest = np.partition(surface_d, n_patch - 1)[:n_patch]
+        total += float(nearest.mean())
+    return total
+
+
+def grasp_centerline_offset(jaw, pose_local, jw):
+    """Perpendicular distance from the cube centroid to the pinch contact line."""
+    midpoint = np.asarray(pose_local[:3, 3], dtype=np.float64)
+    open_dir = np.asarray(jaw.open_dir_at(jw), dtype=np.float64)
+    axis = np.asarray(pose_local[:3, :3], dtype=np.float64) @ open_dir
+    axis /= np.linalg.norm(axis) + oum.eps
+    perpendicular = midpoint - axis * np.dot(midpoint, axis)
+    return float(np.linalg.norm(perpendicular))
+
+
+def centered_grasp_mask(jaw, poses_local, jaw_widths):
+    """Vectorised pre-collision filter for contact lines near the cube centre."""
+    poses = np.asarray(poses_local, dtype=np.float64)
+    open_dirs = np.asarray(jaw.open_dir_at(jaw_widths), dtype=np.float64)
+    axes = np.einsum('nij,nj->ni', poses[:, :3, :3], open_dirs)
+    axes /= np.linalg.norm(axes, axis=1, keepdims=True) + oum.eps
+    midpoints = poses[:, :3, 3]
+    parallel = np.sum(midpoints * axes, axis=1, keepdims=True) * axes
+    return np.linalg.norm(midpoints - parallel, axis=1) <= GRASP_CENTER_MAX
+
+
 def plan_grasps(robot, ctx, hand, cube, home):
     """Plan reachable, collision-free pinch grasps on the cube.
 
@@ -265,20 +359,42 @@ def plan_grasps(robot, ctx, hand, cube, home):
     solve IK for the grasp-center tcp, and keep grasps whose pre-grasp / descend /
     lift are collision-free vs the table + self.
 
+    Candidates are ranked by a JOINT cost of real PAD SEATING (best contact first)
+    and APPROACH TILT (prefer ~GRASP_TILT_DEG below horizontal). Antipodal's own
+    score is degenerate on a cube (all opposing-face grasps tie), so it can't tell
+    a flat, level pinch from an edge-cocked one; seating can. Tilt is added because
+    the XHand pinch only seats level when tilted (thumb/index pad offset ~31 mm
+    along approach), and a downward tilt clears the table and is more reachable than
+    side-on. Cost = seat_gap + GRASP_TILT_W * |elev - GRASP_TILT_DEG| (rad).
+
     Returns ``(candidates, stats)`` where each candidate is
-    ``(score, jaw_width, pre_q, descend, retreat, grasp_qs)`` -- ``grasp_qs`` is
-    the full 12-dof finger pose at the planned closure, best score first."""
+    ``(seat, jaw_width, pre_q, descend, retreat, grasp_qs)`` -- ``seat`` is the
+    pad-seating gap (m, lower is better), ``grasp_qs`` the full 12-dof finger pose
+    at the planned closure, best (jointly) first."""
     jaw = hand.spawn_jaw(GRASP_PRIMITIVE)          # immutable parallel-jaw clone
-    grasps = antipodal(jaw, cube, **PLAN_KW)       # cube-local, best score first
+    grasps = antipodal(
+        jaw, cube, **PLAN_KW,
+        candidate_filter=lambda poses, widths: centered_grasp_mask(
+            jaw, poses, widths))                    # cube-local, central first
     print(f"antipodal: {len(grasps)} collision-free '{GRASP_PRIMITIVE}' grasps "
-          f"(jaw range {np.round(np.array(jaw.jaw_range) * 1000, 1)} mm)")
+          f"(jaw range {np.round(np.array(jaw.jaw_range) * 1000, 1)} mm); "
+          f"tilt target {GRASP_TILT_DEG:.0f} deg below horizontal")
+    tilt_target = np.radians(GRASP_TILT_DEG)
 
     candidates = []
-    stats = dict(ik=0, descend=0, retreat=0, ok=0)
+    diag = []                                       # (cost, seat, elev_deg) for logging
+    stats = dict(off_center=0, ik=0, descend=0, retreat=0, ok=0)
     for pose, pre_pose, jw, score in grasps:
         wpose = cube.wd_tf @ pose                   # grasp-center pose in world
         wpre = cube.wd_tf @ pre_pose               # pre-grasp (retreated) pose
         rot = wpose[:3, :3]
+        # approach elevation in the WORLD frame (gravity-relative, so correct even
+        # for a tilted detected cube): +ve = pointing below horizontal (downward).
+        elev = float(-np.arcsin(np.clip(wpose[2, 2], -1.0, 1.0)))
+        centroid_off = grasp_centerline_offset(jaw, pose, jw)
+        if centroid_off > GRASP_CENTER_MAX:
+            stats['off_center'] += 1
+            continue
         # grasp-center tcp on the ROBOT's mounted hand (loc_tf is closure-
         # dependent; identical geometry on the jaw clone and the real hand).
         grasp_tcp = orbt.TCP(hand.runtime_root_lnk,
@@ -296,13 +412,105 @@ def plan_grasps(robot, ctx, hand, cube, home):
                                  wpose[:3, 3], wpose[:3, 3] + UP, rot)
         if retreat is None:
             stats['retreat'] += 1; continue
-        jaw.set_jaw_width(jw)                       # finger pose at this closure
+        seat = pad_seating(jaw, pose, jw)           # real pad-to-cube gap (m)
         grasp_qs = np.asarray(jaw.qs, dtype=float).copy()
+        cost = (seat + GRASP_TILT_W * abs(elev - tilt_target)
+                + GRASP_CENTER_W * centroid_off)    # joint rank
         stats['ok'] += 1
-        candidates.append((float(score), float(jw), pre_q, descend, retreat,
+        candidates.append((cost, float(seat), float(jw), pre_q, descend, retreat,
                            grasp_qs))
-    candidates.sort(key=lambda c: c[0], reverse=True)   # best antipodal score first
-    return candidates, stats
+        diag.append((cost, seat, np.degrees(elev), centroid_off))
+    candidates.sort(key=lambda c: c[0])             # best joint cost first
+    if os.environ.get("DEBUG") and diag:
+        diag.sort(key=lambda d: d[0])
+        print("  reachable grasps (best-first): seat_mm / elev_deg / centroid_off_mm")
+        for cost, seat, elevd, coff in diag[:8]:
+            print(f"    seat {seat * 1000:5.1f} mm   elev {elevd:+5.1f} deg   "
+                  f"centroid_off {coff * 1000:5.1f} mm")
+    best_cost = candidates[0][0] if candidates else float("inf")
+    # drop the sort-key, keep the (seat, jw, pre_q, descend, retreat, grasp_qs) shape
+    candidates = [c[1:] for c in candidates]
+    return candidates, stats, best_cost
+
+
+# ============================== cube pose source ==============================
+# FoundationPose writes camera_T_cube here (RealExperiments/foundationpose_then_play.py
+# --no_play, run in env_isaaclab). Overridable with ONE_FP_POSE.
+FP_POSE_NPY = os.environ.get("ONE_FP_POSE", "/tmp/foundationpose_cube_pose.npy")
+
+
+def _cube_pose_from_fp(npy_path):
+    """Map a FoundationPose ``camera_T_cube`` (4x4, camera frame) into the sim
+    world. Applies the fresh D435 eye-to-hand extrinsic (``base_T_cube =
+    T_base_cam @ camera_T_cube``), then base->world (``world = ROBOT_BASE_POS +
+    p_base``). Returns (world_pos, world_rot). FoundationPose gives the cube's
+    FULL 6D orientation -- far more accurate than the point-cloud clustering, which
+    is why this is the preferred source."""
+    from one.camera.RS435.detect_cube import load_extrinsics
+    cam_T_cube = np.load(npy_path).astype(np.float64)
+    if cam_T_cube.shape != (4, 4):
+        raise ValueError(f"[fp] {npy_path}: expected a 4x4 camera_T_cube, got "
+                         f"{cam_T_cube.shape}")
+    yaml_path = os.environ.get("ONE_CAM_YAML")
+    T_base_cam, _ = (load_extrinsics(yaml_path) if yaml_path else load_extrinsics())
+    base_T_cube = T_base_cam @ cam_T_cube
+    base_pos = base_T_cube[:3, 3]
+    world_pos = (ROBOT_BASE_POS + base_pos).astype(np.float32)
+    world_rot = base_T_cube[:3, :3].astype(np.float32)
+    age = time.time() - os.path.getmtime(npy_path)
+    print(f"[fp] camera_T_cube <- {npy_path} ({age:.0f}s old)")
+    print(f"[fp] cube @ base [{base_pos[0]:+.3f} {base_pos[1]:+.3f} "
+          f"{base_pos[2]:+.3f}] m  ->  world [{world_pos[0]:+.3f} "
+          f"{world_pos[1]:+.3f} {world_pos[2]:+.3f}]")
+    if age > 120:
+        print("[fp] WARNING: pose file is >2 min old -- re-run "
+              "foundationpose_then_play.py --no_play if the cube moved.")
+    return world_pos, world_rot
+
+
+def resolve_cube_pose():
+    """The cube pose (world pos, rotmat) to grasp. Three sources, by priority:
+
+    * ONE_FP=1     -> FoundationPose (PREFERRED): read camera_T_cube from
+      ONE_FP_POSE (default /tmp/foundationpose_cube_pose.npy, written by
+      RealExperiments/foundationpose_then_play.py --no_play in env_isaaclab) and
+      map it through the D435 extrinsic. Full 6D pose, highest accuracy.
+    * ONE_CAMERA=1 -> in-house point-cloud clustering (detect_cube). Yaw only,
+      lower accuracy; fallback when FoundationPose isn't available.
+    * neither      -> the hardcoded CUBE_POS / CUBE_ROT (pure sim).
+
+    Detections are BASE-frame; the robot base frame shares the sim-world axes with
+    its origin at ROBOT_BASE_POS, so ``world = ROBOT_BASE_POS + p_base`` (base
+    table top z=0 -> world z=TABLE_TOP_Z). Raises rather than silently grasping the
+    stale hardcoded pose if the requested source yields nothing."""
+    if os.environ.get("ONE_FP"):
+        if not os.path.exists(FP_POSE_NPY):
+            raise RuntimeError(
+                f"[fp] pose file not found: {FP_POSE_NPY}. Run (env_isaaclab): "
+                "python RealExperiments/foundationpose_then_play.py --no_play")
+        return _cube_pose_from_fp(FP_POSE_NPY)
+    if not os.environ.get("ONE_CAMERA"):
+        return CUBE_POS.copy(), CUBE_ROT.copy()
+    from one.camera.RS435.detect_cube import (load_extrinsics, capture_base_cloud,
+                                              detect_cube_base)
+    yaml_path = os.environ.get("ONE_CAM_YAML")
+    T_base_cam, _ = (load_extrinsics(yaml_path) if yaml_path else load_extrinsics())
+    print("[camera] capturing D435 cloud to locate the cube ...")
+    pts, cols = capture_base_cloud(T_base_cam)
+    target = os.environ.get("CUBE_RGB")
+    target_rgb = np.array([float(v) for v in target.split(",")]) if target else None
+    res = detect_cube_base(pts, cols, cube_size=CUBE_SIZE, target_rgb=target_rgb)
+    if res is None:
+        raise RuntimeError("[camera] no cube detected on the table (ONE_CAMERA=1); "
+                           "check lighting / the workspace box in detect_cube.py")
+    center_base, yaw, info = res
+    world_pos = (ROBOT_BASE_POS + center_base).astype(np.float32)
+    world_rot = oum.rotmat_from_axangle(ouc.StandardAxis.Z, float(yaw))
+    print(f"[camera] cube @ base [{center_base[0]:+.3f} {center_base[1]:+.3f} "
+          f"{center_base[2]:+.3f}] m  yaw {np.degrees(yaw):+.1f} deg  "
+          f"(table_z {info['table_z']:+.3f}, {info['n']} pts)  ->  world "
+          f"[{world_pos[0]:+.3f} {world_pos[1]:+.3f} {world_pos[2]:+.3f}]")
+    return world_pos, world_rot
 
 
 # ================================== the demo ==================================
@@ -325,9 +533,10 @@ def main():
                      oy + sy * (TABLE_Y / 2 - TABLE_LEG / 2), leg_h / 2),
                 xyz_lengths=(TABLE_LEG, TABLE_LEG, leg_h), rgb=TABLE_RGB,
                 collision_type=ouc.CollisionType.AABB))
-    cube = ossop.box(pos=CUBE_POS, xyz_lengths=(CUBE_SIZE,) * 3, rotmat=CUBE_ROT,
+    cube_pos, cube_rot = resolve_cube_pose()     # hardcoded, or D435-detected
+    cube = ossop.box(pos=cube_pos, xyz_lengths=(CUBE_SIZE,) * 3, rotmat=cube_rot,
                      rgb=CUBE_RGB, collision_type=ouc.CollisionType.MESH,
-                     is_free=True)
+                     is_floating=True)
 
     # ---- robot: xArm7 with the XHand on the flange ----
     robot = XArm7(pos=ROBOT_BASE_POS)
@@ -373,19 +582,29 @@ def main():
               "it may fail. Jog the real arm clear of the table and rerun.")
 
     # ---- plan grasps (antipodal) + reachable arm motions ----
+    # Re-plan (fresh random sampling) up to PLAN_ATTEMPTS, keeping the lowest-cost
+    # result; stop early once within COST_OK. Guards against an unlucky sample where
+    # no good grasp lands in the reachable band.
     home = robot.qs.astype(np.float64).copy()
-    candidates, stats = plan_grasps(robot, ctx, hand, cube, home)
+    candidates, stats, best_cost = plan_grasps(robot, ctx, hand, cube, home)
+    for attempt in range(2, PLAN_ATTEMPTS + 1):
+        if candidates and best_cost <= COST_OK:
+            break                                    # already good enough
+        more, stats2, more_cost = plan_grasps(robot, ctx, hand, cube, home)
+        if more and more_cost < best_cost:
+            candidates, stats, best_cost = more, stats2, more_cost   # keep best cost
+        print(f"  re-plan {attempt}/{PLAN_ATTEMPTS}: best cost {best_cost * 1000:.1f} mm")
     if os.environ.get("DEBUG"):
         print(f"  reject stats: {stats}")
     if not candidates:
         raise RuntimeError(f"no collision-free '{GRASP_PRIMITIVE}' grasp found")
-    score, jw, pre_q, descend, retreat, grasp_qs = candidates[0]
+    seat, jw, pre_q, descend, retreat, grasp_qs = candidates[0]
     traj = plan_segment(planner, home, pre_q)
     traj += descend[1:]
     grasp_idx = len(traj) - 1
     traj += retreat[1:]
     print(f"'{GRASP_PRIMITIVE}': {len(candidates)} reachable grasps; "
-          f"best = score {score:.3f} / jaw {jw * 1000:.1f} mm; "
+          f"best = pad gap {seat * 1000:.1f} mm / jaw {jw * 1000:.1f} mm; "
           f"pick {len(traj)} waypoints (grasp@{grasp_idx})")
 
     if headless:
@@ -414,17 +633,17 @@ def main():
     def show(sel):
         """Freeze at candidate ``sel``'s grasp pose (hand closed on the cube)."""
         st["sel"] = sel % len(candidates)
-        score, jw, pre_q, descend, retreat, gqs = candidates[st["sel"]]
+        seat, jw, pre_q, descend, retreat, gqs = candidates[st["sel"]]
         if st["held"]:
             hand.unmount(cube); st["held"] = False
         robot.fk(qs=descend[-1])
         hand.fk(qs=gqs)
-        cube.set_pos_rotmat(pos=CUBE_POS, rotmat=CUBE_ROT)
+        cube.set_pos_rotmat(pos=cube_pos, rotmat=cube_rot)
         st["i"], st["playing"], st["traj"] = 0, False, None
         if st["spheres"]:
             set_spheres(True)
-        print(f"candidate {st['sel'] + 1}/{len(candidates)}: score {score:.3f}, "
-              f"jaw {jw * 1000:.1f} mm")
+        print(f"candidate {st['sel'] + 1}/{len(candidates)}: pad gap "
+              f"{seat * 1000:.1f} mm, jaw {jw * 1000:.1f} mm")
         base.scene.dirty = True
 
     def ensure_traj():
@@ -440,7 +659,7 @@ def main():
             hand.unmount(cube); st["held"] = False
         hand.open_hand()
         robot.fk(qs=home)
-        cube.set_pos_rotmat(pos=CUBE_POS, rotmat=CUBE_ROT)
+        cube.set_pos_rotmat(pos=cube_pos, rotmat=cube_rot)
         st["i"], st["playing"] = 0, False
         base.scene.dirty = True
 
@@ -485,19 +704,39 @@ def main():
             arm_x.stream_jnt_path(arm_path[:gidx + 1], control_freq=ARM_CTRL_FREQ,
                                   max_jntvel=ARM_MAX_JNTVEL)             # descend
             if hand_x is not None:
-                # tactile grasp: close until the required fingers actually press.
-                # Let those fingers curl PAST the planned pose (sim's contact
-                # estimate) so a real-world gap still closes; torque stops them.
+                # tactile grasp in TWO phases so the thumb reliably OPPOSES first.
+                # The thumb's opposition is a preshape SWING (thumb_joint0), not a
+                # flexion -- but open_hand() zeros every joint, so the thumb starts
+                # flat. If that swing runs inside the feedback close (which reads
+                # torque on the flexion joints), the swing's own load false-triggers
+                # "contact" and freezes the thumb half-swung -- the thumb never
+                # closes. So:
+                #   1) PRESHAPE (plain position move, no feedback): drive every
+                #      non-flexion joint to the planned pose -- crucially the thumb
+                #      swing into opposition -- with only the flexion (contact)
+                #      joints still open.
+                #   2) tactile close: curl ONLY the flexion joints until each
+                #      required finger presses. They may curl PAST the planned pose
+                #      (sim's contact estimate) so a real gap still closes; torque
+                #      stops them.
                 required = REQUIRED_FINGERS[GRASP_PRIMITIVE]
                 open12 = sim_to_real_hand(open_hand_qs)
                 target12 = sim_to_real_hand(gqs).copy()
+                contact_ids = sorted({i for f in required
+                                      for i in HAND_CONTACT_IDS[f]})
+                preshape12 = target12.copy()
+                for i in contact_ids:
+                    preshape12[i] = open12[i]        # open ONLY the flexion joints
                 for f in required:
                     for i in HAND_CONTACT_IDS[f]:
                         if target12[i] >= open12[i]:           # closing = curl up
                             target12[i] = min(target12[i] + HAND_CLOSE_MARGIN, hand_hi[i])
                         else:
                             target12[i] = max(target12[i] - HAND_CLOSE_MARGIN, hand_lo[i])
-                contacted = tactile_close(hand_x, open12, target12, required)
+                # 1) swing the thumb into opposition + preshape the rest (blocks)
+                hand_x.move_to(preshape12, speed=HAND_SPEED)
+                # 2) force-close the flexion joints from the seated preshape
+                contacted = tactile_close(hand_x, preshape12, target12, required)
                 miss = [f for f in required if not contacted[f]]
                 if miss:
                     print(f"[real] WARNING: no contact on {miss}; closed to the "

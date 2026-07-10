@@ -188,19 +188,12 @@ Prefer these in-house utilities over trimesh / scipy / open3d / fcl. Auto-genera
 - **class `Rtq2F85`**
   - methods: `set_jaw_width`, `clone`
 
-## `one.robots.end_effectors.xhand.force_plotter`
-_Real-time ECG-style strip chart of the XHand right's fingertip forces._
-
-- `main()`
-- **class `ForcePlotter`**
-  - methods: `update`, `run`
-
 ## `one.robots.end_effectors.xhand.force_visualizer`
 _Interactive real-time fingertip-force visualizer for the XHand right (12-DOF_
 
 - `main()`
 - **class `FingerForceViz`**
-  - methods: `update`
+  - methods: `tare`, `update`
 
 ## `one.robots.end_effectors.xhand.sphere_collision_checker`
 

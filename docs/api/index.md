@@ -4,6 +4,7 @@ Prefer these in-house utilities over trimesh / scipy / open3d / fcl. Auto-genera
 
 Browse by subpackage (or see the single-page [API Index](../API_INDEX.md)):
 
+- [`one.camera`](camera.md) — 3 modules, 18 functions, 1 classes
 - [`one.collider`](collider.md) — 14 modules, 16 functions, 13 classes
 - [`one.control`](control.md) — 3 modules, 4 functions, 6 classes
 - [`one.devices`](devices.md) — 1 modules, 0 functions, 2 classes
@@ -11,7 +12,7 @@ Browse by subpackage (or see the single-page [API Index](../API_INDEX.md)):
 - [`one.grasp`](grasp.md) — 7 modules, 15 functions, 1 classes
 - [`one.motion`](motion.md) — 10 modules, 12 functions, 10 classes
 - [`one.physics`](physics.md) — 9 modules, 7 functions, 17 classes
-- [`one.robots`](robots.md) — 49 modules, 89 functions, 48 classes
+- [`one.robots`](robots.md) — 48 modules, 88 functions, 47 classes
 - [`one.scene`](scene.md) — 8 modules, 37 functions, 13 classes
 - [`one.stream`](stream.md) — 1 modules, 7 functions, 0 classes
 - [`one.utils`](utils.md) — 4 modules, 98 functions, 15 classes

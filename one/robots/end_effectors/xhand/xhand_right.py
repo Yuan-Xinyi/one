@@ -65,7 +65,16 @@ class XHandRight(oremx.DexHandMixin, orbmb.MechBase):
     # nodes (joint1 proximal + joint2 distal) curl, not just the proximal.
     _GRASP_TABLE = {
         'pinch': {
-            'preshape': {'thumb_joint0': 1.35},
+            # thumb_joint0 is the swing that brings the thumb across to oppose the
+            # index. At the former 1.35 the thumb OVER-swung: its pad body wrapped
+            # forward and, on a small object, poked ~9 mm THROUGH it -- so every
+            # centred pinch self-collided and only edge-offset (20-40 mm) grasps
+            # survived (the "斜着抓 / off-centre" symptom). 1.10 squares the thumb
+            # pad up against the index so a centred pinch (contact line through the
+            # centroid) no longer self-collides: min centroid offset 22 mm -> ~1 mm,
+            # 0 -> ~26 collision-free centred grasps. Tune in the viewer (run this
+            # module) if the thumb looks under/over-opposed.
+            'preshape': {'thumb_joint0': 1.10},
             'closing': {'thumb_joint1': 0.9, 'thumb_joint2': 0.4,
                         'index_joint1': 1.0, 'index_joint2': 1.0},
             'pads': ('thumb_rota_link2', ['index_rota_link2']),

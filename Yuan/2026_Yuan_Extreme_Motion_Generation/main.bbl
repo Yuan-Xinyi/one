@@ -145,6 +145,14 @@ S.~Levine and V.~Koltun, ``Guided policy search,'' in \emph{International
   Conference on Machine Learning}.\hskip 1em plus 0.5em minus 0.4em\relax PMLR,
   2013, pp. 1--9.
 
+\bibitem{wortsman2022model}
+M.~Wortsman, G.~Ilharco, S.~Y. Gadre, R.~Roelofs, R.~Gontijo-Lopes, A.~S.
+  Morcos, H.~Namkoong, A.~Farhadi, Y.~Carmon, S.~Kornblith, and L.~Schmidt,
+  ``Model soups: averaging weights of multiple fine-tuned models improves
+  accuracy without increasing inference time,'' in \emph{International
+  Conference on Machine Learning}.\hskip 1em plus 0.5em minus 0.4em\relax PMLR,
+  2022, pp. 23\,965--23\,998.
+
 \bibitem{yuan2026iksel}
 X.~Yuan, W.~Wan, and K.~Harada, ``Iksel: Selecting good seed joint values for
   fast numerical inverse kinematics iterations,'' \emph{IEEE Transactions on
@@ -159,23 +167,21 @@ J.~Ho, A.~Jain, and P.~Abbeel, ``Denoising diffusion probabilistic models,''
 J.~Ho and T.~Salimans, ``Classifier-free diffusion guidance,'' \emph{arXiv
   preprint arXiv:2207.12598}, 2022.
 
-\bibitem{wortsman2022model}
-M.~Wortsman, G.~Ilharco, S.~Y. Gadre, R.~Roelofs, R.~Gontijo-Lopes, A.~S.
-  Morcos, H.~Namkoong, A.~Farhadi, Y.~Carmon, S.~Kornblith, and L.~Schmidt,
-  ``Model soups: averaging weights of multiple fine-tuned models improves
-  accuracy without increasing inference time,'' in \emph{International
-  Conference on Machine Learning}.\hskip 1em plus 0.5em minus 0.4em\relax PMLR,
-  2022, pp. 23\,965--23\,998.
-
-\bibitem{burges2005learning}
-C.~Burges, T.~Shaked, E.~Renshaw, A.~Lazier, M.~Deeds, N.~Hamilton, and
-  G.~Hullender, ``Learning to rank using gradient descent,'' in
-  \emph{International Conference on Machine Learning}, 2005, pp. 89--96.
+\bibitem{khosla2020supervised}
+P.~Khosla, P.~Teterwak, C.~Wang, A.~Sarna, Y.~Tian, P.~Isola, A.~Maschinot,
+  C.~Liu, and D.~Krishnan, ``Supervised contrastive learning,'' in
+  \emph{Advances in Neural Information Processing Systems}, vol.~33, 2020, pp.
+  18\,661--18\,673.
 
 \bibitem{cao2007learning}
 Z.~Cao, T.~Qin, T.-Y. Liu, M.-F. Tsai, and H.~Li, ``Learning to rank: from
   pairwise approach to listwise approach,'' in \emph{International Conference
   on Machine Learning}, 2007, pp. 129--136.
+
+\bibitem{burges2005learning}
+C.~Burges, T.~Shaked, E.~Renshaw, A.~Lazier, M.~Deeds, N.~Hamilton, and
+  G.~Hullender, ``Learning to rank using gradient descent,'' in
+  \emph{International Conference on Machine Learning}, 2005, pp. 89--96.
 
 \bibitem{xia2008listwise}
 F.~Xia, T.-Y. Liu, J.~Wang, W.~Zhang, and H.~Li, ``Listwise approach to
@@ -185,11 +191,5 @@ F.~Xia, T.-Y. Liu, J.~Wang, W.~Zhang, and H.~Li, ``Listwise approach to
 \bibitem{burges2010ranknet}
 C.~J.~C. Burges, ``From ranknet to lambdarank to lambdamart: An overview,''
   Microsoft Research, Tech. Rep. MSR-TR-2010-82, 2010.
-
-\bibitem{khosla2020supervised}
-P.~Khosla, P.~Teterwak, C.~Wang, A.~Sarna, Y.~Tian, P.~Isola, A.~Maschinot,
-  C.~Liu, and D.~Krishnan, ``Supervised contrastive learning,'' in
-  \emph{Advances in Neural Information Processing Systems}, vol.~33, 2020, pp.
-  18\,661--18\,673.
 
 \end{thebibliography}

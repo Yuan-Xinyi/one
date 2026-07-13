@@ -161,6 +161,7 @@ def distill(pi0_ckpt_dir, out_dir, *, n_tasks: int = 16384,
             soft_band: float = 0.0, init_from: str | None = None,
             chunk_size: int = 4096, seed: int = 8200,
             epochs: int = 40, hidden_dim: int | None = None,
+            restrict_idx=None,
             device=None, verbose: bool = True) -> dict:
     pi0_ckpt_dir = Path(pi0_ckpt_dir)
     out_dir = Path(out_dir)
@@ -181,6 +182,14 @@ def distill(pi0_ckpt_dir, out_dir, *, n_tasks: int = 16384,
         n_target_noise_deg=line_cfg["n_target_noise_deg"],
         seed=line_cfg["train_seed"], env_cfg=proxy_cfg,
         feasibility_threshold_m=threshold_m, verbose=verbose)
+    if restrict_idx is not None:
+        # Leak-safety: restrict DAgger task sampling to a task-index subset
+        # (e.g. the 95k train split) so distillation never touches test tasks.
+        m = torch.zeros(pool.valid_mask.shape[0], dtype=torch.bool, device=pool.valid_mask.device)
+        m[torch.as_tensor(restrict_idx, device=m.device, dtype=torch.long)] = True
+        pool.valid_mask = pool.valid_mask & m
+        if verbose:
+            print(f"[distill] LEAK-SAFE: pool restricted to {int(pool.valid_mask.sum())} train-split tasks")
     del proxy
 
     # Student: full Agent so the ckpt is PPO-resumable (critic random-init,
@@ -233,6 +242,13 @@ def distill(pi0_ckpt_dir, out_dir, *, n_tasks: int = 16384,
         stats["rounds"].append({"round": rnd, "n_new_states": n_steps,
                                 "frac_cls": n_cls / max(n_steps, 1),
                                 "val_mse": val})
+        # Per-round checkpoint (convergence-over-rounds analysis / tab:ablate_exit).
+        rdir = out_dir / f"round{rnd}"
+        rdir.mkdir(parents=True, exist_ok=True)
+        torch.save(student.state_dict(), rdir / "agent.pt")
+        _cfg_r = dict(cfg_yaml); _cfg_r["ppo"] = dict(cfg_yaml["ppo"], hidden_dim=student_hidden)
+        with open(rdir / "config.yaml", "w") as _f:
+            yaml.safe_dump(_cfg_r, _f, sort_keys=False)
 
     # Save as a standard ckpt_dir (config.yaml + agent.pt) for eval tools and
     # Phase-2 PPO resume.
@@ -272,13 +288,20 @@ def main():
     parser.add_argument("--soft-band", type=float, default=0.0)
     parser.add_argument("--init-from", default=None,
                         help="warm-start student from this ckpt_dir")
+    parser.add_argument("--train-idx-npz", default=None,
+                        help="restrict DAgger task sampling to 'train_idx' in "
+                             "this NPZ (leak-safety: never touch test tasks).")
     parser.add_argument("--device", default=None)
     args = parser.parse_args()
+    ridx = None
+    if args.train_idx_npz is not None:
+        import numpy as _np
+        ridx = _np.load(args.train_idx_npz)["train_idx"]
     distill(args.pi0_ckpt_dir, args.out_dir, n_tasks=args.n_tasks,
             dagger_rounds=args.dagger_rounds, tau=args.tau,
             seed=args.seed, epochs=args.epochs, hidden_dim=args.hidden_dim,
             soft_band=args.soft_band, init_from=args.init_from,
-            device=args.device)
+            restrict_idx=ridx, device=args.device)
 
 
 if __name__ == "__main__":

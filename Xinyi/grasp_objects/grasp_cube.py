@@ -18,7 +18,8 @@ NOTE: antipodal is a PARALLEL-JAW (opposition) planner, so only opposition
 primitives apply. 'pinch' is the validated default; 'power' is a whole-hand
 envelope (not a jaw) and is rejected by spawn_jaw.
 
-Keys: F step  G play/pause  R replay  C collision spheres on/off  ENTER run on robot
+Keys: F step  G play/pause  R replay  C collision spheres on/off
+      ENTER preview real path / confirm execution
 Headless (plan only): ONE_HEADLESS=1
 
 Cube pose source (instead of the hardcoded CUBE_POS/CUBE_ROT), by priority:
@@ -33,13 +34,18 @@ cube is placed at ROBOT_BASE_POS + p_base. Combine with ONE_REAL=1 to close the
 loop: see the cube -> plan -> grasp it.
 
 Real hardware (opt-in: ONE_REAL=1): on startup the arm's CURRENT joints are read
-and used as the planning start / IK seed (instead of HOME_DEG), and ENTER streams
-the selected candidate's pick to the real xArm7 + XHand. The grasp itself is
-torque-feedback closed: the fingers close gradually and each freezes the instant
-it presses the object (joint torque > CONTACT_TORQUE), so contact -- not just the
-planned pose -- decides when to lift. IP / port / speeds / torque threshold are
+and used as the planning start / IK seed (instead of HOME_DEG). First ENTER
+previews a freshly planned path; second ENTER streams that path to the real
+xArm7 + XHand. The grasp itself is
+torque-feedback closed: the fingers close gradually and each freezes after
+baseline-corrected torque, minimum travel and position lag confirm contact, so
+contact -- not just the planned pose -- decides when to lift. IP / port / speeds are
 the ONE_ARM_IP / ONE_HAND_PORT env vars and the REAL_* / *_TORQUE constants below.
 Driver code: one/control (xarm7.XArm7X, xhand_x.XHandX).
+
+Set ONE_DIAG_GRASP=1 together with ONE_REAL=1 for a safe calibration run: ENTER
+moves to the grasp and preshapes the hand, then stops before tactile close/lift,
+reads all real joints back into simulation and reports index-to-table clearance.
 """
 import os
 import sys
@@ -57,28 +63,18 @@ for p in (_PROJECT_ROOT, _THIS):
 import one.utils.constant as ouc                               # noqa: E402
 import one.utils.math as oum                                   # noqa: E402
 import one.scene.scene_object_primitive as ossop              # noqa: E402
-import one.collider.mj_collider as ocm                         # noqa: E402
 import one.motion.probabilistic.rrt as ompr                    # noqa: E402
 import one.robots.base.tcp as orbt                             # noqa: E402
-from one.robots.manipulators.xarm.xarm7.xarm7 import XArm7     # noqa: E402
-from one.robots.end_effectors.xhand.xhand_right_withcc import XHandRight  # noqa: E402
 from one.grasp.antipodal import antipodal                      # noqa: E402
 import one.viewer.world as ovw                                 # noqa: E402
-from l1picking import (TABLE_TOP_Z,                            # noqa: E402
-                       chain_planning_context, plan_segment)
+from planning_utils import chain_planning_context, plan_segment  # noqa: E402
+from scene import (                                            # noqa: E402
+    CUBE_POS, CUBE_ROT, CUBE_SIZE, PLANNING_TABLE_TOP_Z,
+    ROBOT_BASE_POS, TABLE_Z_BASE, build_collider, build_scene)
 
 
 # =============================== configuration ===============================
 CHAIN = 'main'                       # xArm7 arm chain (7-DOF, numerical IK)
-
-TABLE_ORIGIN = np.array([0.75, -0.25, 0.0], dtype=np.float32)
-TABLE_X, TABLE_Y = 0.9, 1.6
-TABLE_TOP_THICK, TABLE_LEG = 0.04, 0.05
-TABLE_RGB = (0.55, 0.42, 0.30)
-
-ROBOT_BASE_POS = np.array([0.30, -0.25, TABLE_TOP_Z], dtype=np.float32)
-FLANGE_Z = 0.0
-MOUNT_RPY = 4.71239                  # hand yaw about Z at the flange (270 deg)
 
 # xArm7 home (J1..J7, degrees). The all-zeros default has the arm/hand resting
 # in collision with the table, so RRT from it never connects (it burns all
@@ -86,13 +82,10 @@ MOUNT_RPY = 4.71239                  # hand yaw about Z at the flange (270 deg)
 # table config is the planning start AND the IK seed for the grasp search.
 HOME_DEG = np.array([-16.9, -34.8, 18.8, 20.5, 86.9, 12.0, -79.8],
                     dtype=np.float32)
-
-CUBE_SIZE = 0.06
-CUBE_FORWARD = 0.35
-CUBE_POS = np.array([ROBOT_BASE_POS[0] + CUBE_FORWARD, ROBOT_BASE_POS[1],
-                     TABLE_TOP_Z + CUBE_SIZE / 2], dtype=np.float32)
-CUBE_ROT = oum.rotmat_from_axangle(ouc.StandardAxis.Z, np.pi / 2)
-CUBE_RGB = (0.85, 0.55, 0.20)
+# Keep the base-yaw joint in the forward hemisphere. The rear workspace contains
+# unmodelled equipment/cables, so collision geometry alone is not sufficient.
+ARM_J1_SAFE_MIN_DEG = float(os.environ.get('ARM_J1_SAFE_MIN_DEG', -90.0))
+ARM_J1_SAFE_MAX_DEG = float(os.environ.get('ARM_J1_SAFE_MAX_DEG', 90.0))
 
 UP = np.array([0.0, 0.0, 0.15], dtype=np.float32)   # lift after grasp
 GRASP_PRIMITIVE = os.environ.get('GRASP_PRIMITIVE', 'pinch')   # opposition only
@@ -105,7 +98,7 @@ GRASP_PRIMITIVE = os.environ.get('GRASP_PRIMITIVE', 'pinch')   # opposition only
 # so sample densely -- at the old 0.0015 only ~14 surface points were drawn and the
 # best-seated grasp swung wildly run to run (1-7 mm); 0.0006 settles it near ~1 mm.
 PLAN_KW = dict(density=0.0006, normal_tol_deg=25, roll_step_deg=30,
-               max_grasps=120, clearance=0.003)
+               max_grasps=48, clearance=0.003)
 
 # Approach-tilt preference. The XHand pinch seats both pads LEVEL on two vertical
 # faces only when the hand is TILTED, not top-down: its thumb and index pads are
@@ -120,6 +113,7 @@ PLAN_KW = dict(density=0.0006, normal_tol_deg=25, roll_step_deg=30,
 # near-ties toward the reachable/table-clearing band but not to pick a worse pinch.
 GRASP_TILT_DEG = float(os.environ.get('GRASP_TILT_DEG', 40.0))   # below horizontal
 GRASP_TILT_W = float(os.environ.get('GRASP_TILT_W', 0.01))       # seat-m per rad err
+GRASP_TILT_FILTER_DEG = float(os.environ.get('GRASP_TILT_FILTER_DEG', 22.0))
 
 # Centroid offset: the line joining the two contact points should pass CLOSE to the
 # object's centre of mass, else the grip has a moment arm and the object twists out
@@ -135,6 +129,8 @@ GRASP_CENTER_MAX = float(os.environ.get('GRASP_CENTER_MAX', 0.012))  # hard limi
 # picked grasp reliably good, not luck-dependent. COST_OK ~ seat 3mm + offset 10mm.
 PLAN_ATTEMPTS = int(os.environ.get('GRASP_ATTEMPTS', 4))
 COST_OK = float(os.environ.get('GRASP_COST_OK', 0.015))         # m, good-enough cost
+PREGRASP_IK_SOLUTIONS = int(os.environ.get('PREGRASP_IK_SOLUTIONS', 1))
+REACHABLE_GRASP_TARGET = int(os.environ.get('REACHABLE_GRASP_TARGET', 4))
 
 # ----------------------------- real hardware (opt-in) -----------------------------
 # Enabled only when ONE_REAL=1, so the plain run stays pure-simulation. When on,
@@ -142,33 +138,54 @@ COST_OK = float(os.environ.get('GRASP_COST_OK', 0.015))         # m, good-enough
 REAL_ROBOT = bool(os.environ.get("ONE_REAL"))
 REAL_ARM_IP = os.environ.get("ONE_ARM_IP", "192.168.1.205")
 REAL_HAND_PORT = os.environ.get("ONE_HAND_PORT", "/dev/ttyUSB0")
+REAL_DIAG_GRASP = bool(os.environ.get('ONE_DIAG_GRASP'))
+REAL_DIAG_THUMB_CLEARANCE_MM = float(
+    os.environ.get('ONE_DIAG_THUMB_CLEARANCE_MM', 5.0))
+REAL_PREVIEW_START_TOL_DEG = float(
+    os.environ.get('REAL_PREVIEW_START_TOL_DEG', 0.5))
 ARM_MAX_JNTVEL = np.deg2rad(25.0)   # per-joint speed cap for real moves (rad/s)
 ARM_CTRL_FREQ = 100.0               # servo-stream rate for the real arm (Hz)
 HAND_SPEED = 0.6                    # finger slew speed for real open/close (rad/s)
 
 # Tactile (torque-feedback) grasp: instead of snapping to the planned grasp pose,
-# the fingers close gradually and each one FREEZES the moment its joint torque
-# crosses CONTACT_TORQUE -- i.e. it stops as soon as it presses the object. The
-# close ends once every REQUIRED finger (by grasp type) has made contact.
+# the fingers close gradually and each one freezes after baseline-corrected torque
+# crosses CONTACT_TORQUE with enough joint travel and tracking lag. The close
+# ends once every REQUIRED finger (by grasp type) has made confirmed contact.
 #   ids per finger = URDF/hardware order thumb0-2, index0-2, middle0-1, ring0-1,
-#   pinky0-1. Contact is read on the FLEXION joints only (the swing/abduction
-#   joint0 of thumb/index carries preshape torque and would false-trigger).
+#   pinky0-1. Contact is read on the PROXIMAL flexion joint only:
+#   - joint0 (thumb/index swing/abduction) carries preshape torque -> false-trigger.
+#   - the thumb DISTAL joint2 does not track its own command on the real hand
+#     (measured flex2 ~= 0.18 * flex1 regardless of the flex2 target -- it is
+#     mechanically coupled / under-actuated). Judged for contact it registers a
+#     huge fake lag + strain torque at ~14 deg and freezes the thumb BEFORE it
+#     reaches the object. So the thumb contacts on joint1 (which tracks) alone;
+#     joint2 still curls (coupled) and is still frozen with the finger on contact.
 HAND_FINGER_IDS = {'thumb': (0, 1, 2), 'index': (3, 4, 5),
                    'middle': (6, 7), 'ring': (8, 9), 'pinky': (10, 11)}
-HAND_CONTACT_IDS = {'thumb': (1, 2), 'index': (4, 5),
+HAND_CONTACT_IDS = {'thumb': (1,), 'index': (4, 5),
                     'middle': (6, 7), 'ring': (8, 9), 'pinky': (10, 11)}
 # Which fingers MUST press the object for the tactile close to be considered
 # secured (per opposition primitive; the antipodal pinch opposes thumb<->index).
 REQUIRED_FINGERS = {'pinch': ('thumb', 'index'),
                     'tripod': ('thumb', 'index', 'middle')}
-CONTACT_TORQUE = 150.0   # 50% of driver tor_max=300; tune cautiously on hardware
+CONTACT_TORQUE = 200.0   # 67% of driver tor_max=300; tune cautiously on hardware
 HAND_CLOSE_SPEED = 0.35  # finger slew speed while closing to contact (rad/s)
 HAND_CTRL_FREQ = 50.0    # feedback-close loop rate (Hz; each cycle is a read move)
-# The planned grasp pose is only sim's contact ESTIMATE -- on hardware the finger
-# may still be shy of the object there. So the required fingers are allowed to curl
-# this much PAST the planned pose (rad, clipped to the joint limit) and torque
-# feedback stops them at the real contact. Raise if fingers stall short of objects.
-HAND_CLOSE_MARGIN = 0.6
+CONTACT_MIN_TRAVEL = float(os.environ.get('CONTACT_MIN_TRAVEL', 0.20))
+CONTACT_POSITION_ERROR = float(os.environ.get('CONTACT_POSITION_ERROR', 0.04))
+CONTACT_CONFIRM_CYCLES = int(os.environ.get('CONTACT_CONFIRM_CYCLES', 2))
+CONTACT_BASELINE_SAMPLES = int(os.environ.get('CONTACT_BASELINE_SAMPLES', 3))
+# Contact is judged by the torque RISE above each joint's free-closing level, not
+# an absolute threshold. A constant preload / a zero-fallback baseline / a joint
+# stiff from the first cycle then no longer reads as contact (the thumb froze at
+# 14.8 deg because its ~200 resting torque, minus a failed zero baseline, cleared
+# CONTACT_TORQUE immediately); only a genuine climb while pressing the object does.
+CONTACT_TORQUE_RISE = float(os.environ.get('CONTACT_TORQUE_RISE', 120.0))
+CONTACT_WARMUP_CYCLES = int(os.environ.get('CONTACT_WARMUP_CYCLES', 3))
+HAND_REPLY_SETTLE = float(os.environ.get('HAND_REPLY_SETTLE', 0.10))
+# Required pinch fingers target their full closing-side joint limits. Torque
+# feedback is the only normal stop before that limit, so missed contact feedback
+# can drive a finger all the way closed.
 
 
 # ============================== arm IK helpers ==============================
@@ -247,43 +264,138 @@ def sim_to_real_hand(qs):
 def tactile_close(hand_x, start12, target12, required,
                   torque_thresh=CONTACT_TORQUE, speed=HAND_CLOSE_SPEED,
                   freq=HAND_CTRL_FREQ):
-    """Close the fingers from ``start12`` toward ``target12``, but stop each finger
-    the instant it presses the object: every cycle reads the 12 FingerStates and
-    freezes a finger once its flexion-joint torque crosses ``torque_thresh``. The
-    close ends when every finger in ``required`` (sim names) has contacted, or all
-    fingers reach their planned target. Returns ``{finger: contacted_bool}``.
+    """Close fingers from ``start12`` toward ``target12`` and stop on confirmed
+    object contact. Every cycle reads the 12 FingerStates; the close ends when all
+    ``required`` fingers have contacted or all joints reach their targets. Returns
+    ``{finger: contacted_bool}``.
 
-    Torque units are raw hardware counts, so ``torque_thresh`` must be tuned on the
-    real hand -- the live per-cycle print of the required fingers' torque is there
-    to calibrate it."""
+    Contact uses the change from a preshape torque baseline, a minimum closing
+    travel and consecutive threshold hits. This avoids freezing the thumb on its
+    normal position-hold preload before it has visibly curled.
+
+    Torque units are raw hardware counts, so ``torque_thresh`` must be tuned on
+    the real hand. Live logs report the baseline-corrected value."""
     start = np.asarray(start12, dtype=float).copy()
     target = np.asarray(target12, dtype=float).copy()
     q = start.copy()
     frozen = np.zeros(12, dtype=bool)
     contacted = {f: False for f in HAND_FINGER_IDS}
+    hit_counts = {f: 0 for f in required}
     step = max(speed / freq, 1e-9)
     dt = 1.0 / freq
     max_iter = int(np.ceil(float(np.max(np.abs(target - start))) / step)) + 5
     next_t = time.perf_counter()
     last_print = 0.0
+    last_states = None
+    cycle = 0                              # closing-loop cycle counter (warmup)
+    torque_ref = np.full(12, np.inf)       # per-joint lowest free-closing torque
+
+    # move_to() ends with an unread fire-and-forget reply. Let that full frame
+    # arrive before flushing; an immediate flush can catch it halfway and leave a
+    # trailing partial frame, which caused the observed CRC mismatch and a false
+    # zero torque baseline. Then collect several valid preload samples.
+    time.sleep(HAND_REPLY_SETTLE)
+    if getattr(hand_x, 'ser', None) is not None:
+        hand_x.ser.reset_input_buffer()
+    baseline_samples = []
+    baseline_position_samples = []
+    required_samples = max(1, CONTACT_BASELINE_SAMPLES)
+    max_attempts = required_samples + 5
+    contact_ids = sorted({i for f in required for i in HAND_CONTACT_IDS[f]})
+    for attempt in range(1, max_attempts + 1):
+        states = hand_x.move(start, read=True)
+        row = ([float(s.torque) for s in states[:12]]
+               if states is not None and len(states) >= 12 else None)
+        # An all-zero torque row on the contact joints is almost always a CRC-
+        # dropped frame (a real XHand at rest still reports non-zero preload); it
+        # must be rejected, else the finger's resting bias reads as contact -- the
+        # exact zero-baseline failure that froze the thumb early.
+        if row is not None and any(abs(row[i]) > 1e-6 for i in contact_ids):
+            baseline_samples.append(row)
+            baseline_position_samples.append(
+                [float(s.position) for s in states[:12]])
+            last_states = states
+            if len(baseline_samples) >= required_samples:
+                break
+        else:
+            print(f'[real]   torque baseline read {attempt}/{max_attempts} '
+                  'failed or all-zero; resynchronizing serial input')
+            time.sleep(HAND_REPLY_SETTLE)
+            if getattr(hand_x, 'ser', None) is not None:
+                hand_x.ser.reset_input_buffer()
+        time.sleep(dt)
+    if len(baseline_samples) < required_samples:
+        raise RuntimeError(
+            f'failed to read a valid XHand torque baseline '
+            f'({len(baseline_samples)}/{required_samples} samples); '
+            'aborting before tactile close')
+    # FingerState.torque is a uint16 wire value, so later subtraction is
+    # performed modulo 2**16.
+    torque_bias = np.median(np.asarray(baseline_samples), axis=0)
+    print('[real]   torque baseline thumb/index: '
+          f'{np.rint(torque_bias[:6]).astype(int).tolist()}')
+    if baseline_position_samples:
+        baseline_position = np.median(
+            np.asarray(baseline_position_samples), axis=0)
+        print('[real]   thumb preshape rad: cmd '
+              f'{np.round(start[:3], 3).tolist()} / measured '
+              f'{np.round(baseline_position[:3], 3).tolist()}')
+
     for _ in range(max_iter):
         # advance only un-frozen joints one slew step toward the target
         adv = np.where(frozen, 0.0, np.clip(target - q, -step, step))
         q = q + adv
         states = hand_x.move(q, read=True)
         if states is not None:
-            torq = np.array([abs(float(s.torque)) for s in states])
-            for f, ids in HAND_CONTACT_IDS.items():
-                if not contacted[f] and float(np.max(torq[list(ids)])) >= torque_thresh:
+            last_states = states
+            raw_torque = np.array([float(s.torque) for s in states[:12]])
+            measured_q = np.array([float(s.position) for s in states[:12]])
+            signed_delta = ((raw_torque - torque_bias + 32768.0) % 65536.0
+                            - 32768.0)
+            torq = np.abs(signed_delta)
+            cycle += 1
+            # Track each still-moving joint's lowest torque so far (after a short
+            # warmup); contact is judged by the RISE above that free-closing level,
+            # so a constant preload or a joint stiff from the start does not trip.
+            if cycle > CONTACT_WARMUP_CYCLES:
+                torque_ref = np.where(~frozen, np.minimum(torque_ref, torq),
+                                      torque_ref)
+            for f in required:
+                ids = HAND_CONTACT_IDS[f]
+                travel = float(np.max(np.abs(q[list(ids)] - start[list(ids)])))
+                ref = np.where(np.isfinite(torque_ref[list(ids)]),
+                               torque_ref[list(ids)], 0.0)
+                rise = float(np.max(torq[list(ids)] - ref))
+                pos_error = float(np.max(np.abs(
+                    q[list(ids)] - measured_q[list(ids)])))
+                if (travel >= CONTACT_MIN_TRAVEL
+                        and rise >= CONTACT_TORQUE_RISE
+                        and pos_error >= CONTACT_POSITION_ERROR):
+                    hit_counts[f] += 1
+                else:
+                    hit_counts[f] = 0
+                if not contacted[f] and hit_counts[f] >= CONTACT_CONFIRM_CYCLES:
                     contacted[f] = True
                     for i in HAND_FINGER_IDS[f]:
                         frozen[i] = True            # hold this finger; stop pressing harder
-                    print(f"[real]   contact: {f} (torque "
-                          f"{float(np.max(torq[list(ids)])):.0f})")
+                    print(f"[real]   contact: {f} (torque rise {rise:.0f}, "
+                          f"travel {np.degrees(travel):.1f} deg, lag "
+                          f"{np.degrees(pos_error):.1f} deg)")
             now = time.perf_counter()
-            if now - last_print > 0.3:               # live torques to tune the threshold
-                rd = {f: int(np.max(torq[list(HAND_CONTACT_IDS[f])])) for f in required}
-                print(f"[real]   closing... required torque {rd}")
+            if now - last_print > 0.3:               # live values to tune the rise threshold
+                rd = {
+                    f: (int(np.max(torq[list(HAND_CONTACT_IDS[f])]
+                                   - np.where(np.isfinite(torque_ref[list(HAND_CONTACT_IDS[f])]),
+                                              torque_ref[list(HAND_CONTACT_IDS[f])], 0.0))),
+                        round(float(np.degrees(np.max(np.abs(
+                            q[list(HAND_CONTACT_IDS[f])]
+                            - start[list(HAND_CONTACT_IDS[f])])))), 1),
+                        round(float(np.degrees(np.max(np.abs(
+                            q[list(HAND_CONTACT_IDS[f])]
+                            - measured_q[list(HAND_CONTACT_IDS[f])])))), 1))
+                    for f in required}
+                print('[real]   closing... torque_rise / travel_deg / lag_deg '
+                      f'{rd}')
                 last_print = now
             if all(contacted[f] for f in required):
                 break
@@ -295,6 +407,13 @@ def tactile_close(hand_x, start12, target12, required,
             time.sleep(sleep_t)
         else:
             next_t = time.perf_counter()
+    if last_states is not None:
+        measured = np.array([float(s.position) for s in last_states[:12]])
+        print('[real]   thumb close rad [swing, flex1, flex2]: start '
+              f'{np.round(start[:3], 3).tolist()} -> cmd '
+              f'{np.round(q[:3], 3).tolist()} / measured '
+              f'{np.round(measured[:3], 3).tolist()} -> limit target '
+              f'{np.round(target[:3], 3).tolist()}')
     return contacted
 
 
@@ -338,18 +457,25 @@ def grasp_centerline_offset(jaw, pose_local, jw):
     return float(np.linalg.norm(perpendicular))
 
 
-def centered_grasp_mask(jaw, poses_local, jaw_widths):
-    """Vectorised pre-collision filter for contact lines near the cube centre."""
+def planning_grasp_mask(jaw, cube, poses_local, jaw_widths):
+    """Cheap centre/tilt filter applied before hand FK and mesh collision."""
     poses = np.asarray(poses_local, dtype=np.float64)
     open_dirs = np.asarray(jaw.open_dir_at(jaw_widths), dtype=np.float64)
     axes = np.einsum('nij,nj->ni', poses[:, :3, :3], open_dirs)
     axes /= np.linalg.norm(axes, axis=1, keepdims=True) + oum.eps
     midpoints = poses[:, :3, 3]
     parallel = np.sum(midpoints * axes, axis=1, keepdims=True) * axes
-    return np.linalg.norm(midpoints - parallel, axis=1) <= GRASP_CENTER_MAX
+    centered = np.linalg.norm(midpoints - parallel, axis=1) <= GRASP_CENTER_MAX
+
+    cube_rot = np.asarray(cube.wd_tf[:3, :3], dtype=np.float64)
+    world_rots = np.einsum('ij,njk->nik', cube_rot, poses[:, :3, :3])
+    elevations = -np.arcsin(np.clip(world_rots[:, 2, 2], -1.0, 1.0))
+    tilt_ok = (np.abs(elevations - np.radians(GRASP_TILT_DEG))
+               <= np.radians(GRASP_TILT_FILTER_DEG))
+    return centered & tilt_ok
 
 
-def plan_grasps(robot, ctx, hand, cube, home):
+def plan_grasps(robot, grasp_ctx, transit_ctx, hand, cube, home):
     """Plan reachable, collision-free pinch grasps on the cube.
 
     Grasp generation is delegated to the shared antipodal planner: the XHand is
@@ -374,17 +500,41 @@ def plan_grasps(robot, ctx, hand, cube, home):
     jaw = hand.spawn_jaw(GRASP_PRIMITIVE)          # immutable parallel-jaw clone
     grasps = antipodal(
         jaw, cube, **PLAN_KW,
-        candidate_filter=lambda poses, widths: centered_grasp_mask(
-            jaw, poses, widths))                    # cube-local, central first
+        candidate_filter=lambda poses, widths: planning_grasp_mask(
+            jaw, cube, poses, widths))              # cheap filter before FK/collision
     print(f"antipodal: {len(grasps)} collision-free '{GRASP_PRIMITIVE}' grasps "
           f"(jaw range {np.round(np.array(jaw.jaw_range) * 1000, 1)} mm); "
           f"tilt target {GRASP_TILT_DEG:.0f} deg below horizontal")
     tilt_target = np.radians(GRASP_TILT_DEG)
+    hand.open_hand()
+    open_hand_qs = np.asarray(hand.qs, dtype=float).copy()
+
+    def set_collision_hand(qs):
+        """Keep the mounted hand's MuJoCo joints in sync with its planned pose."""
+        hand.fk(qs=np.asarray(qs, dtype=float))
+        for planning_ctx in (grasp_ctx, transit_ctx):
+            planning_ctx.collider.set_mecba_qpos(hand, hand.qs)
+            planning_ctx.clear_cache()
 
     candidates = []
     diag = []                                       # (cost, seat, elev_deg) for logging
-    stats = dict(off_center=0, ik=0, descend=0, retreat=0, ok=0)
-    for pose, pre_pose, jw, score in grasps:
+    stats = dict(off_center=0, ik=0, descend=0, closed_collision=0,
+                 retreat=0, ok=0)
+    # Antipodal's score ties on a cube. Rank cheaply by centroid/tilt first so
+    # expensive arm IK starts with task-relevant candidates, then stop once there
+    # are enough reachable grasps for selection and fallback.
+    ranked_grasps = []
+    for grasp in grasps:
+        pose, _pre_pose, jw, _score = grasp
+        wpose = cube.wd_tf @ pose
+        elev = float(-np.arcsin(np.clip(wpose[2, 2], -1.0, 1.0)))
+        centroid_off = grasp_centerline_offset(jaw, pose, jw)
+        preliminary_cost = (GRASP_TILT_W * abs(elev - tilt_target)
+                            + GRASP_CENTER_W * centroid_off)
+        ranked_grasps.append((preliminary_cost, grasp))
+    ranked_grasps.sort(key=lambda item: item[0])
+
+    for _preliminary_cost, (pose, pre_pose, jw, score) in ranked_grasps:
         wpose = cube.wd_tf @ pose                   # grasp-center pose in world
         wpre = cube.wd_tf @ pre_pose               # pre-grasp (retreated) pose
         rot = wpose[:3, :3]
@@ -399,28 +549,45 @@ def plan_grasps(robot, ctx, hand, cube, home):
         # dependent; identical geometry on the jaw clone and the real hand).
         grasp_tcp = orbt.TCP(hand.runtime_root_lnk,
                              jaw._grasp_center_loc_tf(jw))
-        hand.open_hand()                            # approach checked open-handed
-        pre_q = solve_ik(robot, ctx, wpre[:3, 3].astype(np.float32), rot,
-                         grasp_tcp, home, collision_free=True)
+        set_collision_hand(open_hand_qs)            # approach checked open-handed
+        pre_q = solve_ik(robot, transit_ctx, wpre[:3, 3].astype(np.float32), rot,
+                         grasp_tcp, home, collision_free=True,
+                         max_solutions=PREGRASP_IK_SOLUTIONS)
         if pre_q is None:
             stats['ik'] += 1; continue
-        descend = cartesian_path(robot, ctx, grasp_tcp, pre_q,
+        descend = cartesian_path(robot, grasp_ctx, grasp_tcp, pre_q,
                                  wpre[:3, 3], wpose[:3, 3], rot)
         if descend is None:
             stats['descend'] += 1; continue
-        retreat = cartesian_path(robot, ctx, grasp_tcp, descend[-1],
+        seat = pad_seating(jaw, pose, jw)           # also sets the jaw closure
+        grasp_qs = np.asarray(jaw.qs, dtype=float).copy()
+        # The hand is a mounted child, not an arm-planning actor. Explicitly push
+        # its closed joints into MuJoCo before checking the grasp and lift; merely
+        # calling hand.fk() does not update the collider's child qpos.
+        set_collision_hand(grasp_qs)
+        if not grasp_ctx.is_state_valid(descend[-1]):
+            stats['closed_collision'] += 1
+            set_collision_hand(open_hand_qs)
+            continue
+        # The nominal planned closure is collision-checked for lift. Real tactile
+        # execution may close farther until torque contact or a joint limit.
+        retreat = cartesian_path(robot, grasp_ctx, grasp_tcp, descend[-1],
                                  wpose[:3, 3], wpose[:3, 3] + UP, rot)
         if retreat is None:
-            stats['retreat'] += 1; continue
-        seat = pad_seating(jaw, pose, jw)           # real pad-to-cube gap (m)
-        grasp_qs = np.asarray(jaw.qs, dtype=float).copy()
+            stats['retreat'] += 1
+            set_collision_hand(open_hand_qs)
+            continue
+        set_collision_hand(open_hand_qs)
         cost = (seat + GRASP_TILT_W * abs(elev - tilt_target)
                 + GRASP_CENTER_W * centroid_off)    # joint rank
         stats['ok'] += 1
         candidates.append((cost, float(seat), float(jw), pre_q, descend, retreat,
                            grasp_qs))
         diag.append((cost, seat, np.degrees(elev), centroid_off))
+        if len(candidates) >= REACHABLE_GRASP_TARGET:
+            break
     candidates.sort(key=lambda c: c[0])             # best joint cost first
+    set_collision_hand(open_hand_qs)
     if os.environ.get("DEBUG") and diag:
         diag.sort(key=lambda d: d[0])
         print("  reachable grasps (best-first): seat_mm / elev_deg / centroid_off_mm")
@@ -437,6 +604,8 @@ def plan_grasps(robot, ctx, hand, cube, home):
 # FoundationPose writes camera_T_cube here (RealExperiments/foundationpose_then_play.py
 # --no_play, run in env_isaaclab). Overridable with ONE_FP_POSE.
 FP_POSE_NPY = os.environ.get("ONE_FP_POSE", "/tmp/foundationpose_cube_pose.npy")
+FP_SNAP_TO_TABLE = os.environ.get('ONE_FP_SNAP_Z', '1') != '0'
+FP_SNAP_UPRIGHT = os.environ.get('ONE_FP_UPRIGHT', '1') != '0'
 
 
 def _cube_pose_from_fp(npy_path):
@@ -454,14 +623,38 @@ def _cube_pose_from_fp(npy_path):
     yaml_path = os.environ.get("ONE_CAM_YAML")
     T_base_cam, _ = (load_extrinsics(yaml_path) if yaml_path else load_extrinsics())
     base_T_cube = T_base_cam @ cam_T_cube
-    base_pos = base_T_cube[:3, 3]
+    base_pos = base_T_cube[:3, 3].copy()
+    base_rot = base_T_cube[:3, :3].copy()
+    raw_z = float(base_pos[2])
+    if FP_SNAP_UPRIGHT:
+        # A cube resting face-down on a flat table cannot carry arbitrary
+        # FoundationPose roll/pitch. Cube symmetry makes those components prone
+        # to frame flips/noise, and retaining them while fixing centre height can
+        # put a rotated corner through the table. Preserve only tabletop yaw.
+        yaw = float(np.arctan2(base_rot[1, 0], base_rot[0, 0]))
+        base_rot = oum.rotmat_from_axangle(ouc.StandardAxis.Z, yaw).astype(np.float64)
+    if FP_SNAP_TO_TABLE:
+        # This demo picks a known 60 mm cube resting on the corrected tabletop.
+        # Keep x/y and full orientation, but enforce non-penetrating contact with
+        # that surface in the robot-base frame.
+        # Support radius of a rotated box along base Z. With upright projection
+        # this is exactly 30 mm; the general expression also prevents penetration
+        # if ONE_FP_UPRIGHT=0 while table snapping remains enabled.
+        support_z = 0.5 * CUBE_SIZE * float(np.sum(np.abs(base_rot[2, :])))
+        base_pos[2] = TABLE_Z_BASE + support_z
     world_pos = (ROBOT_BASE_POS + base_pos).astype(np.float32)
-    world_rot = base_T_cube[:3, :3].astype(np.float32)
+    world_rot = base_rot.astype(np.float32)
     age = time.time() - os.path.getmtime(npy_path)
     print(f"[fp] camera_T_cube <- {npy_path} ({age:.0f}s old)")
     print(f"[fp] cube @ base [{base_pos[0]:+.3f} {base_pos[1]:+.3f} "
           f"{base_pos[2]:+.3f}] m  ->  world [{world_pos[0]:+.3f} "
           f"{world_pos[1]:+.3f} {world_pos[2]:+.3f}]")
+    if FP_SNAP_TO_TABLE and abs(raw_z - base_pos[2]) > 0.001:
+        print(f"[fp] table constraint: center z {raw_z:+.3f} -> "
+              f"{base_pos[2]:+.3f} m (set ONE_FP_SNAP_Z=0 to disable)")
+    if FP_SNAP_UPRIGHT:
+        print("[fp] tabletop constraint: roll/pitch -> 0 "
+              "(set ONE_FP_UPRIGHT=0 to disable)")
     if age > 120:
         print("[fp] WARNING: pose file is >2 min old -- re-run "
               "foundationpose_then_play.py --no_play if the cube moved.")
@@ -480,9 +673,10 @@ def resolve_cube_pose():
     * neither      -> the hardcoded CUBE_POS / CUBE_ROT (pure sim).
 
     Detections are BASE-frame; the robot base frame shares the sim-world axes with
-    its origin at ROBOT_BASE_POS, so ``world = ROBOT_BASE_POS + p_base`` (base
-    table top z=0 -> world z=TABLE_TOP_Z). Raises rather than silently grasping the
-    stale hardcoded pose if the requested source yields nothing."""
+    its origin at ROBOT_BASE_POS, so ``world = ROBOT_BASE_POS + p_base``. Because
+    the base sits on an 8 mm plate, table top is z=-0.008 in base coordinates and
+    maps to the corrected tabletop height in world. Raises rather than silently
+    grasping the stale hardcoded pose if the requested source yields nothing."""
     if os.environ.get("ONE_FP"):
         if not os.path.exists(FP_POSE_NPY):
             raise RuntimeError(
@@ -519,42 +713,20 @@ def main():
     base = ovw.World(cam_pos=(1.6, 0.4, 1.6), cam_lookat_pos=(0.45, -0.1, 0.95))
     builtins.base = base
 
-    # ---- scene: ground + table (top + 4 legs) + the cube ----
-    ox, oy = float(TABLE_ORIGIN[0]), float(TABLE_ORIGIN[1])
-    leg_h = TABLE_TOP_Z - TABLE_TOP_THICK
-    statics = [ossop.plane(pos=(0, 0, 0.0)),
-               ossop.box(pos=(ox, oy, TABLE_TOP_Z - TABLE_TOP_THICK / 2),
-                         xyz_lengths=(TABLE_X, TABLE_Y, TABLE_TOP_THICK),
-                         rgb=TABLE_RGB, collision_type=ouc.CollisionType.AABB)]
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            statics.append(ossop.box(
-                pos=(ox + sx * (TABLE_X / 2 - TABLE_LEG / 2),
-                     oy + sy * (TABLE_Y / 2 - TABLE_LEG / 2), leg_h / 2),
-                xyz_lengths=(TABLE_LEG, TABLE_LEG, leg_h), rgb=TABLE_RGB,
-                collision_type=ouc.CollisionType.AABB))
+    # Scene geometry lives in scene.py. Anything added to its static-object list
+    # is rendered and included in collision planning.
     cube_pos, cube_rot = resolve_cube_pose()     # hardcoded, or D435-detected
-    cube = ossop.box(pos=cube_pos, xyz_lengths=(CUBE_SIZE,) * 3, rotmat=cube_rot,
-                     rgb=CUBE_RGB, collision_type=ouc.CollisionType.MESH,
-                     is_floating=True)
-
-    # ---- robot: xArm7 with the XHand on the flange ----
-    robot = XArm7(pos=ROBOT_BASE_POS)
-    robot.left_hand = XHandRight()
-    mount_tf = oum.tf_from_pos_rotmat(
-        pos=np.array([0.0, 0.0, FLANGE_Z], dtype=np.float32),
-        rotmat=oum.rotmat_from_axangle(ouc.StandardAxis.Z, MOUNT_RPY))
-    robot.mount(robot.left_hand, robot.runtime_lnks[-1], mount_tf, update=True)
+    robot, statics, cube = build_scene(cube_pos, cube_rot)
     hand = robot.left_hand
 
     # ---- real robot (opt-in): its CURRENT joints become the planning start ----
     arm_x, hand_x = connect_real_robot()
 
-    # Drive the arm to the planning start before the collider/ctx are built, so
-    # the ACM and the `home` used everywhere below reflect this pose. The start is
+    # Set the simulated arm to the planning start before collision contexts are
+    # built, so the ACM and the `home` used below reflect this pose. The start is
     # the real arm's measured joints when connected, else the canonical
     # collision-free HOME. (HOME_DEG is known clear of the table; an arbitrary
-    # measured pose may not be -- guarded with a warning once ctx exists.)
+    # measured pose may not be -- guarded once the contexts exist.)
     qs_home = robot.qs.astype(np.float64).copy()
     if arm_x is not None:
         q_start = arm_x.get_jnt_values().astype(np.float64)
@@ -568,29 +740,42 @@ def main():
     for e in [robot] + statics + [cube]:
         e.attach_to(base.scene)
 
-    # ---- collider + planner: arm + open hand vs table (approach avoidance) ----
-    mjc = ocm.MJCollider()
-    for e in [robot] + statics:
-        mjc.append(e)
-    mjc.actors = [robot]
-    mjc.compile(margin=0.0, auto_acm=True)
-    ctx = chain_planning_context(robot, mjc, CHAIN)
-    planner = ompr.RRTConnectPlanner(pln_ctx=ctx, extend_step_size=np.pi / 36,
+    # Two collision views share the exact rendered scene. Free-space transit also
+    # treats the cube as an obstacle; grasp motion omits it to allow pad contact.
+    grasp_mjc = build_collider(robot, statics)
+    transit_mjc = build_collider(robot, statics, target=cube)
+    j1_safe = np.radians([ARM_J1_SAFE_MIN_DEG, ARM_J1_SAFE_MAX_DEG])
+    grasp_ctx = chain_planning_context(
+        robot, grasp_mjc, CHAIN,
+        joint_limit_overrides={'joint1': tuple(j1_safe)})
+    transit_ctx = chain_planning_context(
+        robot, transit_mjc, CHAIN,
+        joint_limit_overrides={'joint1': tuple(j1_safe)})
+    print(f"[plan] joint1 forward-only range: [{ARM_J1_SAFE_MIN_DEG:+.1f}, "
+          f"{ARM_J1_SAFE_MAX_DEG:+.1f}] deg")
+    planner = ompr.RRTConnectPlanner(pln_ctx=transit_ctx,
+                                     extend_step_size=np.pi / 36,
                                      goal_bias=0.3)
-    if arm_x is not None and not ctx.is_state_valid(robot.qs.astype(np.float64)):
-        print("[real] WARNING: the arm's current pose collides in sim; RRT from "
-              "it may fail. Jog the real arm clear of the table and rerun.")
+    if (arm_x is not None
+            and not transit_ctx.is_state_valid(robot.qs.astype(np.float64))):
+        raise RuntimeError(
+            "[real] current arm pose collides with the scene/cube or is outside "
+            "the forward-only "
+            f"joint1 range [{ARM_J1_SAFE_MIN_DEG}, {ARM_J1_SAFE_MAX_DEG}] deg. "
+            "Jog it into the safe front region and rerun.")
 
     # ---- plan grasps (antipodal) + reachable arm motions ----
     # Re-plan (fresh random sampling) up to PLAN_ATTEMPTS, keeping the lowest-cost
     # result; stop early once within COST_OK. Guards against an unlucky sample where
     # no good grasp lands in the reachable band.
     home = robot.qs.astype(np.float64).copy()
-    candidates, stats, best_cost = plan_grasps(robot, ctx, hand, cube, home)
+    candidates, stats, best_cost = plan_grasps(
+        robot, grasp_ctx, transit_ctx, hand, cube, home)
     for attempt in range(2, PLAN_ATTEMPTS + 1):
         if candidates and best_cost <= COST_OK:
             break                                    # already good enough
-        more, stats2, more_cost = plan_grasps(robot, ctx, hand, cube, home)
+        more, stats2, more_cost = plan_grasps(
+            robot, grasp_ctx, transit_ctx, hand, cube, home)
         if more and more_cost < best_cost:
             candidates, stats, best_cost = more, stats2, more_cost   # keep best cost
         print(f"  re-plan {attempt}/{PLAN_ATTEMPTS}: best cost {best_cost * 1000:.1f} mm")
@@ -614,10 +799,11 @@ def main():
     # N / B : next / prev candidate (freeze at its grasp pose, best-first)
     # G / F : play / step the SELECTED candidate's pick;  R: reset it
     # C     : toggle the hand's collision spheres
-    # ENTER : run the SELECTED candidate's pick on the real robot (ONE_REAL=1)
+    # ENTER : first preview, then confirm the real pick (ONE_REAL=1)
     import pyglet.window.key as key
     st = {"sel": 0, "i": 0, "held": False, "playing": False,
-          "spheres": False, "traj": None, "gidx": 0}
+          "spheres": False, "traj": None, "gidx": 0,
+          "real_preview": None}
     hand.open_hand()
     open_hand_qs = np.asarray(hand.qs, dtype=float).copy()   # real-hand "open" target
     hand_lo = np.asarray(hand._compiled.jlmt_low_by_idx, dtype=float)   # finger limits
@@ -632,6 +818,7 @@ def main():
 
     def show(sel):
         """Freeze at candidate ``sel``'s grasp pose (hand closed on the cube)."""
+        st["real_preview"] = None
         st["sel"] = sel % len(candidates)
         seat, jw, pre_q, descend, retreat, gqs = candidates[st["sel"]]
         if st["held"]:
@@ -655,6 +842,7 @@ def main():
         return st["traj"]
 
     def reset():
+        st["real_preview"] = None
         if st["held"]:
             hand.unmount(cube); st["held"] = False
         hand.open_hand()
@@ -681,26 +869,110 @@ def main():
         base.scene.dirty = True
 
     def execute_real():
-        """Stream the SELECTED candidate's planned pick to the real robot: open
-        the hand, sync the arm to the path start, approach+descend, close the
-        grasp at the grasp waypoint, then lift. No-op (with a note) when the
-        hardware isn't connected."""
+        """First ENTER previews a freshly planned real path; second executes it."""
         if arm_x is None:
             print("[real] not connected -- set ONE_REAL=1 (and check the IP / "
                   "port) to run on hardware")
             return
+        if (st["real_preview"] is not None
+                and st["i"] < len(st["traj"])):
+            print('[real] simulation preview is not finished; let it play to '
+                  'the end, then press ENTER again')
+            return
         sel = st["sel"]
-        traj = ensure_traj()
-        gidx = st["gidx"]
-        gqs = candidates[sel][5]
         chain = robot.chain(CHAIN)
-        arm_path = [chain.extract_active_qs(np.asarray(q, np.float64)) for q in traj]
-        print(f"[real] candidate {sel + 1}/{len(candidates)}: streaming "
-              f"{len(arm_path)} waypoints (grasp@{gidx}) ...")
         try:
+            # The viewer may currently show a closed candidate. Free-space
+            # planning and real execution start open-handed, so synchronize both
+            # collision models before validating the freshly measured arm pose.
+            hand.fk(qs=open_hand_qs)
+            for planning_ctx in (grasp_ctx, transit_ctx):
+                planning_ctx.collider.set_mecba_qpos(hand, hand.qs)
+                planning_ctx.clear_cache()
+
+            current_arm = np.asarray(arm_x.get_jnt_values(), dtype=np.float64)
+            current_qs = home.copy()
+            current_qs[chain.active_jnt_ids] = current_arm
+            if not transit_ctx.is_state_valid(current_qs):
+                print('[real] ERROR: current pose with the open hand collides with '
+                      'the wall/table/cube or is outside the safe joint range; '
+                      'not moving. Jog to a safe pose and retry.')
+                return
+
+            preview = st["real_preview"]
+            if preview is None:
+                _seat, _jw, pre_q, descend, retreat, gqs = candidates[sel]
+                print(f"[real] candidate {sel + 1}/{len(candidates)}: planning "
+                      "simulation preview from current joints ...")
+                pre_q = np.asarray(pre_q, dtype=np.float64)
+                if transit_ctx.states_equal(current_qs, pre_q):
+                    approach = [pre_q]
+                    print('[real] current pose already matches the pre-grasp')
+                else:
+                    approach = plan_segment(planner, current_qs, pre_q)
+                    print(f'[real] collision-free current -> pre-grasp: '
+                          f'{len(approach)} waypoints')
+
+                # Build the path from the current measured state, never via the
+                # old startup/home waypoint.
+                real_traj = approach + list(descend[1:])
+                gidx = len(real_traj) - 1
+                real_traj += list(retreat[1:])
+                arm_path = [
+                    chain.extract_active_qs(np.asarray(q, np.float64))
+                    for q in real_traj]
+                st["real_preview"] = {
+                    "sel": sel,
+                    "start_qs": current_qs.copy(),
+                    "arm_path": arm_path,
+                    "gidx": gidx,
+                    "gqs": np.asarray(gqs, dtype=np.float64).copy(),
+                }
+
+                # Play exactly this freshly planned real path in simulation.
+                if st["held"]:
+                    hand.unmount(cube)
+                    st["held"] = False
+                cube.set_pos_rotmat(pos=cube_pos, rotmat=cube_rot)
+                robot.fk(qs=current_qs)
+                hand.fk(qs=open_hand_qs)
+                st["traj"] = real_traj
+                st["gidx"] = gidx
+                st["i"] = 0
+                st["playing"] = True
+                base.scene.dirty = True
+                print(f'[real] simulation preview: {len(arm_path)} waypoints '
+                      f'(grasp@{gidx}); wait for playback, then press ENTER again '
+                      'to execute')
+                return
+
+            if preview["sel"] != sel:
+                st["real_preview"] = None
+                print('[real] candidate changed; preview cleared. Press ENTER to '
+                      'plan the new candidate')
+                return
+
+            start_qs = preview["start_qs"]
+            start_arm = chain.extract_active_qs(start_qs)
+            start_err_deg = float(np.max(np.abs(np.degrees(
+                current_arm - start_arm))))
+            if (start_err_deg > REAL_PREVIEW_START_TOL_DEG
+                    or not transit_ctx.is_motion_valid(current_qs, start_qs)):
+                st["real_preview"] = None
+                print(f'[real] current joints changed after preview '
+                      f'(max {start_err_deg:.2f} deg); execution cancelled. '
+                      'Press ENTER to replan and preview again')
+                return
+
+            arm_path = preview["arm_path"]
+            gidx = preview["gidx"]
+            gqs = preview["gqs"]
+            st["real_preview"] = None
+            print(f'[real] preview confirmed: executing {len(arm_path)} waypoints '
+                  f'(grasp@{gidx}) ...')
+
             if hand_x is not None:
                 hand_x.move_to(sim_to_real_hand(open_hand_qs), speed=HAND_SPEED)
-            arm_x.move_j(arm_path[0], speed=ARM_MAX_JNTVEL, wait=True)  # sync start
             arm_x.stream_jnt_path(arm_path[:gidx + 1], control_freq=ARM_CTRL_FREQ,
                                   max_jntvel=ARM_MAX_JNTVEL)             # descend
             if hand_x is not None:
@@ -730,17 +1002,84 @@ def main():
                 for f in required:
                     for i in HAND_CONTACT_IDS[f]:
                         if target12[i] >= open12[i]:           # closing = curl up
-                            target12[i] = min(target12[i] + HAND_CLOSE_MARGIN, hand_hi[i])
+                            target12[i] = hand_hi[i]
                         else:
-                            target12[i] = max(target12[i] - HAND_CLOSE_MARGIN, hand_lo[i])
+                            target12[i] = hand_lo[i]
                 # 1) swing the thumb into opposition + preshape the rest (blocks)
                 hand_x.move_to(preshape12, speed=HAND_SPEED)
+                if REAL_DIAG_GRASP:
+                    time.sleep(0.3)  # let the final position command settle
+                    # move_to() streams fire-and-forget packets, so its final
+                    # unread reply can leave RX framing between packets. Flush it
+                    # before the first parsed read and retry transient serial
+                    # timeouts/partial frames without changing the safe preshape.
+                    if getattr(hand_x, 'ser', None) is not None:
+                        hand_x.ser.reset_input_buffer()
+                    preshape_states = None
+                    for read_attempt in range(1, 6):
+                        states = hand_x.move(preshape12, read=True)
+                        if states is not None and len(states) >= 12:
+                            preshape_states = states
+                            break
+                        print(f'[diag] XHand state read {read_attempt}/5 failed; retrying')
+                        if getattr(hand_x, 'ser', None) is not None:
+                            hand_x.ser.reset_input_buffer()
+                        time.sleep(0.1)
+                    if not preshape_states or len(preshape_states) < 12:
+                        print('[diag] ERROR: failed to read 12 XHand joint states; '
+                              'stopping before close. Check serial replies/timeout.')
+                        return
+
+                    measured_arm = np.asarray(arm_x.get_jnt_values(), dtype=float)
+                    measured_hand = np.array(
+                        [float(s.position) for s in preshape_states[:12]], dtype=float)
+
+                    def fingertip_clearances(arm_active, hand_qs):
+                        full_qs = np.asarray(robot.qs, dtype=float).copy()
+                        full_qs[chain.active_jnt_ids] = arm_active
+                        robot.fk(qs=full_qs)
+                        hand.fk(qs=hand_qs)
+                        links = {'thumb': 'thumb_rota_link2',
+                                 'index': 'index_rota_link2'}
+                        return {
+                            name: float(hand._world_vs(link)[:, 2].min()
+                                        - PLANNING_TABLE_TOP_Z)
+                            for name, link in links.items()
+                        }
+
+                    planned_arm = np.asarray(arm_path[gidx], dtype=float)
+                    planned_clear = fingertip_clearances(planned_arm, preshape12)
+                    arm_only_clear = fingertip_clearances(measured_arm, preshape12)
+                    measured_clear = fingertip_clearances(measured_arm, measured_hand)
+                    arm_err = np.degrees(measured_arm - planned_arm)
+                    hand_err = np.degrees(measured_hand - preshape12)
+                    print('[diag] stopped at grasp pose BEFORE tactile close/lift')
+                    for finger in ('thumb', 'index'):
+                        print(f'[diag] {finger}-table clearance: planned '
+                              f'{planned_clear[finger] * 1000:+.1f} mm')
+                        print(f'[diag] {finger}-table clearance: measured arm + '
+                              f'planned hand {arm_only_clear[finger] * 1000:+.1f} mm')
+                        print(f'[diag] {finger}-table clearance: measured arm + '
+                              f'measured hand {measured_clear[finger] * 1000:+.1f} mm')
+                    thumb_sim_mm = measured_clear['thumb'] * 1000
+                    print(f'[diag] thumb clearance comparison: simulation-backprojected '
+                          f'{thumb_sim_mm:+.1f} mm vs measured '
+                          f'{REAL_DIAG_THUMB_CLEARANCE_MM:+.1f} mm; sim-real error '
+                          f'{thumb_sim_mm - REAL_DIAG_THUMB_CLEARANCE_MM:+.1f} mm')
+                    print(f'[diag] arm tracking error deg: '
+                          f'{np.round(arm_err, 3).tolist()}')
+                    print(f'[diag] hand tracking/zero error deg: '
+                          f'{np.round(hand_err, 3).tolist()}')
+                    print('[diag] viewer now shows the measured-joint back-projection; '
+                          'robot remains at the low pose -- jog/reset it manually')
+                    base.scene.dirty = True
+                    return
                 # 2) force-close the flexion joints from the seated preshape
                 contacted = tactile_close(hand_x, preshape12, target12, required)
                 miss = [f for f in required if not contacted[f]]
                 if miss:
                     print(f"[real] WARNING: no contact on {miss}; closed to the "
-                          f"planned pose anyway -- grasp may be loose")
+                          f"joint-limit target -- grasp may be loose")
                 else:
                     print(f"[real] grasp secured (contact on {list(required)})")
             arm_x.stream_jnt_path(arm_path[gidx:], control_freq=ARM_CTRL_FREQ,
@@ -775,7 +1114,9 @@ def main():
     show(0)
     print(f"{len(candidates)} candidates.  N/B: next/prev candidate   "
           f"G: play   F: step   R: reset   C: collision spheres" +
-          ("   ENTER: run on robot" if arm_x is not None else ""))
+          (("   ENTER: preview / diagnostic pose" if REAL_DIAG_GRASP else
+            "   ENTER: preview / confirm execution")
+           if arm_x is not None else ""))
     base.schedule_interval(tick, interval=0.03)
     base.run()
 

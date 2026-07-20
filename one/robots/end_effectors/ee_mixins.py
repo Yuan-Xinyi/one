@@ -1,6 +1,8 @@
 from collections import namedtuple
 
 import numpy as np
+from scipy.spatial import cKDTree
+
 import one.utils.math as oum
 import one.robots.base.tcp as orbt
 
@@ -289,8 +291,12 @@ class DexHandMixin:
         t_pts, o_pts = [], []
         for pad in spec.opp_pads:
             b = self._world_vs(pad)
-            d = np.linalg.norm(thumb[:, None, :] - b[None, :, :], axis=2)
-            i, j = np.unravel_index(np.argmin(d), d.shape)
+            # Exact nearest vertex pair without materialising the full
+            # (N_thumb,N_pad,3) tensor. For XHand this replaces ~16 million
+            # point distances per pad and closure with a spatial-tree query.
+            distances, nearest = cKDTree(b).query(thumb, k=1)
+            i = int(np.argmin(distances))
+            j = int(nearest[i])
             t_pts.append(thumb[i])
             o_pts.append(b[j])
         return np.mean(t_pts, axis=0), np.mean(o_pts, axis=0)

@@ -50,6 +50,7 @@ class XHandRight(oremx.DexHandMixin, orbmb.MechBase):
     """
 
     _TUCK = 1.92  # flexion curl for fingers not participating in the grasp
+    _PINCH_TUCK = 0.8  # relaxed curl; collision-tested with each pinch candidate
 
     # Single per-primitive grasp definition (concrete URDF joint / link names).
     # Drives BOTH the shape primitives and the parallel-jaw planning view.
@@ -141,15 +142,20 @@ class XHandRight(oremx.DexHandMixin, orbmb.MechBase):
                      self.tcp('pinch_center').loc_tf)
 
     def grasp_spec(self, primitive):
-        """Resolve _GRASP_TABLE[primitive] to a DexGraspSpec. Tuck = every
-        finger this grasp doesn't already drive."""
+        """Resolve _GRASP_TABLE[primitive] to a DexGraspSpec.
+
+        A precision pinch holds the non-participating middle/ring/pinky fingers
+        in a relaxed partial curl; the grasp planner collision-checks this pose
+        against the target. Other primitives keep the tighter tuck.
+        """
         t = self._GRASP_TABLE[primitive]
         preshape = dict(t['preshape'])
         closing = dict(t['closing'])
         tuck = {}
+        tuck_amount = self._PINCH_TUCK if primitive == 'pinch' else self._TUCK
         for joints in self._FINGER_TUCK.values():
             if not any(j in closing for j in joints):
-                tuck.update({j: self._TUCK for j in joints})
+                tuck.update({j: tuck_amount for j in joints})
         pads = t['pads']
         thumb_pad = None if pads is None else pads[0]
         opp_pads = None if pads is None else list(pads[1])

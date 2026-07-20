@@ -119,9 +119,13 @@ def make_collider(robot, table, cyl, ground):
     return mjc
 
 
-def chain_planning_context(robot, mjc, chain_name):
+def chain_planning_context(robot, mjc, chain_name, joint_limit_overrides=None):
     """PlanningContext over the full qs with every joint NOT on ``chain_name``
-    frozen at home -> the planner only explores that chain."""
+    frozen at home -> the planner only explores that chain.
+
+    ``joint_limit_overrides`` optionally narrows named joints to ``(low, high)``
+    radians. Bounds are intersected with the URDF limits, never expanded.
+    """
     c = robot._compiled
     chain = robot.chain(chain_name)
     lo = c.jlmt_low_by_idx.astype(np.float64).copy()
@@ -131,6 +135,15 @@ def chain_planning_context(robot, mjc, chain_name):
     free[chain.active_jnt_ids] = True
     lo[~free] = home[~free]
     hi[~free] = home[~free]
+    for name, limits in (joint_limit_overrides or {}).items():
+        if name not in robot.structure.jnt_map:
+            raise ValueError(f'unknown joint limit override: {name}')
+        jidx = c.jidx_map[robot.structure.jnt_map[name]]
+        low, high = map(float, limits)
+        lo[jidx] = max(lo[jidx], low)
+        hi[jidx] = min(hi[jidx], high)
+        if lo[jidx] > hi[jidx]:
+            raise ValueError(f'empty joint limit override for {name}')
     return omppc.PlanningContext(collider=mjc, joint_limits=(lo, hi))
 
 

@@ -31,6 +31,15 @@
 \newcommand{\phLenAll}{\ph{0.XXX}}
 \newcommand{\phSeedTime}{\ph{XXX}}      % per-task seed generation time [ms]
 \newcommand{\phHeurGap}{\ph{XX}}        % pp lead over heuristic seeds
+% ---- Part-A problem analysis (100-task study) ----
+\newcommand{\phVarSeed}{76.4}        % variance share: initial config [%]
+\newcommand{\phVarGain}{7.5}        % variance share: controller gains [%]
+\newcommand{\phVarInter}{16.1}        % variance share: interaction [%]
+\newcommand{\phBranchVar}{41.6}      % between-branch variance share [%]
+\newcommand{\phNumBranches}{5.7}   % mean branches per task
+\newcommand{\phFlexGap}{257}        % per-task-oracle-gain - fixed-gain [mm]
+\newcommand{\phSegGap}{17.5}         % within-trajectory switching gain [mm]
+\newcommand{\phDistinctGains}{9}  % # distinct per-task optimal gain sets
 
 \begin{document}
 
@@ -302,6 +311,146 @@ combining directional manipulability $w_{\mathbf{d}}$, joint centering,
 and a cone term gated by $g(\theta)$ near the $\theta_{\max}$ boundary.
 All subsequent controllers share this decomposition, differing only in
 how the secondary command $\boldsymbol{\xi}$ is generated.
+
+\subsection{Self-Motion Manifold, Branches, and Persistence}
+\label{sec:smm}
+The structure that couples initialization to the achievable length is
+the self-motion manifold. Fixing the full initial pose---the position
+$\mathbf{p}_{0}$ and the tool axis at its nominal direction
+$\mathbf{n}$---constrains six degrees of freedom, and the feasible
+initial configurations of a 7-DoF arm form a one-dimensional manifold
+parameterizable by arc length. The joint limits cut this curve into
+several disconnected segments, which we call \textit{branches};
+configurations on different branches realize the same pose yet differ
+sharply in joint space. Relaxing the tool axis within the
+$\theta_{\max}$-cone thickens this picture into a union of
+one-dimensional manifolds over the cone directions; our analysis
+retreats to the one-dimensional backbone, where the branch structure is
+exact and visualizable, and treats the cone as a family of such
+backbones that the candidate layer samples.
+
+Two consequences follow. First, \textit{branch choice is irrevocable}:
+the executed trajectory is continuous in joint space, so it remains
+inside the continuous deformation of its starting branch as the path
+reference advances; crossing to another branch would require passing
+through a joint limit. Second, each branch $b$ possesses a
+\textit{persistence}: the maximal path parameter up to which the swept
+constraint set retains a feasible continuation from $b$. The achievable
+length from a start in $b$ is bounded by this persistence, and the
+roles of the two stages separate cleanly: initialization selects the
+branch (and thereby the persistence bound), and the controller realizes
+as much of the selected branch's persistence as its per-step decisions
+allow. Section~\ref{sec:analysis} quantifies how much of the outcome
+each stage controls.
+
+\section{Problem Analysis}
+\label{sec:analysis}
+Before presenting the method, we analyze the problem on 100 tasks
+sampled from the evaluation distribution with difficulty
+stratification (26 Easy, 48 Medium, 26 Difficult;
+cf.~Sec.~\ref{sec:exp}). The analysis answers three questions: how the
+achievable length divides between the two stages, what structure
+governs the initialization share, and what limits the controller
+share.
+
+\subsection{Attribution: Initial Configuration versus Controller}
+\label{sec:analysis-attr}
+For each task we construct a two-factor grid: the branch
+representatives of the task's feasible set (joint-space single-linkage
+clusters of the enumerated candidates; up to eight medoids) crossed
+with a $3{\times}3{\times}3$ grid over the classical secondary-objective
+weights $(k_{\mu},k_{\mathrm{jl}},k_{\theta})$ of \eqref{eq:secondary}.
+Every cell is rolled out to termination, and the per-task variance of
+the achieved length is decomposed into main effects and interaction.
+Averaged over the 100 tasks, the initial configuration accounts for
+\phVarSeed\,\% of the variance, the controller gains for
+\phVarGain\,\%, and the interaction for \phVarInter\,\%
+(Table~\ref{tab:attr}). The initialization share dominates, which
+justifies treating branch selection as a first-class problem; the
+controller share is smaller but far from negligible, and
+Sec.~\ref{sec:analysis-ctrl} shows that it cannot be captured by any
+fixed parameterization.
+
+\begin{table}[!t]
+\caption{Variance Decomposition of the Achieved Path Length
+(100 Tasks, Branch Representatives $\times$ Gain Grid)}
+\label{tab:attr}
+\centering
+\footnotesize
+\begin{tabular}{lccc}
+\toprule
+ & initial config. & controller gains & interaction\\
+\midrule
+variance share [\%] & \textbf{\phVarSeed} & \phVarGain & \phVarInter\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\linewidth]{fig_attribution.pdf}
+\caption{Left: variance decomposition of the achieved length over the
+branch-representative $\times$ gain grid (100 tasks). Right: histogram
+of the per-task optimal gain setting over the 27-point grid---no
+consensus setting exists.}
+\label{fig:attr}
+\end{figure}
+
+\subsection{The Initialization Share: Branch Structure on the 1-D SMM}
+\label{sec:analysis-smm}
+To make the initialization share rigorous we retreat to the
+one-dimensional SMM of Sec.~\ref{sec:smm}. For each task, the manifold
+is traced by integrating the null vector of the full $6{\times}7$
+Jacobian with periodic Newton re-projection onto the exact pose;
+joint limits segment the trace into branches
+(\phNumBranches{} per task on average), and sampled points along every
+branch are rolled out under the default classical controller.
+Fig.~\ref{fig:smm-curve} plots the achieved length against the SMM arc
+length for representative tasks: outcomes shift abruptly at the
+joint-limit cuts and vary more gradually within a segment. Aggregated
+over the analyzed tasks, branch identity is the largest single factor,
+accounting for \phBranchVar\,\% of the outcome variance along the
+densely-sampled manifold, with placement within a branch contributing
+the remainder; consistently, when branches are represented by single
+medoids as in Sec.~\ref{sec:analysis-attr}, the initial-configuration
+factor explains \phVarSeed\,\% of the grid variance. Initialization
+therefore requires resolving both decisions---which branch, and where
+on it---and the proposed layer addresses both by sampling several
+configurations per region and delegating the final choice to the
+selector. The structure also explains why instantaneous geometric
+criteria fail as selectors (Sec.~\ref{sec:abl-sup}): branch membership
+and persistence are global properties of the swept constraint set,
+invisible to local quantities evaluated at a point.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\linewidth]{fig_smm_curves.pdf}
+\caption{Achieved path length along the 1-D self-motion manifold for
+three representative tasks. Colors denote the joint-limit-cut branches;
+outcomes shift abruptly across branches and vary more gradually within
+them.}
+\label{fig:smm-curve}
+\end{figure}
+
+\subsection{The Controller Share: No Fixed Gain Set Suffices}
+\label{sec:analysis-ctrl}
+Fixing the best branch representative of each task and sweeping the
+gain grid isolates the controller share. Three observations emerge.
+First, the per-task optimal gain sets scatter widely:
+\phDistinctGains{} distinct settings of the 27-point grid are optimal
+for at least one task, with no consensus region. Second, the best
+\textit{fixed} gain set trails the per-task \textit{oracle-tuned}
+gains by \phFlexGap\,mm on average---the price of staticness across
+tasks. Third, allowing a single mid-trajectory gain switch on a task
+subset recovers a further \phSegGap\,mm over the best static setting,
+showing that the optimal secondary objective varies not only across
+tasks but \textit{along} a single motion, as the configuration
+approaches different boundaries at different phases. A fixed-gain
+classical controller is therefore structurally unable to realize the
+full persistence of even a well-chosen branch; what is required is a
+state-dependent secondary command---precisely the role assigned to the
+learned interior policy in Sec.~\ref{sec:rl}, with the classical
+controller retained where its conservatism is an asset.
 
 \section{Extreme Motion Generation}
 \label{sec:method}

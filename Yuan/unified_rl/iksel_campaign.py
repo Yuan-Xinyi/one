@@ -38,7 +38,7 @@ from Yuan.unified_rl.iksel_clean_pilot import (
 
 D = Path('Yuan/unified_rl/runs/ikpool_full_v1')
 F = Path('Yuan/unified_rl/runs/ikpool_final')
-G = Path('Yuan/unified_rl/runs/iksel_final')
+G = Path(os.environ.get('IKSEL_DIR', 'Yuan/unified_rl/runs/iksel_final'))
 CLEAN = Path('Yuan/unified_rl/runs/iksel_clean_v1')
 C0_DIR = 'Yuan/unified_rl/runs/r2_grouped_best'
 TAU_ENTER, TAU_EXIT = 0.985, 0.96
@@ -76,7 +76,8 @@ def stage_gen(args, device):
     out = _cand(source)
     if out.exists():
         print(f'[gen {source}] exists, skip'); return
-    if source == 'validation' and (CLEAN / 'clean_validation_candidates_201600.npz').exists():
+    if (source == 'validation' and N_DIRS == 32
+            and (CLEAN / 'clean_validation_candidates_201600.npz').exists()):
         import shutil
         G.mkdir(parents=True, exist_ok=True)
         shutil.copy(CLEAN / 'clean_validation_candidates_201600.npz', out)

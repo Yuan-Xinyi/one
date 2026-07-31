@@ -1,0 +1,781 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  T-RO submission draft (IEEEtran, journal mode)
+%
+%  All experiment-dependent numbers are macros in the PLACEHOLDER block
+%  below and render as red \ph{...} until the hybrid-controller runs
+%  are finalized. Figures are placeholder boxes with final captions.
+%
+%  Compile:  pdflatex main_tro && bibtex main_tro && pdflatex x2
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[journal]{IEEEtran}
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+
+\graphicspath{{figures/}}
+
+% ---------------- placeholder machinery ----------------
+\newcommand{\ph}[1]{\textcolor{red}{#1}}          % pending number
+\newcommand{\phfig}[2]{\fbox{\parbox[c][#1][c]{0.96\linewidth}{\centering
+  \textcolor{red}{[Placeholder]}\\ \footnotesize #2}}}
+% ---- numbers to be filled from the hybrid-controller runs ----
+\newcommand{\nTrain}{18{,}432}
+\newcommand{\nDev}{2{,}048}
+\newcommand{\nSealed}{10{,}000}
+\newcommand{\phOracleGap}{\ph{$+$XX}}        % enumerated vs generative oracle [mm]
+\newcommand{\phHeadroomG}{\ph{XX}}           % generative-pool headroom [mm]
+\newcommand{\phHeadroomE}{\ph{XXX}}          % enumerated-pool headroom [mm]
+\newcommand{\phSpreadG}{\ph{XXX}}            % generative within-task spread [mm]
+\newcommand{\phSpreadE}{\ph{XXX}}            % enumerated within-task spread [mm]
+\newcommand{\phTransferCap}{\ph{$-$XX}}      % transferred/geometric capture [%]
+\newcommand{\phCapSingle}{\ph{XX.X}}         % selector capture, single [%]
+\newcommand{\phCapEns}{\ph{XX.X}}            % selector capture, ensemble [%]
+\newcommand{\phDeltaVal}{\ph{$+$XX.X}}       % main delta, validation [mm]
+\newcommand{\phDeltaExt}{\ph{$+$XX.X}}       % main delta, external [mm]
+\newcommand{\phDeltaSealed}{\ph{$+$XX.X}}    % main delta, sealed [mm]
+\newcommand{\phCIVal}{\ph{$[\cdot,\cdot]$}}
+\newcommand{\phCIExt}{\ph{$[\cdot,\cdot]$}}
+\newcommand{\phCISealed}{\ph{$[\cdot,\cdot]$}}
+\newcommand{\phTrimVal}{\ph{$+$XX.X}}
+\newcommand{\phTrimExt}{\ph{$+$XX.X}}
+\newcommand{\phTrimSealed}{\ph{$+$XX.X}}
+\newcommand{\phSeedStd}{\ph{X.X}}            % across-training-seed std [mm]
+
+\begin{document}
+
+\title{Extreme Motion Generation via Enumerated Seed Selection\\
+and Hybrid Null-Space Control}
+
+\author{Xinyi~Yuan,
+        Weiwei~Wan,~\IEEEmembership{Member,~IEEE,}
+        and~Kensuke~Harada,~\IEEEmembership{Fellow,~IEEE}%
+\thanks{The authors are with the Graduate School of Engineering Science,
+The University of Osaka, Japan.}}
+
+\markboth{IEEE Transactions on Robotics}%
+{Yuan \MakeLowercase{\textit{et al.}}: Extreme Motion Generation via
+Enumerated Seed Selection and Hybrid Null-Space Control}
+
+\maketitle
+
+\begin{abstract}
+Industrial operations such as surface coating and welding require a
+fixed-base manipulator to follow a prescribed path for as long as possible
+before a safety constraint---a joint limit or a tool-orientation
+tolerance---forces termination. We refer to the maximization of this
+constrained path length as extreme motion generation and address it with a
+two-stage system. Before execution, initial joint configurations are
+enumerated on the cone-constrained inverse-kinematics solution set,
+diversified across the disconnected branches of the self-motion manifold,
+and a learned selector commits to a single configuration; during execution,
+a hybrid controller resolves the redundancy, delegating the well-sampled
+interior of the configuration space to a reinforcement-learning policy and
+the near-boundary region to a classical null-space controller through a
+hysteresis rule. The selector is supervised by the complete closed-loop
+return of every feasible candidate, and we show that this supervision is
+necessary: on the enumerated candidate set, selection rules built from
+instantaneous geometric criteria perform worse than a trivial
+first-feasible rule, whereas the return-supervised selector recovers
+approximately two thirds of the attainable headroom. We further locate the
+limit of any execution-free selection scheme, showing that an exact
+kinematic continuation of each candidate adds no selective information
+beyond the learned features. On \nSealed{} straight-line path-following
+tasks with a 7-DoF manipulator, the proposed system lengthens the average
+executed path by \phDeltaSealed~mm over a learned generative initialization
+baseline under an identical execution budget of one selector inference and
+one rollout per task, and the improvement is consistent across independent
+training seeds and a sealed final evaluation.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Extreme motion generation, redundant manipulators, seed selection,
+reinforcement learning, null-space control.
+\end{IEEEkeywords}
+
+\IEEEpeerreviewmaketitle
+
+%======================================================================
+\section{Introduction}
+\label{sec:intro}
+\IEEEPARstart{C}{onsider} a fixed-base manipulator coating or welding a
+large workpiece along a straight line. Intuition suggests that the
+attainable stroke is bounded by the reachable workspace; in practice,
+however, the motion terminates much earlier, when a joint reaches its
+limit or the tool axis leaves its orientation tolerance. The practically
+achievable path length is therefore governed by how long these safety
+boundaries can be deferred during execution. We call the problem of
+maximizing the constrained Cartesian path length along a prescribed
+trajectory \emph{extreme motion generation}. Its industrial value is
+direct: the length of a single continuous motion determines the area a
+manipulator can process in one setup, and exploiting the kinematic
+capability more fully substitutes for enlarging the robot or relocating
+its base.
+
+Two decisions determine the outcome of such a motion, and they act on
+different time scales. The first is made before the motion begins: for a
+task that constrains fewer degrees of freedom than the arm possesses, the
+feasible initial configurations form a self-motion manifold that joint
+limits partition into disconnected branches, and configurations on
+different branches realize the same end-effector pose while supporting
+very different downstream path lengths. The second decision is made at
+every control step: the redundancy must be resolved so that the commanded
+joint motion defers the safety boundaries rather than drifting toward
+them. This paper presents a system that addresses both decisions and, in
+doing so, characterizes how much each one can contribute.
+
+The initialization stage raises a question that, to our knowledge, has
+not been answered quantitatively: \emph{how much of a long-horizon motion
+outcome can be predicted from information available before the motion
+begins?} The question is nontrivial for three reasons. First, the choice
+is decisive: on our task distribution the best and the worst feasible
+starting configuration of the same task differ in final path length by a
+median of \phSpreadE~mm, comparable to the average task length itself.
+Second, the consequence of the choice is revealed late: whether a branch
+survives is dominated by orientation-cone violations that occur deep into
+the trajectory and correlate only weakly with any instantaneous geometric
+quantity evaluated at the start. Third, the decision must be made without
+trial. A budget of one execution per task excludes probing, and because a
+complete episode spans only a few tens of control steps, any probe long
+enough to be informative would cost nearly as much as executing every
+candidate exhaustively. Initialization is therefore forced to compress
+the outcome of an entire closed-loop execution into a single static
+decision, and the compression loss can be measured.
+
+The execution stage poses a complementary trade-off between foresight and
+robustness. A classical null-space controller optimizes instantaneous
+secondary objectives; it is myopic but predictable, and remains reliable
+arbitrarily close to the joint-limit boundary. A learned policy possesses
+the long-horizon foresight that the objective demands, but its training
+data concentrate in the interior of the configuration space, and its
+behavior degrades exactly in the near-boundary region that extreme motion
+generation must traverse. We reconcile the two by partitioning the
+configuration space by proximity to the joint-limit boundary and
+assigning each region to the controller that is reliable there, with a
+hysteresis rule suppressing chattering at the interface.
+
+Concretely, the proposed system operates as follows. For each task,
+cone-constrained inverse kinematics is solved from randomized restarts,
+producing tens of distinct solutions that are deduplicated and reduced by
+farthest-point selection to a diverse candidate set spanning the
+self-motion branches. A permutation-equivariant selector network, trained
+on the complete closed-loop return of every feasible candidate under the
+frozen controller, scores the set once and commits to a single
+configuration. The hybrid controller then executes the motion to
+termination. The deployed budget is one selector inference, one seed, and
+one rollout per task; no candidate is probed and no model-based rollout
+is performed at execution time.
+
+The contributions are as follows. First, we show that the candidate set
+itself, rather than the selection rule, can bound such a system: direct
+enumeration of the cone-constrained IK solution set raises the attainable
+per-task ceiling by \phOracleGap~mm on average over a learned generative
+proposal distribution and roughly doubles the selectable headroom, with
+the ceiling saturating once the enumeration covers the distinct
+self-motion branches. Second, we establish that supervision by complete
+closed-loop returns is necessary for selection on such a set: every
+instantaneous geometric criterion we evaluate, and every selector trained
+on the narrower generative proposals, performs worse than taking the
+first feasible candidate, whereas the identical feature set supervised by
+complete returns recovers about two thirds of the headroom. Third, we
+measure where execution-free selection ends: enlarging the model,
+extending its training, and even granting the selector an exact kinematic
+continuation of every candidate all leave the recovered fraction
+unchanged, indicating that the residual headroom depends on the learned
+policy's closed-loop behavior and is invisible to any static computation.
+Fourth, we verify that, under the proposed training distribution and
+task-relative observation design, the execution stage requires no
+adaptation to the selection-induced initial-state distribution, and we
+provide a stratified analysis explaining why. All findings are validated
+on \nDev-task development sets and a preregistered, sealed \nSealed-task
+final evaluation.
+
+%======================================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Manipulability, Reachability, and Initialization}
+Classical redundancy resolution optimizes instantaneous dexterity
+measures such as the manipulability
+ellipsoid~\cite{yoshikawa1985manipulability}, and modern planners embed
+these measures into sampling strategies and cost
+functions~\cite{jin2017manipulability,shen2023adaptive,cai2025just}.
+Reachability analysis complements local dexterity with global feasibility
+envelopes~\cite{yang2009placement,makhal2018reuleaux}, which have been
+extended toward predictive and safety-oriented
+variants~\cite{feng2025predictive,jauhri2022robot,selim2022safe}. These
+criteria act on the instantaneous state; the present work quantifies
+their limitation on a long-horizon objective, showing that on a diverse
+candidate set they are not merely suboptimal but counterproductive as
+selection rules.
+
+\subsection{Learned Initialization and Generative IK}
+Learning-based methods approximate the multi-modal solution set of
+inverse kinematics with normalizing flows~\cite{ames2022ikflow} or
+diffusion models~\cite{zhang2025ikdiffuser}, and seed downstream planners
+or controllers with sampled
+configurations~\cite{huang2024diffusionseeder,yoon2023learning}. Such
+generators concentrate probability mass on regions that were favorable in
+their training data, which is precisely the property we find limiting:
+the proposals cluster within a narrow quality band, so the attainable
+ceiling of any system built on them is capped. We compare against a
+conditional-diffusion initialization baseline of this type and show that
+replacing generation with explicit enumeration of the constraint set
+raises the ceiling substantially while removing a trained component.
+
+\subsection{Combining Learned and Model-Based Control}
+Residual formulations superpose a learned correction on a classical
+controller~\cite{johannink2019residual,silver2018residual}, while
+switching formulations select among controllers according to safety
+criteria~\cite{mehmood2022black,alshiekh2018safe,kurtz2021control}. Our
+execution stage follows the switching paradigm, but the trigger is not
+imminent constraint violation alone: the configuration space is
+partitioned by proximity to the joint-limit boundary so that each
+controller operates where it is statistically reliable, with the
+objective of advancing the motion rather than merely remaining safe.
+
+\subsection{Sequential Policy Chaining}
+When a task decomposes into stages, the output distribution of one stage
+becomes the input distribution of the next, and bidirectional fine-tuning
+has been proposed to align adjacent policies~\cite{chen2023sequential}.
+We adopt the same credit structure across our two
+stages---initialization must be evaluated by the success of
+execution---but treat the necessity of each adaptation direction as an
+experimental question. In our system the backward direction (returns
+supervising selection) carries the entire measured benefit, while the
+forward direction (controller adaptation to the selection-induced
+distribution) is verified to be unnecessary, a result we attribute to the
+coverage induced by task-relative observations and randomized training
+tasks.
+
+%======================================================================
+\section{Problem Statement}
+\label{sec:problem}
+Let $\mathbf{q}\in\mathbb{R}^{n}$ denote the joint configuration of an
+$n$-DoF manipulator, $\mathbf{p}(\mathbf{q})\in\mathbb{R}^{3}$ the
+end-effector position, and $\mathbf{z}(\mathbf{q})\in\mathbb{R}^{3}$ the
+tool axis. A straight-line path-following task is specified by the
+condition vector
+\begin{equation}
+\mathbf{c}=[\mathbf{p}_{0},\mathbf{d},\mathbf{n}]\in\mathbb{R}^{9},
+\end{equation}
+where $\mathbf{p}_{0}$ is the start position and $\mathbf{d}$,
+$\mathbf{n}$ are unit vectors specifying the motion direction and the
+nominal tool axis. The end-effector must track a reference that advances
+along the line at speed $v$ while satisfying, at every step $t$ until
+termination,
+\begin{align}
+\|\mathbf{p}(\mathbf{q}_{t})-\mathbf{p}_{t}^{\mathrm{ref}}\|
+  &\leq \epsilon_{\mathrm{pos}},\label{eq:c-pos}\\
+\arccos\!\big(\mathbf{z}(\mathbf{q}_{t})^{\!\top}\mathbf{n}\big)
+  &\leq \theta_{\max},\label{eq:c-cone}\\
+\mathbf{q}_{\min}\preceq \mathbf{q}_{t} &\preceq
+  \mathbf{q}_{\max}.\label{eq:c-jl}
+\end{align}
+The episode terminates at the first violation, and the objective is the
+net path length $\mathcal{L}$ accumulated along $\mathbf{d}$ before
+termination.
+
+Because only the three-dimensional position is tracked exactly, the
+manipulator is kinematically redundant for $n>3$, and two couplings
+determine $\mathcal{L}$. The initial configuration $\mathbf{q}_{0}$ must
+be chosen from the cone-constrained IK solution set of
+$(\mathbf{p}_{0},\mathbf{n})$, a set whose joint-limit-induced branches
+are disconnected in configuration space; and the redundancy must be
+resolved at every subsequent step. We formalize the two decisions as a
+two-stage optimization
+\begin{equation}
+\max_{\phi,\theta}\;\;
+\mathbb{E}_{\mathbf{c}}\Big[
+\mathcal{L}\big(\mathbf{q}_{i},\,\pi_{\theta};\,\mathbf{c}\big)\Big],
+\qquad
+i\sim\pi^{\mathrm{sel}}_{\phi}\big(\cdot\mid\mathbf{c},
+Q(\mathbf{c})\big),
+\label{eq:objective}
+\end{equation}
+where $Q(\mathbf{c})=\{\mathbf{q}_{1},\dots,\mathbf{q}_{K}\}$ is a finite
+candidate set produced from the constraint manifold,
+$\pi^{\mathrm{sel}}_{\phi}$ is the selection policy, and $\pi_{\theta}$
+is the execution controller. Deployment is restricted to a single static
+pass: $\pi^{\mathrm{sel}}_{\phi}$ is evaluated once per task, commits to
+one $\mathbf{q}_{0}$, and $\pi_{\theta}$ executes one episode. No
+candidate probing or model-predictive rollout is permitted at execution
+time. This budget reflects the application setting and also isolates the
+scientific question of Sec.~\ref{sec:intro}: any information the
+selection uses must be computable before motion begins.
+
+%======================================================================
+\section{System Overview}
+\label{sec:overview}
+Fig.~\ref{fig:system} summarizes the system. Offline, a training pool of
+tasks is processed by the candidate layer
+(Sec.~\ref{sec:enumeration}), every feasible candidate is executed to
+termination under the frozen controller, and the resulting complete
+return tables supervise the selector (Sec.~\ref{sec:selector}). Online,
+the candidate layer and one selector inference reduce each task to a
+single initial configuration, from which the hybrid controller
+(Sec.~\ref{sec:controller}) executes the motion. The interfaces are
+deliberately narrow: the selector communicates with the controller only
+through the chosen $\mathbf{q}_{0}$, and the controller communicates with
+the selector only through the return labels gathered offline.
+
+\begin{figure}[!t]
+\centering
+\phfig{4.2cm}{System overview. Top: deployed path---task
+$\mathbf{c}$ $\rightarrow$ cone-IK enumeration $\rightarrow$ candidate
+set $Q(\mathbf{c})$ ($K{=}32$ + fallback) $\rightarrow$
+return-supervised set selector $\rightarrow$ single $\mathbf{q}_{0}$
+$\rightarrow$ hybrid controller $\rightarrow$ path length
+$\mathcal{L}$; badge: one selector inference, one seed, one rollout, no
+probes. Bottom: offline training---complete rollouts of all feasible
+candidates under the frozen hybrid controller produce return tables that
+supervise the selector (backward credit); the interior policy is trained
+by PPO on randomized tasks with mixed reset distributions.}
+\caption{Overview of the proposed two-stage system for extreme motion
+generation.}
+\label{fig:system}
+\end{figure}
+
+%======================================================================
+\section{Seed Candidate Enumeration}
+\label{sec:enumeration}
+The candidate layer approximates the cone-constrained IK solution set of
+each task by direct enumeration. Tool directions are sampled uniformly on
+the spherical cap of half-angle $\theta_{\max}$ about $\mathbf{n}$, and
+for each direction a damped least-squares IK problem is solved from mixed
+random restarts (uniform and joint-limit-biased), yielding $128$ attempts
+per task. Solutions are validated against joint limits with margin,
+position error, the orientation cone, and collision, then deduplicated at
+$0.08$~rad in joint space; the median task retains on the order of $50$
+distinct solutions distributed over the disconnected self-motion
+branches. Farthest-point selection in joint space reduces the set to
+$K{=}32$ candidates, and a deterministic classical fallback configuration
+is appended as a designated final slot, giving the selector a defined
+abstention target. Every retained slot passes strict physical
+validation before entering the action set.
+
+Two properties of this construction matter downstream. Diversity is the
+operative quantity: under farthest-point ordering the attainable ceiling
+saturates once the branches are covered
+(Sec.~\ref{sec:res-pool}), so additional candidates beyond that point add
+redundancy rather than headroom. And enumeration is exhaustive rather
+than learned: on the small fraction of tasks where the $K{=}32$ set lacks
+a competitive candidate, densifying the enumeration closes most of the
+remaining gap, indicating that no generative prior is required at any
+point in the pipeline.\footnote{Throughout, ``feasible'' means passing all validation
+checks of this section; ``first feasible'' denotes the first valid slot
+in enumeration order and serves as the selection-free reference.}
+
+%======================================================================
+\section{Return-Supervised Seed Selection}
+\label{sec:selector}
+
+\subsection{Supervision Signal}
+With the execution controller frozen, every feasible candidate of every
+training task is rolled out to termination, producing a complete
+per-candidate return table $\{\mathcal{L}_{jk}\}$ over tasks $j$ and
+candidates $k$. Complete tables, rather than sampled interactions, make
+the supervision exhaustive over the discrete action set: the residual
+error of any selector trained on them measures what its input features
+cannot express, a property used in Sec.~\ref{sec:res-boundary}.
+
+\subsection{Features and Architecture}
+Each candidate is described by a 45-dimensional feature vector comprising
+the controller's initial observation at that configuration, the lateral
+ray error, log positional manipulability, and ten task-aligned
+differential-kinematics descriptors (the damped line-tracking joint
+velocity, its norm, a linearized joint-limit travel horizon, and
+directional manipulability). The selector is an ensemble of five
+permutation-equivariant members. Each member embeds the $K$ candidates,
+mean-pools a set context, concatenates it back to every candidate, and
+outputs two heads: a listwise score trained by softmax cross-entropy on
+within-task range-normalized returns, and a feasibility regression head
+trained on returns in metres under a Huber loss. Members are trained on
+task-level bootstrap resamples and aggregated by mean score; deployment
+is the masked $\arg\max$ over feasible candidates. Feature normalization
+uses feasible-slot moments of the training split only.
+
+\subsection{Training Protocol}
+The selector is trained on \nTrain{} tasks with complete return tables.
+All architectural and schedule decisions are made on a geometry-disjoint
+internal split; the development and sealed evaluation sets of
+Sec.~\ref{sec:setup} are never read during development. Training a full
+ensemble requires minutes on one GPU; the dominant offline cost is the
+one-time construction of the return tables.
+
+%======================================================================
+\section{Hybrid Null-Space Controller}
+\label{sec:controller}
+
+\subsection{Task Decomposition}
+The commanded joint velocity separates the tracking task from the
+redundancy:
+\begin{equation}
+\dot{\mathbf{q}}=\mathbf{J}^{+}\dot{\mathbf{x}}
++\big(\mathbf{I}-\mathbf{J}^{+}\mathbf{J}\big)\,\boldsymbol{\xi},
+\label{eq:nullspace}
+\end{equation}
+where $\mathbf{J}$ is the position Jacobian, $\mathbf{J}^{+}$ its damped
+pseudo-inverse, $\dot{\mathbf{x}}=v\,\mathbf{d}
++\mathbf{K}_{P}(\mathbf{p}^{\mathrm{ref}}-\mathbf{p})$ advances the
+end-effector along the line while rejecting lateral drift, and
+$\boldsymbol{\xi}$ is the secondary command projected onto the null
+space. Both execution regimes below share this decomposition and differ
+only in how $\boldsymbol{\xi}$ is generated, which renders them
+interchangeable at any control step.
+
+\subsection{Classical Near-Boundary Regime}
+The classical regime performs gradient ascent on a weighted combination
+of redundancy objectives,
+\begin{equation}
+\boldsymbol{\xi}=k_{\mu}\nabla_{\mathbf{q}}w_{\mathbf{d}}(\mathbf{q})
+-k_{\mathrm{jl}}\,
+\frac{\mathbf{q}-\mathbf{q}_{\mathrm{mid}}}
+     {\mathbf{q}_{\max}-\mathbf{q}_{\min}}
++k_{\theta}\,g(\theta)\,
+\nabla_{\mathbf{q}}\big(\mathbf{z}(\mathbf{q})^{\!\top}\mathbf{n}\big),
+\label{eq:secondary}
+\end{equation}
+combining directional manipulability $w_{\mathbf{d}}$, joint centering,
+and a cone term gated by $g(\theta)$ near the orientation tolerance. Its
+behavior is instantaneous and therefore myopic, but it is well defined
+and stable arbitrarily close to the joint-limit boundary.
+
+\subsection{Learned Interior Regime}
+The interior regime is a PPO-trained policy whose observation exposes
+only the quantities required to resolve the redundancy: the normalized
+configuration and its element-wise square, the task vectors, the tool
+axis and its cone alignment, the lateral ray error, and the previous
+action. The end-effector position is deliberately excluded; lateral
+tracking is handled by the task term of \eqref{eq:nullspace}, and the
+task-relative observation makes states of different tasks commensurable,
+a property that Sec.~\ref{sec:res-coupling} shows to be consequential.
+The action parameterizes null-space coordinates in a task-aligned
+orthonormal basis, so that policy outputs and classical commands live in
+the same space. The reward is purely the clipped per-step progress along
+$\mathbf{d}$; no shaping toward the boundaries is applied. Training
+draws tasks from a pool of $10^{5}$ random lines and mixes reset
+configurations among selector samples, uniform feasible candidates, and
+the classical fallback.
+
+\subsection{Hysteresis Switching}
+At every step the active regime is chosen by the normalized joint-limit
+proximity $\eta(\mathbf{q})=\max_{i}
+|q_{i}-q_{\mathrm{mid},i}|/q_{\mathrm{half},i}$ with a hysteresis pair
+$\tau_{\mathrm{exit}}<\tau_{\mathrm{enter}}$: control passes to the
+classical regime when $\eta$ exceeds $\tau_{\mathrm{enter}}$ and returns
+to the learned regime only after $\eta$ falls below
+$\tau_{\mathrm{exit}}$. The hysteresis suppresses chattering at the
+interface, and because both regimes emit commands through
+\eqref{eq:nullspace}, switching is transient-free with respect to the
+tracking task.
+
+%======================================================================
+\section{Experimental Setup}
+\label{sec:setup}
+All experiments use straight-line path-following with a simulated 7-DoF
+Franka FR3 and the constraint constants of
+Sec.~\ref{sec:problem}. Tasks are drawn from a pool of $10^{5}$ random
+lines filtered for feasibility. The training set comprises \nTrain{}
+tasks with complete candidate return tables; two development sets of
+\nDev{} tasks each (a validation split, and an external set built from a
+freshly seeded pool with audited zero geometry overlap) support the
+reported analyses; and a sealed set of \nSealed{} tasks was generated
+from fresh seeds after all design decisions, weights, and a
+selector-publication rule (the median run across training seeds) were
+frozen and preregistered. The sealed set is read once, by the published
+selector only.
+
+\subsubsection*{Baselines}
+The primary baseline is a learned generative initialization: a
+conditional diffusion model samples eight proposals per task, which are
+projected onto the exact pose constraint, ranked by a learned selector of
+identical capacity and feature set trained on that pool, and executed by
+the same hybrid controller. Additional selection references on the
+enumerated pool include the first-feasible rule, single geometric
+criteria, and the complete-candidate oracle, which executes every
+feasible candidate and is reported as a diagnostic upper reference rather
+than a method.
+
+\subsubsection*{Metrics}
+Systems are compared by paired per-task differences on identical tasks
+under the identical controller: the mean difference with a
+bootstrap 95\% confidence interval over $2\times10^{4}$ resamples, the
+5\% two-sided trimmed mean, and the fractions of tasks changed by more
+than $\pm1$~mm. Selection quality within a pool is summarized by the
+captured fraction of the oracle headroom,
+$(\mathcal{L}_{\mathrm{sel}}-\mathcal{L}_{\mathrm{first}})/
+ (\mathcal{L}_{\mathrm{oracle}}-\mathcal{L}_{\mathrm{first}})$.
+
+%======================================================================
+\section{Results}
+\label{sec:results}
+
+\subsection{The Candidate Set Bounds the System}
+\label{sec:res-pool}
+Table~\ref{tab:pool} compares the enumerated candidate set against the
+generative proposal set on the training tasks under the identical frozen
+controller. Enumeration raises the mean attainable ceiling by
+\phOracleGap~mm and widens the selectable headroom from \phHeadroomG~mm
+to \phHeadroomE~mm per task; the within-task spread between the best and
+worst feasible candidate widens from a median of \phSpreadG~mm to
+\phSpreadE~mm. Fig.~\ref{fig:pool} traces the ceiling against the pool
+size under farthest-point ordering: the curve passes the full
+generative-pool ceiling within the first few candidates and saturates
+once the self-motion branches are covered, after which additional
+candidates contribute at the level of measurement noise. The mechanism
+is that generative proposals concentrate in a narrow quality band around
+previously favorable regions, whereas enumeration exposes the outcome
+diversity of the branches themselves.
+
+\begin{table}[!t]
+\caption{Candidate Sets Under the Identical Frozen Controller}
+\label{tab:pool}
+\centering
+\begin{tabular}{lcc}
+\toprule
+ & generative ($K{=}8{+}1$) & enumerated ($K{=}32{+}1$)\\
+\midrule
+feasible candidates / task & \ph{--} & \ph{--}\\
+first-feasible [m] & \ph{--} & \ph{--}\\
+oracle [m] & \ph{--} & \ph{--}\\
+headroom [mm] & \phHeadroomG & \phHeadroomE\\
+within-task spread, median [mm] & \phSpreadG & \phSpreadE\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\phfig{3.4cm}{Curve: mean best path length vs.\ pool size $K$
+(farthest-point prefix of the enumerated set), with horizontal reference
+lines for the generative-pool oracle and first-feasible level.}
+\caption{Attainable ceiling versus candidate-set size.}
+\label{fig:pool}
+\end{figure}
+
+\subsection{Complete-Return Supervision is Necessary}
+\label{sec:res-supervision}
+Table~\ref{tab:supervision} isolates the supervision signal while holding
+the candidate set, features, and controller fixed. Selection rules built
+from instantaneous information---single geometric criteria, and the
+generative-pool selector transferred unchanged---capture a negative
+fraction of the headroom, i.e., they underperform the first-feasible
+rule. The identical feature set supervised by complete closed-loop
+returns captures \phCapSingle\% (single model) and \phCapEns\%
+(ensemble), with sub-percent variation across training seeds; even a
+linear model on the same features and labels captures a substantial
+fraction. Fig.~\ref{fig:scaling} reports the capture as a function of
+the training-set size. We conclude that on a candidate set diverse
+enough to matter, the selection problem is not a ranking refinement but
+is created and solved by the supervision signal itself.
+
+\begin{table}[!t]
+\caption{Selection Rules on the Identical Enumerated Set}
+\label{tab:supervision}
+\centering
+\begin{tabular}{llc}
+\toprule
+selection rule & supervision & capture [\%]\\
+\midrule
+first feasible & none & $0$\\
+best geometric criterion & none & \phTransferCap\\
+transferred generative-pool selector & generative returns & \phTransferCap\\
+linear model, 45-D features & complete returns & \ph{$+$XX}\\
+listwise selector (single) & complete returns & \phCapSingle\\
+listwise selector (ensemble) & complete returns & \phCapEns\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\phfig{3.4cm}{Held-out capture [\%] vs.\ number of training tasks
+(log axis), single-model mean $\pm$ std over three seeds and the
+member-ensemble curve.}
+\caption{Capture of the oracle headroom versus training-set size
+(geometry-disjoint internal split).}
+\label{fig:scaling}
+\end{figure}
+
+\subsection{The Limit of Execution-Free Selection}
+\label{sec:res-boundary}
+The captured fraction plateaus near two thirds, and the plateau is a
+property of the information rather than of the model. Enlarging the
+network, doubling the training schedule, and exchanging the encoder
+leave the held-out capture within noise of the base configuration. The
+decisive control grants the selector the strongest execution-free
+information available: for every candidate we integrate the damped
+tracking field of \eqref{eq:nullspace}--\eqref{eq:secondary} on the pure
+kinematic model until a constraint is met, obtaining an exact nonlinear
+continuation of each starting branch without any environment step or
+policy call. As an individual criterion this kinematic continuation
+rivals the entire trained selector in rank correlation with the true
+outcome; appended to the feature set and retrained, it changes the
+captured fraction by nothing (Table~\ref{tab:boundary}). The learned
+selector had evidently internalized the kinematic continuation from its
+one-step descriptors, and the residual headroom is attributable to the
+learned interior policy's closed-loop behavior---how it spends the null
+space in ways no fixed field anticipates---which is observable only by
+execution. This bounds every execution-free selection scheme on this
+problem, the present one included.
+
+\begin{table}[!t]
+\caption{Probing the Static Information Limit}
+\label{tab:boundary}
+\centering
+\begin{tabular}{lcc}
+\toprule
+configuration & capture, single [\%] & ensemble [\%]\\
+\midrule
+base features & \phCapSingle & \phCapEns\\
+$+$ capacity / schedule variants & \ph{--} & \ph{--}\\
+$+$ kinematic continuation features & \ph{--} & \ph{--}\\
+\midrule
+kinematic continuation alone ($\arg\max$) &
+\multicolumn{2}{c}{\ph{--}}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Does the Controller Require Adaptation?}
+\label{sec:res-coupling}
+Sequential-chaining practice suggests adapting the execution stage to the
+initial-state distribution induced by the selection
+stage~\cite{chen2023sequential}. We tested this direction twice under a
+preregistered promotion gate: a naive continuation of PPO on the
+selection-induced reset distribution, and a conservatively engineered
+round with critic-only warm-up, no entropy bonus, a tightened trust
+region, and a fourfold step budget. Neither produced a significant
+improvement on either development set, the first being significantly
+harmful, and the training reward remained saturated throughout,
+indicating that under its own objective the interior policy had nothing
+to learn from these states. A stratified analysis
+(Fig.~\ref{fig:novelty}) explains the null result and renders it
+falsifiable: although the selector chooses configurations far from
+anything the generative baseline proposes (median joint-space novelty of
+several radians), the adaptation effect is null in every novelty
+quartile, and the unadapted policy performs best from the most novel
+branches. We attribute this to the combination of task-relative
+observations and training over randomized tasks: in the state space the
+policy actually observes, an unfamiliar branch of one task coincides
+with familiar states of others, so the distribution shift that
+adaptation would repair has been absorbed by design. The delineation
+also predicts where adaptation should become necessary---small task
+pools, absolute observations, or physical hardware---which we leave to
+future work.
+
+\begin{figure}[!t]
+\centering
+\phfig{3.2cm}{Two panels. Left: controller-adaptation effect [mm] by
+quartile of joint-space distance between the selected seed and the
+nearest generative-pool configuration, with 95\% intervals spanning
+zero in all quartiles. Right: path length of the unadapted controller
+per novelty quartile, increasing with novelty.}
+\caption{Novelty-stratified test of controller adaptation on the
+selection-induced distribution.}
+\label{fig:novelty}
+\end{figure}
+
+\subsection{System Comparison}
+\label{sec:res-main}
+Table~\ref{tab:main} reports the complete system against the generative
+initialization baseline on identical tasks under the identical hybrid
+controller and execution budget. The mean executed path lengthens by
+\phDeltaVal~mm on the validation set (95\% CI \phCIVal) and
+\phDeltaExt~mm on the external set (95\% CI \phCIExt); the trimmed means
+of \phTrimVal{} and \phTrimExt~mm indicate that the improvement is
+carried by typical tasks rather than by a heavy tail, and the paired
+distribution is shown in Fig.~\ref{fig:delta}. Across six independent
+selector training seeds the mean gain varies by \phSeedStd~mm. On the
+sealed \nSealed-task set, read once with the published selector, the gain
+is \phDeltaSealed~mm (95\% CI \phCISealed, trimmed \phTrimSealed~mm).
+The deployed cost is unchanged where it matters: one selector inference
+(sub-millisecond per task when batched) and one rollout; candidate
+enumeration adds a sub-second, execution-free kinematic computation per
+task. A fraction of tasks regresses relative to the baseline
+(Table~\ref{tab:main}); the enumerated set's weak first-feasible anchor
+makes selection errors costlier than on the generative set, and we
+discuss the implied risk-sensitive objective in
+Sec.~\ref{sec:discussion}.
+
+\begin{table}[!t]
+\caption{System Comparison Under Identical Controller and Budget}
+\label{tab:main}
+\centering
+\begin{tabular}{lccc}
+\toprule
+ & validation & external & sealed\\
+ & (\nDev) & (\nDev) & (\nSealed)\\
+\midrule
+baseline [m] & \ph{--} & \ph{--} & \ph{--}\\
+proposed [m] & \ph{--} & \ph{--} & \ph{--}\\
+$\Delta$ mean [mm] & \phDeltaVal & \phDeltaExt & \phDeltaSealed\\
+95\% CI [mm] & \phCIVal & \phCIExt & \phCISealed\\
+$\Delta$ trimmed [mm] & \phTrimVal & \phTrimExt & \phTrimSealed\\
+win / regress [\%] & \ph{--} & \ph{--} & \ph{--}\\
+capture [\%] & \ph{--} & \ph{--} & \ph{--}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\phfig{3.2cm}{Histogram of per-task paired path-length differences
+(proposed $-$ baseline), log-scaled counts, with the mean and the
+5\% trimmed mean marked.}
+\caption{Distribution of paired per-task differences against the
+generative initialization baseline.}
+\label{fig:delta}
+\end{figure}
+
+%======================================================================
+\section{Discussion and Limitations}
+\label{sec:discussion}
+Three boundaries of the present study merit emphasis. First, the
+measured plateau of execution-free selection implies that further gains
+on this problem must either price execution-time information below its
+oracle cost---an open question, given that informative probes approach
+full-episode length---or accept a different deployment budget. Second,
+although the mean and trimmed improvements are strongly positive, a
+minority of tasks regresses relative to the baseline; the selection
+objective optimizes the expected return and is indifferent to per-task
+regret, and a risk-sensitive variant that penalizes catastrophic
+selections remains unexplored. Third, all findings are obtained in
+simulation on a single task family, and the coverage argument of
+Sec.~\ref{sec:res-coupling} predicts, but does not verify, that
+controller adaptation becomes necessary under transfer to physical
+hardware, where the execution distribution shifts for reasons no reset
+mixture anticipates.
+
+%======================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+This paper addressed extreme motion generation with a two-stage system:
+enumeration of the cone-constrained IK solution set followed by
+return-supervised selection of a single initial configuration, and a
+hybrid null-space controller that partitions execution between a learned
+interior policy and a classical near-boundary regime. Beyond the system
+itself, the experiments characterize the structure of the problem: the
+candidate set, not the selection rule, bounds attainable performance
+until enumeration replaces generation; complete closed-loop returns are
+the only supervision under which static selection succeeds on a diverse
+candidate set; execution-free selection has a measurable information
+limit at roughly two thirds of the headroom; and the execution stage,
+when trained with task-relative observations over randomized tasks,
+requires no adaptation to the selection-induced distribution. The
+system improves the average executed path substantially at an unchanged
+budget of one selector inference and one rollout per task, and the
+methodology---preregistered gates, sealed evaluation, and measured
+rather than assumed couplings---is applicable beyond this task.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

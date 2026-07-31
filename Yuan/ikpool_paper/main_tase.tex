@@ -1,0 +1,664 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  IEEE TASE submission draft -- structure, experiment design and prose
+%  strictly following Yuan et al., "IKSel" (T-ASE).
+%  Pending campaign numbers are \ph{...} macros (render red).
+%  Compile: pdflatex main_tase && bibtex main_tase && pdflatex x2
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[journal]{IEEEtran}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs,multirow,threeparttable}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage[ruled,linesnumbered]{algorithm2e}
+\usepackage{url}
+\graphicspath{{figures/}}
+
+% ---------------- pending-number machinery ----------------
+\newcommand{\ph}[1]{\textcolor{red}{#1}}
+\newcommand{\phfig}[2]{\fbox{\parbox[c][#1][c]{0.96\linewidth}{\centering
+  \textcolor{red}{[Placeholder]}\\ \footnotesize #2}}}
+% ---- numbers pending from the final campaign (freeze v3) ----
+\newcommand{\nTrain}{20{,}000}
+\newcommand{\nDev}{2{,}048}
+\newcommand{\nSealed}{10{,}000}
+\newcommand{\phIkselVal}{\ph{0.XXX}}      % deployed mean, validation [m]
+\newcommand{\phIkselExt}{\ph{0.XXX}}      % deployed mean, external [m]
+\newcommand{\phIkselSealed}{\ph{0.XXX}}   % deployed mean, sealed [m]
+\newcommand{\phIvsEVal}{\ph{$\pm$X.X}}    % iksel - enumeration, validation [mm]
+\newcommand{\phIvsEExt}{\ph{$\pm$X.X}}
+\newcommand{\phIvsESealed}{\ph{$\pm$X.X}}
+\newcommand{\phCIVal}{\ph{$[\cdot,\cdot]$}}
+\newcommand{\phCIExt}{\ph{$[\cdot,\cdot]$}}
+\newcommand{\phCISealed}{\ph{$[\cdot,\cdot]$}}
+\newcommand{\phCapVal}{\ph{XX.X}}
+\newcommand{\phCapExt}{\ph{XX.X}}
+\newcommand{\phCapSealed}{\ph{XX.X}}
+\newcommand{\phSeedStd}{\ph{X.X}}
+
+\begin{document}
+
+\title{Selecting Good Starting Configurations for Extreme Motion
+Generation: KDTree-Seeded Candidate Enumeration and Closed-Loop Return
+Supervision}
+
+\author{Xinyi~Yuan, Weiwei~Wan$^{*}$, and~Kensuke~Harada%
+\thanks{Department of System Innovation, Graduate School of Engineering
+Science, The University of Osaka, Toyonaka, Osaka, Japan.}%
+\thanks{$^{*}$Contact: Weiwei Wan, \texttt{wan@sys.es.osaka-u.ac.jp}}}
+
+\markboth{IEEE Transactions on Automation Science and Engineering, 2026.}%
+{Yuan \MakeLowercase{\textit{et al.}}: Selecting Good Starting
+Configurations for Extreme Motion Generation}
+
+\maketitle
+
+\begin{abstract}
+This paper studies the initialization of extreme motion generation, in
+which a redundant manipulator follows a prescribed straight-line path for
+as long as possible before a joint limit or a tool-orientation tolerance
+forces termination. The achievable path length is largely decided before
+the motion begins, by the choice of the starting configuration among the
+disconnected branches of the cone-constrained inverse-kinematics solution
+set, yet the consequence of this choice is revealed only deep into the
+closed-loop execution. The proposed method extends our KDTree-based seed
+selection solver to this long-horizon setting: the configuration space is
+discretized by Centroidal Voronoi Tessellation sampling and indexed in a
+KDTree; tool directions sampled inside the orientation cone query the
+tree; candidates are ranked by minimal joint-space adjustment through the
+stored Jacobian pseudo-inverses and refined by damped least-squares
+iterations with a farthest-from-tried re-attempt strategy; and a
+listwise-trained ensemble selector, supervised by the complete
+closed-loop return of every feasible candidate, commits to a single
+starting configuration that a hybrid null-space controller then executes
+in one rollout. Experiments on \nSealed-scale path-following tasks with a
+7-DoF manipulator show that the table-based candidate layer attains the
+attainable ceiling of exhaustive random-restart enumeration at roughly
+one third of its solving budget, that closed-loop return supervision is
+necessary---every instantaneous geometric criterion underperforms a
+trivial first-feasible rule---and that the recovered fraction of the
+attainable headroom is bounded by a measured limit of execution-free
+selection. Detailed ablation studies analyze the table construction, the
+re-attempt strategy, the supervision signal, and the selector capacity,
+providing practical insights for customization.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Extreme motion generation, inverse kinematics, seed selection, redundant
+manipulators, reinforcement learning.
+\end{IEEEkeywords}
+
+\section*{Note to Practitioners}
+The proposed pipeline is implemented in the \texttt{Yuan/unified\_rl}
+package of our repository. The candidate layer is
+\texttt{iksel\_campaign.py} (stage \texttt{gen}); the table is built once
+by \texttt{iksel\_clean\_pilot.py} (stage \texttt{table2}) and is robot-
+and task-independent, so practitioners can reuse it across applications
+by rebuilding it for their own kinematic chain (minutes on one GPU).
+Three parameters matter most in customization: the number of cone
+directions per task (\texttt{N\_DIRS}, default 32) trades candidate
+diversity against generation time; the maximum re-attempts per direction
+(\texttt{MAX\_TRY}, default 4) governs the solve rate near difficult
+branches; and the positional weight of the KDTree key (default
+$1/0.05\,\mathrm{m}$) encodes how strongly retrieval prioritizes
+workspace proximity over tool-axis alignment. The selector is trained by
+stage \texttt{train-selector} from complete rollout tables and is the
+only learned component; systems without a learned controller can replace
+the execution stage by any tracking controller and retrain the selector
+on its returns, as the selection machinery makes no assumption about the
+controller beyond the ability to roll out candidates offline.
+
+\section{Introduction}
+\IEEEPARstart{C}{onsider} a fixed-base redundant manipulator coating or
+welding a workpiece along a straight line. The practical stroke of such
+an operation terminates long before the boundary of the reachable
+workspace: one joint reaches its limit, or the tool axis drifts out of
+its orientation tolerance. We refer to the problem of maximizing the
+constrained Cartesian path length along a prescribed trajectory as
+\textit{extreme motion generation}. Its industrial value is direct,
+because the length of one continuous motion determines the area a
+manipulator can process in a single setup.
+
+For a task that constrains fewer degrees of freedom than the arm
+possesses, the feasible starting configurations form a self-motion
+manifold whose joint-limit-induced branches are disconnected.
+Configurations on different branches realize the same tool pose yet
+support very different downstream path lengths: on our task
+distribution, the best and the worst feasible start of the same task
+differ by a median of 472\,mm of final path length, comparable to the
+average task length itself. The initialization problem is therefore
+decisive. It is also deceptively hard, for two reasons that
+Sec.~\ref{sec:exp} quantifies. First, the consequence of the choice is
+revealed late: whether a branch survives is dominated by
+orientation-cone violations that occur deep into the trajectory, and
+correlates only weakly with any instantaneous geometric quantity
+evaluated at the start---selection rules built on manipulability or
+joint-limit clearance perform \textit{worse} than taking the first
+feasible candidate. Second, the decision must be made without trial: an
+execution budget of one rollout per task excludes probing, and because a
+complete episode spans only a few tens of control steps, an informative
+probe would cost nearly as much as executing every candidate.
+
+In our previous work we developed IKSel~\cite{yuan2026iksel}, a seed
+selection method that discretizes the configuration space by Centroidal
+Voronoi Tessellation (CVT), indexes it in a KDTree, ranks candidate
+configurations by minimal joint-space adjustment, and re-attempts with
+farther seeds upon failure. IKSel answers the question ``from which seed
+will a numerical iteration converge \textit{now}''; the present paper
+extends the same machinery to answer ``from which configuration will a
+closed-loop execution survive \textit{longest}.'' The extension is
+non-trivial precisely because the second question cannot be answered by
+any instantaneous criterion, as our experiments demonstrate.
+
+The proposed pipeline operates as follows. Offline, the configuration
+space is discretized once by CVT sampling and stored with forward
+kinematics and Jacobian pseudo-inverses in a KDTree; the table is
+task-independent and contains no learned component. Online, tool
+directions sampled inside the orientation cone form full query poses;
+each query retrieves nearest neighbors, ranks them by the joint-space
+adjustment metric of IKSel, and refines the top candidate by damped
+least-squares iterations, re-attempting with the candidate farthest from
+previously tried seeds upon failure. The surviving solutions,
+deduplicated in joint space, constitute a compact candidate set that
+spans the self-motion branches. A permutation-equivariant ensemble
+selector---trained offline on the \textit{complete closed-loop return}
+of every feasible candidate, i.e., the path length actually achieved
+when the controller runs that candidate to termination---scores the set
+once and commits to a single configuration, from which a hybrid
+null-space controller executes the motion. The deployed budget is one
+table query, one selector inference, one seed, and one rollout.
+
+Contributions are threefold. First, we show that the table-based
+candidate layer attains the attainable ceiling of exhaustive
+random-restart enumeration at roughly one third of its solving budget,
+and we trace, through single-variable ablations, exactly which
+ingredients this requires: CVT \textit{sampling} rather than clustered
+compression of the table, and the re-attempt strategy rather than table
+density. Second, we establish that closed-loop return supervision is
+necessary for the selection stage: on the identical candidate set and
+feature set, every instantaneous criterion captures a negative fraction
+of the attainable headroom, whereas return supervision captures roughly
+two thirds. Third, we locate the limit of execution-free selection:
+capacity, schedule, and even an exact kinematic continuation of every
+candidate leave the captured fraction unchanged, indicating that the
+residual headroom depends on the learned controller's closed-loop
+behavior and is invisible before execution. All findings are validated
+under a preregistered protocol with a sealed final evaluation.
+
+\section{Related Work}
+
+\subsection{Seed Selection and Generative Inverse Kinematics}
+Numerical IK methods remain sensitive to their initial seed, and seed
+selection techniques have been studied to accelerate
+convergence~\cite{yuan2026iksel}. Learning-based solvers model the
+multi-modal solution set directly, with normalizing
+flows~\cite{ames2022ikflow}, diffusion models~\cite{zhang2025ikdiffuser},
+and trajectory-level seeding~\cite{huang2024diffusionseeder}. These
+methods address the question of reaching a pose; the present work
+addresses the question of \textit{which} of the many reachable
+configurations sustains the longest subsequent motion, and shows that
+the answer requires supervision that no pose-level criterion provides.
+
+\subsection{Redundancy Resolution and Hybrid Control}
+Classical redundancy resolution optimizes instantaneous objectives such
+as manipulability~\cite{yoshikawa1985manipulability} in the null space
+of the task Jacobian, and joint-limit handling during iteration has been
+addressed by weighted and clamping
+schemes~\cite{huang2016clamping,sekiguchi2021numerical}. Learned
+policies supply long-horizon foresight but degrade near the
+sparsely-sampled joint-limit boundary; residual and switching
+architectures combine the two
+paradigms~\cite{johannink2019residual,alshiekh2018safe,kurtz2021control}.
+Our execution stage adopts a switching design gated by joint-limit
+proximity with hysteresis, and our experiments additionally verify a
+property that simplifies the overall system: under task-relative
+observations and randomized-task training, the execution stage requires
+no adaptation to the initialization-induced state distribution.
+
+\subsection{Sequential Policy Chaining}
+When a system decomposes into sequential stages, the output distribution
+of one stage becomes the input distribution of the next, and
+bidirectional fine-tuning has been proposed to align adjacent
+policies~\cite{chen2023sequential}. We adopt the backward direction of
+this credit structure---initialization is evaluated by the success of
+execution---and treat the necessity of the forward direction as an
+experimental question, answered negatively for this system with a
+stratified analysis that explains the mechanism.
+
+\section{Candidate Enumeration Using KDTree}
+\label{sec:candidate}
+The convergence of a numerical iteration and the survival of a
+closed-loop execution are both highly sensitive to the starting
+configuration. This section extends the KDTree framework of
+IKSel~\cite{yuan2026iksel} from the former problem to the latter: the
+table supplies workspace-proximal, adjustment-ranked seeds; cone-directed
+queries and re-attempted refinement turn them into a branch-spanning
+candidate set.
+
+\subsection{CVT-Based Sampling and KDTree Construction}
+\label{sec:cvt}
+The construction follows~\cite{yuan2026iksel}. The joint space
+$\Omega\subset\mathbb{R}^{7}$ is discretized by CVT sampling into
+$k{=}201{,}600$ generators $\{\mathbf{z}_i\}$, each coinciding with the
+mass centroid of its Voronoi cell under a uniform density; in practice
+the generators are obtained by Lloyd iterations on a large uniform
+sample pool, so that every generator is a genuine, minimally-averaged
+configuration.\footnote{This distinction matters. In
+Sec.~\ref{sec:abl-table} we show that compressing the same pool into few
+thousand k-means centroids---averages over large cells---degrades the
+attainable ceiling by more than 20\,mm, whereas full-scale CVT sampling
+does not.} For each $\mathbf{q}_i$, forward kinematics yields the tool
+center position $\mathbf{p}_i$ and tool axis $\mathbf{z}(\mathbf{q}_i)$,
+and the full Jacobian pseudo-inverse $\mathbf{J}^{+}_i$ is precomputed by
+singular value decomposition with regularization. The KDTree key is
+\begin{equation}
+\mathbf{x}_i=\big[\,\mathbf{p}_i/w_{\mathrm{pos}},\;
+\mathbf{z}(\mathbf{q}_i)\,\big],\qquad w_{\mathrm{pos}}=0.05\,
+\mathrm{m},
+\label{eq:key}
+\end{equation}
+where the positional scale equates a 5\,cm workspace deviation with
+roughly one radian of tool-axis deviation. Representing the rotational
+component by the tool axis rather than a full rotation vector reflects
+the axial symmetry of the tool: rotation about the tool axis is
+unconstrained by the task and should not contribute to the
+metric.\footnote{For tools without axial symmetry the rotation-vector
+key of~\cite{yuan2026iksel} applies unchanged.}
+
+\subsection{Cone-Directed Query and Joint-Adjustment Ranking}
+\label{sec:query}
+A task is specified by $\mathbf{c}=[\mathbf{p}_0,\mathbf{d},\mathbf{n}]$:
+the start position, the motion direction, and the nominal tool axis with
+tolerance cone half-angle $\theta_{\max}{=}30^\circ$. Because any tool
+axis inside the cone is admissible, the query stage samples $m{=}32$
+directions $\{\mathbf{n}_j\}$ uniformly on the spherical cap (the first
+being $\mathbf{n}$ itself), and each direction forms a full query pose
+$(\mathbf{p}_0,\mathbf{n}_j)$. For each query, the $200$ nearest table
+entries are retrieved and ranked by the approximated joint-space
+adjustment
+\begin{equation}
+\Delta\mathbf{q}_i=\mathbf{J}^{+}_i\!
+\begin{bmatrix}\mathbf{p}_0-\mathbf{p}_i\\[1pt]
+\boldsymbol{\rho}(\mathbf{z}(\mathbf{q}_i),\mathbf{n}_j)\end{bmatrix},
+\label{eq:rank}
+\end{equation}
+where $\boldsymbol{\rho}(\cdot,\cdot)$ is the axis-angle vector of the
+minimal rotation aligning the stored tool axis with the queried
+direction. As in~\cite{yuan2026iksel}, candidates requiring smaller
+$\|\Delta\mathbf{q}_i\|$ are prioritized: small adjustments indicate that
+the seed lies in a locally well-behaved region of the kinematic function,
+which increases the likelihood of rapid convergence without scaling
+coefficients.
+
+\subsection{Refinement and Re-Attempt}
+\label{sec:retry}
+The top-ranked seed of each direction is refined by damped least-squares
+iterations toward its query pose. If the iteration fails to produce a
+strictly feasible solution---joint limits with margin, 5\,mm position
+error, the orientation cone, and collision freedom---the re-attempt
+strategy of~\cite{yuan2026iksel} is applied: the remaining candidates of
+that direction are re-sorted in descending distance from the mean of the
+previously tried seeds, and the next candidate is attempted, up to four
+attempts per direction. The re-sorting drives consecutive attempts into
+distinct regions of the configuration space, reducing the likelihood of
+repeated failures caused by the same joint-limit constraint.
+Sec.~\ref{sec:abl-retry} shows that this single mechanism raises the
+per-direction solve rate from 72.9\,\% to 87.7\,\% and accounts for most
+of the ceiling recovered over a no-re-attempt design. Finally, the
+surviving solutions of all directions are deduplicated at $0.08$\,rad in
+joint space, and a deterministic classical fallback configuration is
+appended as a designated final slot, yielding a candidate set
+$Q(\mathbf{c})$ with a median of 29 entries.
+
+\section{Return-Supervised Selection and Hybrid Execution}
+\label{sec:selection}
+
+\subsection{Why Instantaneous Criteria Fail}
+A natural selection rule scores each candidate by an instantaneous
+quantity---manipulability along the motion direction, clearance from
+joint limits, or the linearized travel horizon. Sec.~\ref{sec:abl-sup}
+shows that on the enumerated candidate set every such rule captures a
+\textit{negative} fraction of the attainable headroom, i.e., performs
+worse than taking the first feasible candidate. The reason is structural
+rather than a matter of tuning: branch survival is dominated by
+orientation-cone violations that occur after tens of control steps, at
+configurations far from the start, where the accumulated null-space
+motion---not the initial geometry---determines feasibility. The
+selection stage therefore requires supervision that observes the end of
+the motion.
+
+\subsection{Complete-Return Labeling}
+With the execution controller frozen, every feasible candidate of every
+training task is rolled out to termination, producing a complete
+per-candidate return table $\mathcal{L}_{jk}$: the net path length
+achieved from candidate $k$ of task $j$. Complete tables, rather than
+sampled interactions, make the supervision exhaustive over the discrete
+action set; the residual error of a selector trained on them measures
+what its input features cannot express, a property exploited in
+Sec.~\ref{sec:abl-limit}.
+
+\subsection{Listwise Ensemble Selector}
+Each candidate is described by 45 features: the controller's initial
+observation at that configuration, the lateral ray error, log positional
+manipulability, and ten task-aligned differential-kinematics descriptors
+(the damped line-tracking joint velocity and its norm, a linearized
+joint-limit travel horizon, and directional manipulability). The
+selector is an ensemble of five permutation-equivariant members; each
+member embeds the candidates, mean-pools a set context, concatenates it
+back to every candidate, and outputs a listwise score head trained by
+softmax cross-entropy on within-task range-normalized returns, together
+with a feasibility head regressing the return in metres under a Huber
+loss. Members are trained on task-level bootstrap resamples and
+aggregated by mean score; deployment is the masked $\arg\max$ over
+feasible candidates.
+
+\subsection{Hybrid Null-Space Execution}
+The execution stage resolves the redundancy at every control step
+through the standard decomposition
+$\dot{\mathbf{q}}=\mathbf{J}^{+}\dot{\mathbf{x}}
++(\mathbf{I}-\mathbf{J}^{+}\mathbf{J})\boldsymbol{\xi}$, where the task
+term tracks the advancing reference and the secondary command
+$\boldsymbol{\xi}$ is produced by one of two interchangeable regimes: a
+PPO-trained policy with task-relative observations in the interior of
+the configuration space, and a classical gradient controller combining
+directional manipulability, joint centering, and a gated cone term near
+the joint-limit boundary. The active regime is chosen by the normalized
+joint-limit proximity with a hysteresis pair
+$(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})=(0.985,0.96)$ to suppress
+chattering. The policy is trained on $10^{5}$ randomized tasks with
+mixed reset distributions; Sec.~\ref{sec:abl-fwd} verifies that no
+adaptation of this stage to the selection-induced distribution is
+required, and explains why.
+
+\section{Experiments and Analysis}
+\label{sec:exp}
+We first conduct ablation studies analyzing each component of the
+candidate layer and the selection stage, and subsequently perform the
+system-level evaluation under a preregistered protocol. All experiments
+were conducted on a PC with a 13th Gen Intel Core i7 CPU, an NVIDIA
+GeForce RTX-4090 GPU, and 64 GB of RAM, running Ubuntu. The manipulator
+is a simulated 7-DoF Franka FR3 carrying an axially-symmetric tool.
+Tasks are straight-line path-following queries drawn from a pool of
+$10^{5}$ random lines filtered for feasibility; the objective is the net
+path length before any constraint violation. The dataset splits are:
+
+\begin{itemize}
+\item[$\triangleright$] \underline{Training}: \nTrain{} tasks with
+complete candidate return tables ($\approx$\ph{5.4}$\times10^{5}$
+episodes);
+\item[$\triangleright$] \underline{Validation / External}: two
+development sets of \nDev{} tasks each, the latter built from a freshly
+seeded pool with audited zero geometry overlap;
+\item[$\triangleright$] \underline{Sealed}: \nSealed{} tasks generated
+from fresh seeds after all weights and rules were frozen and
+preregistered; read once by the published selector.
+\end{itemize}
+
+Paired per-task statistics are reported with a
+$2{\times}10^{4}$-resample bootstrap 95\,\% confidence interval, the
+5\,\% two-sided trimmed mean, and $>$1\,mm win/regress fractions.
+Selection quality within a pool is summarized by the captured fraction
+of the oracle headroom,
+$(\mathcal{L}_{\mathrm{sel}}-\mathcal{L}_{\mathrm{first}})/
+ (\mathcal{L}_{\mathrm{oracle}}-\mathcal{L}_{\mathrm{first}})$, where
+the oracle executes every feasible candidate and is a diagnostic, not a
+method.
+
+\subsection{Ablation Study}
+
+\subsubsection{Table Construction}
+\label{sec:abl-table}
+Table~\ref{tab:table-abl} compares three constructions of the candidate
+table on the validation set, all queried and refined identically:
+k-means compression of a 200k uniform pool into 2{,}048 and 16{,}384
+centroids, and full-scale CVT sampling with 201{,}600 entries. The two
+compressed tables behave identically (attainable ceiling
+0.598/0.597\,m)---table resolution is not the limiting factor---yet both
+trail the full-scale table by some 15\,mm. The deficit of compression is
+structural: a centroid averaged over a large Voronoi cell is an
+artificial configuration whose forward kinematics is smeared across
+branches, degrading it as a seed. Full-scale CVT sampling keeps every
+entry a genuine configuration while preserving spatial uniformity, and
+recovers the ceiling to 0.612\,m.
+
+\begin{table}[!t]
+\caption{Influence of Table Construction (Validation Set,
+Identical Query and Refinement)}
+\label{tab:table-abl}
+\centering
+\footnotesize
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+ & solve rate [\%] & feasible/task & ceiling [m] \\
+\midrule
+k-means 2{,}048 & 72.1 & 22.2 & 0.5978 \\
+k-means 16{,}384 & 72.4 & 22.4 & 0.5969 \\
+CVT-sampled 201{,}600 & \textbf{87.7}\tnote{1} & \textbf{26.8} &
+\textbf{0.6119} \\
+\midrule
+random-restart enumeration\tnote{2} & --- & 31.0 & 0.6209 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item[1] With the re-attempt strategy of Sec.~\ref{sec:retry}; the
+compressed rows use single attempts, isolating construction from
+re-attempt (cf.\ Sec.~\ref{sec:abl-retry}).
+\item[2] 128 damped least-squares attempts from random restarts per
+task; the reference solving budget is roughly $3\times$ that of the
+proposed layer.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\subsubsection{Efficacy of the Re-Attempt Strategy}
+\label{sec:abl-retry}
+Holding the full-scale table fixed, disabling re-attempts (a single
+refinement per direction) yields a 72.9\,\% per-direction solve rate and
+a median of 23 feasible candidates; enabling the farthest-from-tried
+re-attempt with at most four attempts raises these to 87.7\,\% and 29.
+The mechanism mirrors its role in numerical IK~\cite{yuan2026iksel}:
+failures concentrate on directions whose nearest branch is blocked by a
+joint limit, and re-sorting by distance from tried seeds moves the next
+attempt into a different branch rather than repeating the same failure.
+The ceiling gain attributable to this single mechanism is
+$+$\ph{14}\,mm, the largest of any component in the candidate layer.
+
+\subsubsection{Candidate-Set Size}
+The attainable ceiling saturates once the self-motion branches are
+covered: under farthest-point ordering of the enumeration reference, the
+ceiling at $K{=}16$ already reaches 98.4\,\% of its $K{=}32$ value, and
+the marginal contribution beyond $K{\approx}24$ falls below measurement
+noise. The proposed layer's 32 cone directions with deduplication land
+in this saturated regime; enlarging $m$ mainly adds duplicates.
+
+\subsubsection{Supervision Signal}
+\label{sec:abl-sup}
+Table~\ref{tab:sup} isolates the selection supervision while holding the
+candidate set, features, and controller fixed. Every instantaneous rule
+captures a negative fraction of the headroom; the identical feature set
+supervised by complete closed-loop returns captures
+\phCapVal\,\% on validation. Even a linear model on the same features
+and labels is strongly positive, confirming that the information enters
+through the labels rather than the model class.
+
+\begin{table}[!t]
+\caption{Selection Rules on the Identical Candidate Set (Capture of
+Oracle Headroom, Validation Set)}
+\label{tab:sup}
+\centering
+\footnotesize
+\begin{tabular}{llc}
+\toprule
+selection rule & supervision & capture [\%] \\
+\midrule
+first feasible & none & $0$ \\
+best instantaneous criterion & none & \ph{$-$23.1} \\
+linear model, 45 features & complete returns & \ph{$+$23.6} \\
+listwise selector (single) & complete returns & \ph{$+$62.7} \\
+listwise selector (ensemble) & complete returns & \textbf{\phCapVal} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{The Limit of Execution-Free Selection}
+\label{sec:abl-limit}
+The captured fraction plateaus near two thirds, and the plateau is a
+property of the information rather than of the model: widening the
+network, doubling the training schedule, and exchanging the encoder all
+leave held-out capture within noise of the base configuration. As the
+decisive control, we grant the selector the strongest execution-free
+information available---for every candidate, the damped tracking field
+is integrated on the pure kinematic model until a constraint is met,
+yielding an exact nonlinear continuation of the starting branch with no
+environment step and no policy call. This kinematic continuation is
+individually excellent (within-task rank correlation 0.55 with the true
+outcome, matching the entire trained selector at 0.53), yet appended to
+the features and retrained it changes the captured fraction by nothing.
+We conclude that the learned selector had already internalized the
+kinematic continuation from its one-step descriptors, and that the
+residual third of the headroom depends on the learned interior policy's
+closed-loop behavior---how it spends the null space in ways no fixed
+field anticipates---which is observable only by execution. This bounds
+every execution-free selection scheme on this problem, the proposed one
+included.
+
+\subsubsection{Does the Execution Stage Require Adaptation?}
+\label{sec:abl-fwd}
+Sequential-chaining practice suggests adapting the controller to the
+initialization-induced state
+distribution~\cite{chen2023sequential}. We tested this direction twice
+under a preregistered promotion gate: a naive continuation of policy
+training on the selection-induced resets, and a conservatively
+engineered round with critic-only warm-up, no entropy bonus, a tightened
+trust region, and a fourfold step budget. Neither produced a significant
+improvement on either development set, the first being significantly
+harmful, and the training reward remained saturated throughout. A
+stratified analysis explains the null result: although the selector
+chooses configurations far from anything a generative initialization
+proposes (median joint-space novelty above 2\,rad), the adaptation
+effect is null in every novelty quartile, and the unadapted controller
+performs best from the most novel branches. We attribute this to the
+combination of task-relative observations and randomized-task training:
+in the state space the policy actually observes, an unfamiliar branch of
+one task coincides with familiar states of others, so the distribution
+shift that adaptation would repair has been absorbed by design. The same
+asymmetry---backward supervision effective, forward adaptation
+null---was reproduced independently on two further candidate mechanisms
+in our development history, suggesting a property of the observation
+design rather than an accident of one system.
+
+\subsection{System-Level Evaluation}
+\label{sec:system}
+Table~\ref{tab:main} reports the complete system---CVT table, 32
+cone-directed queries, re-attempted refinement, return-supervised
+selector, hybrid execution, one rollout per task---alongside its
+candidate-layer ablation, in which the table-based layer is replaced by
+exhaustive random-restart enumeration (128 attempts per task) with a
+selector retrained on that pool's returns. Within-pool references
+(first-feasible and the complete-candidate oracle) contextualize the
+numbers.
+
+\begin{table}[!t]
+\caption{System-Level Results (Mean Path Length; Paired Statistics
+Against the Candidate-Layer Ablation)}
+\label{tab:main}
+\centering
+\footnotesize
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+ & validation & external & sealed \\
+ & (\nDev) & (\nDev) & (\nSealed) \\
+\midrule
+first feasible [m] & \ph{--} & \ph{--} & \ph{--} \\
+proposed [m] & \textbf{\phIkselVal} & \textbf{\phIkselExt} &
+\textbf{\phIkselSealed} \\
+enumeration ablation [m]\tnote{1} & \ph{--} & \ph{--} & \ph{--} \\
+oracle [m] (diagnostic) & \ph{--} & \ph{--} & \ph{--} \\
+\midrule
+$\Delta$ vs.\ ablation [mm] & \phIvsEVal & \phIvsEExt & \phIvsESealed \\
+95\,\% CI [mm] & \phCIVal & \phCIExt & \phCISealed \\
+capture [\%] & \phCapVal & \phCapExt & \phCapSealed \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item[1] Identical selector recipe retrained on the enumeration pool's
+returns; solving budget roughly $3\times$ the proposed layer.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+Across six independent selector training seeds the deployed mean varies
+by \phSeedStd\,mm, and the sealed set, read once with the published
+selector under the frozen median rule, confirms the development
+conclusions. The deployed cost is dominated by the single rollout;
+candidate generation adds a sub-second, execution-free computation per
+task (one KDTree query per direction, each under 0.2\,ms, plus an
+average of $1.3$ refinement attempts per direction), and the selector
+inference is sub-millisecond when batched.
+
+\section{Conclusions and Future Work}
+We extended KDTree-based seed selection from numerical IK convergence to
+long-horizon motion survival. The proposed candidate layer---CVT
+sampling, cone-directed queries, joint-adjustment ranking, and
+re-attempted refinement---attains the ceiling of exhaustive enumeration
+at a third of its solving budget while remaining task-independent and
+free of learned components; the selection stage requires, and is
+sufficient with, complete closed-loop return supervision; and the
+captured fraction of the attainable headroom is bounded by a measured
+limit of execution-free selection, attributable to the closed-loop
+behavior of the learned interior policy. Since the framework treats the
+execution stage as a black box that can roll out candidates offline, it
+can naturally incorporate other controllers and other long-horizon
+objectives. Extending the selection stage with risk-sensitive objectives
+that penalize per-task regressions, and validating the coverage argument
+of Sec.~\ref{sec:abl-fwd} on physical hardware, are directions we are
+interested in exploring.
+
+\appendices
+
+\section{Negative Results on Selection Augmentation}
+\label{app:negative}
+For completeness we document selection variants that did not improve the
+proposed method, following the practice of reporting the boundary of a
+design space rather than only its optimum.
+
+\subsubsection*{Donor-Label Priors}
+When the table stores, for each entry, the return it achieved in the
+task from which it originated, retrieval could in principle supply a
+nonparametric outcome prior. Measured on the validation set, the
+within-task rank correlation between donor returns and the actual
+returns of the refined candidates is only $0.089$, and selecting by
+donor return captures $7.6\,\%$ of the headroom. Returns are a joint
+function of configuration and task geometry and do not transfer at
+neighbor granularity; the finding independently reconfirms the
+execution-free limit of Sec.~\ref{sec:abl-limit}.
+
+\subsubsection*{Abstention Gates}
+A margin gate that falls back to the classical configuration when the
+selector's feasibility margin is small \textit{raised} the regression
+fraction from 37\,\% to 50\,\% on the development sets. The enumerated
+candidate set intentionally contains no strong anchor---its
+first-feasible reference is weak---so abstention substitutes a worse
+default for a merely uncertain choice. Safe abstention requires an
+anchor at least as strong as the baseline being protected, which this
+design philosophy deliberately omits.
+
+\subsubsection*{Compressed Tables at Increased Scale}
+Increasing the compressed table from 2{,}048 to 16{,}384 centroids
+changes no measured quantity (Table~\ref{tab:table-abl}), confirming
+that centroid averaging, not resolution, is the failure mode of
+compression.
+
+\section{Reproducibility}
+All preregistration files, split fingerprints, and per-stage artifacts
+are versioned alongside the code. The sealed evaluation seeds, the
+selector publication rule, and the statistics reported were frozen in
+\texttt{runs/iksel\_final\_freeze\_v3.json} before the sealed set was
+generated; no metric was added or removed after the single sealed read.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

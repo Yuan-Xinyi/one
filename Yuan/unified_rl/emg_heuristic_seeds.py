@@ -40,6 +40,8 @@ REPROJECT_EVERY = 5
 
 
 def _src(which):
+    if which == 'eval10k':
+        return np.load(D.parent / 'eval10k_geoms.npz')
     return np.load(D / ('ikpool_candidates.npz' if which == 'train'
                         else f'ikpool_{which}_candidates.npz'))
 
@@ -176,7 +178,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('stage', choices=('gen', 'roll'))
     ap.add_argument('--set', default='validation',
-                    choices=('validation', 'external', 'sealed', 'train'))
+                    choices=('validation', 'external', 'sealed', 'train', 'eval10k'))
     ap.add_argument('--controller', default='hybrid',
                     choices=('hybrid', 'classical', 'rl'))
     args = ap.parse_args()

@@ -79,3 +79,44 @@ fig.tight_layout(); fig.savefig(FIG / 'fig_attribution.pdf'); plt.close(fig)
 print('EMG Part-A figures written:',
       sorted(p.name for p in FIG.glob('fig_smm*.pdf'))
       + sorted(p.name for p in FIG.glob('fig_attr*.pdf')))
+
+# ---- Fig: reference-length distribution + per-bucket controller bars ----
+import json as _json
+mt = Path('/home/lqin/one/Yuan/unified_rl/runs/iksel_final_n48/main10k_tables.json')
+if mt.exists():
+    rep2 = _json.loads(mt.read_text())
+    import numpy as _np
+    import torch as _t
+    import sys
+    sys.path.insert(0, '/home/lqin/one')
+    from Yuan.unified_rl.iksel_campaign import _load_pool_env as _lpe
+    _G = Path('/home/lqin/one/Yuan/unified_rl/runs/iksel_final_n48')
+    _, P, V = _lpe(_G / 'iksel_eval10k_candidates.npz',
+                   _G / 'iksel_eval10k_returns_hybrid.npz', _t.device('cuda:0'))
+    lref = _t.where(V, P, _t.tensor(-1e9, device=P.device)).max(1).values.cpu().numpy()
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.0, 2.1),
+                                   gridspec_kw={'width_ratios': [1.3, 1]})
+    ax1.hist(lref, bins=60, color=BLUE, alpha=.85)
+    for x, lab in ((0.45, '0.45'), (0.80, '0.80')):
+        ax1.axvline(x, color=RED, lw=1, ls='--')
+        ax1.text(x, ax1.get_ylim()[1] * .97, lab, color=RED, fontsize=6,
+                 ha='center', va='top')
+    ax1.set_xlabel(r'reference length $\ell^{\mathrm{ref}}$ [m]')
+    ax1.set_ylabel('# tasks')
+    ax1.text(.22, .9, 'Difficult', transform=ax1.transAxes, fontsize=6, color=GRAY)
+    ax1.text(.52, .9, 'Medium', transform=ax1.transAxes, fontsize=6, color=GRAY)
+    ax1.text(.8, .9, 'Easy', transform=ax1.transAxes, fontsize=6, color=GRAY)
+    t1 = rep2['table1']
+    buckets = ['Easy', 'Medium', 'Difficult']
+    arms = [('proposed+classical', 'Classical', GRAY),
+            ('proposed+rl', 'RL', ORANGE),
+            ('proposed+hybrid', 'Hybrid', BLUE)]
+    w = .26
+    for k, (a, lab, col) in enumerate(arms):
+        vals = [t1[a][b]['ratio'][0] for b in buckets]
+        ax2.bar(np.arange(3) + (k - 1) * w, vals, w, color=col, label=lab)
+    ax2.set_xticks(range(3)); ax2.set_xticklabels(buckets, fontsize=7)
+    ax2.set_ylabel('ratio to reference [%]'); ax2.set_ylim(0, 105)
+    ax2.legend(frameon=False, fontsize=6, loc='lower right')
+    fig.tight_layout(); fig.savefig(FIG / 'fig_refdist.pdf'); plt.close(fig)
+    print('fig_refdist.pdf written')

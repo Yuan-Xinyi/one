@@ -24,13 +24,13 @@
 % ---- numbers pending from the final campaign ----
 \newcommand{\nEval}{10{,}000}
 \newcommand{\nTrain}{20{,}000}
-\newcommand{\phRatioAll}{\ph{XX.X}}     % hybrid+proposed seed, ratio all
-\newcommand{\phRatioEasy}{\ph{XX.X}}
-\newcommand{\phRatioMed}{\ph{XX.X}}
-\newcommand{\phRatioDiff}{\ph{XX.X}}
-\newcommand{\phLenAll}{\ph{0.XXX}}
-\newcommand{\phSeedTime}{\ph{XXX}}      % per-task seed generation time [ms]
-\newcommand{\phHeurGap}{\ph{XX}}        % pp lead over heuristic seeds
+\newcommand{\phRatioAll}{94.7}     % hybrid+proposed seed, ratio all
+\newcommand{\phRatioEasy}{90.6}
+\newcommand{\phRatioMed}{96.8}
+\newcommand{\phRatioDiff}{96.1}
+\newcommand{\phLenAll}{0.640}
+\newcommand{\phSeedTime}{1038}      % per-task seed generation time [ms]
+\newcommand{\phHeurGap}{38}        % pp lead over heuristic seeds
 % ---- Part-A problem analysis (100-task study) ----
 \newcommand{\phVarSeed}{76.4}        % variance share: initial config [%]
 \newcommand{\phVarGain}{7.5}        % variance share: controller gains [%]
@@ -81,7 +81,7 @@ a selector network supervised by the \textit{complete closed-loop return}
 of every candidate commits to a single configuration. Experiments on
 \nEval{} straight-line path-following tasks with a 7-DoF Franka FR3 show
 that the enumeration attains the attainable ceiling of exhaustive
-random-restart search at one third of its solving budget, that
+random-restart search with fewer than half of its IK attempts, that
 return supervision is necessary---every instantaneous geometric criterion
 underperforms a trivial first-feasible rule---and that the system
 recovers \phRatioAll\,\% of the per-task reference length, with detailed
@@ -101,7 +101,7 @@ per kinematic chain by \texttt{iksel\_clean\_pilot.py} (stage
 generation and selector training are provided by
 \texttt{iksel\_campaign.py}. Practitioners adapting the framework to
 their own manipulator should (i) rebuild the table for their chain,
-(ii) adjust the number of cone directions (\texttt{N\_DIRS}, default 32)
+(ii) adjust the number of cone directions (\texttt{N\_DIRS}, default 48)
 and re-attempts (\texttt{MAX\_TRY}, default 4) to trade candidate
 diversity against generation time, and (iii) retrain the selector on
 closed-loop returns of their own controller---the selection machinery
@@ -151,7 +151,7 @@ form a self-motion manifold (SMM) whose joint-limit-induced branches are
 disconnected; configurations on different branches realize the same
 tool pose yet support sharply different downstream path lengths---on our
 task distribution, the best and worst feasible starts of one task differ
-by a median of \ph{472}\,mm, comparable to the average task length. The
+by a median of 583\,mm, comparable to the average task length. The
 initialization problem is also deceptively hard. Its consequence is
 revealed late: branch survival is dominated by orientation-cone
 violations deep into the trajectory, and, as our experiments quantify,
@@ -646,10 +646,7 @@ controllers.
 
 \begin{figure}[!t]
 \centering
-\phfig{3.2cm}{(a) Histogram and density of $\ell^{\mathrm{ref}}$ over
-the \nEval{} evaluation tasks with difficulty thresholds marked.
-(b) Ratio-to-reference of Classical / RL / Hybrid under the proposed
-seed, grouped by difficulty bucket.}
+\includegraphics[width=\columnwidth]{figures/fig_refdist.pdf}
 \caption{Reference-length distribution and per-bucket controller
 comparison.}
 \label{fig:refdist}
@@ -676,24 +673,24 @@ Eval-Set & $\pi$ & Path Length (m) & Ratio to Reference (\%)\\
  & {\scriptsize Mean / Std / Min / Max}\\
 \midrule
 \multirow{3}{*}{All}
- & Classical & \ph{--\,/\,--\,/\,--\,/\,--} & \ph{--\,/\,--\,/\,--\,/\,--}\\
- & RL        & \ph{--\,/\,--\,/\,--\,/\,--} & \ph{--\,/\,--\,/\,--\,/\,--}\\
- & Hybrid    & \textbf{\phLenAll} & \textbf{\phRatioAll}\\
+ & Classical & 0.488\,/\,0.203\,/\,0.006\,/\,1.429 & 76.7\,/\,25.8\,/\,0.6\,/\,288.0\\
+ & RL        & 0.633\,/\,0.259\,/\,0.005\,/\,1.574 & 93.7\,/\,16.0\,/\,0.6\,/\,113.5\\
+ & Hybrid    & \textbf{0.640}\,/\,0.254\,/\,0.006\,/\,1.575 & \textbf{94.7}\,/\,13.7\,/\,0.6\,/\,100.0\\
 \midrule
 \multirow{3}{*}{Easy}
- & Classical & \ph{--} & \ph{--}\\
- & RL        & \ph{--} & \ph{--}\\
- & Hybrid    & \ph{--} & \phRatioEasy\\
+ & Classical & 0.573\,/\,0.268\,/\,0.006\,/\,1.429 & 58.4\,/\,28.6\,/\,0.6\,/\,152.9\\
+ & RL        & 0.891\,/\,0.249\,/\,0.006\,/\,1.574 & 88.9\,/\,22.1\,/\,0.6\,/\,108.5\\
+ & Hybrid    & \textbf{0.908}\,/\,0.225\,/\,0.006\,/\,1.575 & \textbf{90.6}\,/\,19.3\,/\,0.6\,/\,100.0\\
 \midrule
 \multirow{3}{*}{Medium}
- & Classical & \ph{--} & \ph{--}\\
- & RL        & \ph{--} & \ph{--}\\
- & Hybrid    & \ph{--} & \phRatioMed\\
+ & Classical & 0.505\,/\,0.142\,/\,0.012\,/\,1.190 & 82.3\,/\,20.1\,/\,1.8\,/\,243.5\\
+ & RL        & 0.594\,/\,0.119\,/\,0.005\,/\,0.799 & 96.2\,/\,11.3\,/\,0.7\,/\,113.5\\
+ & Hybrid    & \textbf{0.597}\,/\,0.113\,/\,0.011\,/\,0.799 & \textbf{96.8}\,/\,9.2\,/\,1.5\,/\,100.0\\
 \midrule
 \multirow{3}{*}{Difficult}
- & Classical & \ph{--} & \ph{--}\\
- & RL        & \ph{--} & \ph{--}\\
- & Hybrid    & \ph{--} & \phRatioDiff\\
+ & Classical & 0.330\,/\,0.080\,/\,0.015\,/\,1.281 & 91.0\,/\,15.6\,/\,4.3\,/\,288.0\\
+ & RL        & 0.347\,/\,0.076\,/\,0.005\,/\,0.451 & 95.4\,/\,12.4\,/\,1.2\,/\,104.8\\
+ & Hybrid    & \textbf{0.350}\,/\,0.071\,/\,0.009\,/\,0.450 & \textbf{96.1}\,/\,10.1\,/\,2.6\,/\,100.0\\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -708,9 +705,13 @@ confined to its SMM branch), the exhaustive-enumeration ablation (the
 identical selector retrained on the 128-restart candidate pool), and the
 proposed table-based initialization. The two heuristics cannot cross
 branches, whereas the proposed enumeration spans them; under every
-controller, the proposed initialization leads both heuristics by
-\phHeurGap\,pp at a per-task generation cost of \phSeedTime\,ms, and
-matches the exhaustive ablation at one third of its solving budget.
+controller, the proposed initialization leads both heuristics by at
+least \phHeurGap\,pp at a per-task generation cost of
+\phSeedTime\,ms, and matches the exhaustive ablation with fewer than
+half of its IK attempts. Negative minimum lengths of the heuristic
+seeds are genuine: $\ell$ is the net signed ray progress, and a seed
+on an unfavorable branch can drift backward before violating a
+constraint.
 
 \begin{table}[!t]
 \caption{Performance of the Proposed Initialization Compared with
@@ -725,17 +726,31 @@ $\pi$ & $\mathbf{q}^{*}_{0}$ & $t$ (ms) & Path Length (m) &
 Ratio (\%)\\
 \midrule
 \multirow{4}{*}{Hybrid}
- & $\mathbf{q}_{\mu}$ & \ph{--} & \ph{--} & \ph{--}\\
- & $\mathbf{q}_{\mathrm{jl}}$ & \ph{--} & \ph{--} & \ph{--}\\
- & exhaustive abl.\tnote{1} & \ph{--} & \ph{--} & \ph{--}\\
- & proposed & \phSeedTime & \textbf{\phLenAll} & \textbf{\phRatioAll}\\
+ & $\mathbf{q}_{\mu}$ & 411 & 0.299\,$\pm$\,0.300 & 45.9\,$\pm$\,46.6\\
+ & $\mathbf{q}_{\mathrm{jl}}$ & 307 & 0.323\,$\pm$\,0.311 & 49.4\,$\pm$\,46.7\\
+ & exhaustive abl.\tnote{1} & 559 & 0.634\,$\pm$\,0.255 & 94.9\,$\pm$\,16.0\\
+ & proposed & \phSeedTime & \textbf{0.640}\,$\pm$\,0.254 & \textbf{94.7}\,$\pm$\,13.7\\
+\midrule
+\multirow{3}{*}{RL}
+ & $\mathbf{q}_{\mu}$ & 411 & 0.279\,$\pm$\,0.297 & 43.0\,$\pm$\,46.4\\
+ & $\mathbf{q}_{\mathrm{jl}}$ & 307 & 0.319\,$\pm$\,0.311 & 48.7\,$\pm$\,46.7\\
+ & proposed & \phSeedTime & \textbf{0.633}\,$\pm$\,0.259 & \textbf{93.7}\,$\pm$\,16.0\\
+\midrule
+\multirow{3}{*}{Classical}
+ & $\mathbf{q}_{\mu}$ & 411 & 0.232\,$\pm$\,0.226 & 37.2\,$\pm$\,41.0\\
+ & $\mathbf{q}_{\mathrm{jl}}$ & 307 & 0.238\,$\pm$\,0.227 & 38.5\,$\pm$\,40.4\\
+ & proposed & \phSeedTime & \textbf{0.488}\,$\pm$\,0.203 & \textbf{76.7}\,$\pm$\,25.8\\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-\item[1] 128 random-restart DLS attempts per task with the identical
-selector retrained on that pool; solving budget $\approx3\times$ the
-proposed layer. Rows for the Classical and RL controllers follow the
-same pattern and are reported in the final version.
+\item[1] 128 cold random-restart DLS attempts per task with the
+identical selector applied to that pool, evaluated on a 2{,}560-task
+subset (proposed on the same subset: 94.5\,$\pm$\,14.0\,\%). Its
+wall-clock is lower because all 128 attempts run in a single batch,
+but it spends $2.3\times$ the IK attempts of the proposed layer
+($\approx$55 warm-started projections, 91.6\,\% first-attempt
+success); the proposed latency is dominated by its up-to-four
+serialized re-attempt rounds.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -776,7 +791,7 @@ criteria, and selectors transferred from other candidate
 distributions---captures a \textit{negative} fraction of the
 $\ell^{\mathrm{ref}}$ headroom, i.e., performs worse than the first
 feasible candidate. The identical feature set supervised by complete
-closed-loop returns captures \ph{$\sim$67}\,\%, and even a linear model
+closed-loop returns captures $\sim$73\,\%, and even a linear model
 on the same labels is strongly positive: the information enters through
 the labels, not the model class.
 
@@ -816,9 +831,14 @@ design.
 Sweeping a single threshold
 $\tau_{\mathrm{enter}}{=}\tau_{\mathrm{exit}}$ traces the trade-off as
 the boundary region widens; introducing a hysteresis gap largely
-reduces switching per episode at negligible length cost. We adopt
+reduces switching per episode at negligible length cost. On a fixed 1{,}024-task subset, the
+ratio-to-reference stays within $[95.0,95.2]$\,\% over the whole grid
+$\tau\in[0.95,0.99]$, while the mean number of switches per episode
+falls from 1.42 ($\tau{=}0.95$) to 0.35 ($\tau{=}0.99$); adding the
+hysteresis gap $(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})=
+(0.985,0.96)$ halves it again to 0.18 at a cost of 0.02\,pp. We adopt
 $(0.985,0.96)$, consistent with the insensitivity of the ratio within
-the swept range. \ph{Full sweep table in the final version.}
+the swept range.
 
 \section{Conclusions and Future Work}
 We developed a framework for extreme motion generation that advances a

@@ -56,6 +56,7 @@ def _geoms(source):
         'validation': D / 'ikpool_validation_candidates.npz',
         'external': D / 'ikpool_external_candidates.npz',
         'sealed': Path('Yuan/unified_rl/runs/iksel_sealed_v3/candidates_K8.npz'),
+        'eval10k': D.parent / 'eval10k_geoms.npz',
     }
     c = np.load(paths[source], allow_pickle=True)
     m = len(c['p0'])
@@ -96,7 +97,7 @@ def stage_gen(args, device):
     for i in range(m):
         p0, nt, ld = p0a[i], nta[i], lda[i]
         src_off = {'train': 0, 'topup': 1, 'validation': 2,
-                   'external': 3, 'sealed': 4}[source] * 10_000_019
+                   'external': 3, 'sealed': 4, 'eval10k': 5}[source] * 10_000_019
         rng = np.random.default_rng(GEN_SEED * 1000 + int(tids[i]) + src_off)
         dirs = _sample_in_cone(torch.as_tensor(nt, dtype=torch.float32),
                                CONE_DEG, N_DIRS - 1, rng)
@@ -335,7 +336,7 @@ def main():
         'train-selector', 'train-enum-sel', 'eval-dev'))
     ap.add_argument('--source', default='train',
                     choices=('train', 'topup', 'train20k', 'validation',
-                             'external', 'sealed'))
+                             'external', 'sealed', 'eval10k'))
     ap.add_argument('--shard', default='0/1')
     ap.add_argument('--run-seed', type=int, default=0)
     ap.add_argument('--device', default='cuda:0')

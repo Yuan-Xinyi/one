@@ -562,9 +562,69 @@ from the previously tried seeds and re-attempted, up to four times,
 driving consecutive attempts into distinct branches. Surviving
 solutions are validated strictly (joint limits, 5\,mm position error,
 the orientation cone, collision) and deduplicated at $0.08$\,rad,
-yielding a median of 29 feasible candidates per task at roughly one
-third of the solving budget of 128-restart exhaustive search
-(Sec.~\ref{sec:abl-retry}).
+yielding a median of 43 feasible candidates per task from roughly 55
+warm-started projections---fewer than half the 128 cold restarts of
+exhaustive search (Sec.~\ref{sec:abl-retry}).
+
+\subsubsection{Relation to the Branch Structure}
+\label{sec:branchlink}
+The layer never represents branches explicitly, yet Sec.~\ref{sec:analysis}
+implies it must reach several of them or the selector has nothing to
+choose from. Two properties make it do so. First, the table samples the
+\textit{joint} space uniformly, so the many-to-one preimage of a queried
+pose is represented across branches in proportion to their volume; a
+$k$-nearest query in pose space therefore returns entries scattered over
+that preimage rather than clustered on one branch. Second, damped
+least-squares refinement is local, so each retrieved entry converges
+within the branch it was drawn from---the seed, not the solver, decides
+the branch---and the re-attempt rule pushes successive attempts to
+distant seeds by construction.
+
+Table~\ref{tab:branch} measures this on the 97 tasks whose manifolds
+were traced in Sec.~\ref{sec:analysis-smm}. Every candidate is continued back
+to the nominal pose by the projection used for the traced germs and
+assigned to the nearest traced branch within the $0.3$\,rad linkage
+radius that defined them. The proposed layer reaches 4.5 of the 5.7
+branches per task and places a candidate on the best branch in 82.5\,\%
+of tasks, whereas the two heuristic seeds remain on 0.6 branches and
+reach the best one in fewer than one task in five---the structural
+handicap of null-space ascent, which cannot leave its starting branch.
+Exhaustive enumeration covers 95.1\,\%, but the traced branch set was
+seeded from \textit{its} candidates, so the comparison is conservative
+for the proposed layer; conversely, the proposed layer places 2.6
+candidates per task on branches those germs never reached. The residual
+gap in branch coverage does not propagate to performance
+(Table~\ref{tab:seed}): branch identity accounts for \phBranchVar\,\% of
+the outcome variance and placement within a branch for the remainder,
+and the proposed layer samples the branches it does reach more densely
+(22.9 versus 16.3 configurations continued to the nominal pose).
+
+\begin{table}[!t]
+\caption{Branch Coverage of Each Candidate Source on the 97 Traced Tasks}
+\label{tab:branch}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+$\mathbf{q}^{*}_{0}$ source & Branches & Coverage & Best branch\\
+ & {\scriptsize reached / available} & {\scriptsize (\%)}
+ & {\scriptsize reached (\%)}\\
+\midrule
+$\mathbf{q}_{\mu}$ & 0.6\,/\,5.7 & 10.7 & 13.4\\
+$\mathbf{q}_{\mathrm{jl}}$ & 0.6\,/\,5.7 & 10.7 & 17.5\\
+exhaustive enumeration\tnote{1} & 5.4\,/\,5.7 & 95.1 & 95.9\\
+proposed & \textbf{4.5}\,/\,5.7 & \textbf{78.7} & \textbf{82.5}\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item[1] The traced branches were seeded from this source, which is
+therefore favored by construction; the proposed layer additionally
+reaches 2.6 configurations per task outside the traced set.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
 
 \subsubsection{Return-Supervised Selection}
 Instantaneous criteria cannot order such a candidate set: branch

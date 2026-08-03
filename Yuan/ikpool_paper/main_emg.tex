@@ -13,6 +13,8 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs,multirow,threeparttable}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
 \usepackage{xcolor}
 \usepackage[hidelinks]{hyperref}
 \usepackage{url}
@@ -463,17 +465,43 @@ the joint-limit boundary.
 
 \begin{figure}[!t]
 \centering
-\phfig{4.0cm}{Framework overview. Left: task parameters
-$(\mathbf{p}_0,\mathbf{d},\mathbf{n})$ $\rightarrow$ cone-directed
-KDTree queries of the CVT configuration table $\rightarrow$ ranked and
-re-attempted DLS refinement $\rightarrow$ branch-spanning candidate set
-$\rightarrow$ return-supervised selector $\rightarrow$
-$\mathbf{q}^{*}_0$. Right: execution
-$\dot{\mathbf{q}}=\mathbf{J}^{+}\dot{\mathbf{x}}+
-(\mathbf{I}-\mathbf{J}^{+}\mathbf{J})\boldsymbol{\xi}$ with per-step
-boundary check switching between the RL controller (interior,
-farsighted) and the classical controller (boundary region, robust),
-with hysteresis thresholds.}
+\resizebox{\columnwidth}{!}{%
+\begin{tikzpicture}[
+  font=\scriptsize,
+  box/.style={draw, rounded corners=1pt, fill=black!4, inner sep=2.5pt,
+              minimum height=6mm, align=center},
+  gbox/.style={box, fill=green!8},
+  obox/.style={box, fill=orange!10},
+  bbox/.style={box, fill=blue!7},
+  arr/.style={-{Stealth[length=1.5mm]}, thick},
+  lbl/.style={font=\tiny, align=center}]
+% ---- initialization row ----
+\node[box] (task) {task $\mathbf{c}=$\\$[\mathbf{p}_0,\mathbf{d},\mathbf{n}]$};
+\node[box, right=3mm of task] (tab) {CVT table\\201{,}600, KDTree};
+\node[box, right=3mm of tab] (rer) {6-D rerank\\$\leq$4 re-attempts};
+\node[box, right=3mm of rer] (cand) {candidates\\across branches};
+\node[gbox, right=3mm of cand] (sel) {return-sup.\\selector};
+\draw[arr] (task) -- node[below, lbl, yshift=-0.5mm] {48 cone\\dirs.} (tab);
+\draw[arr] (tab) -- (rer);
+\draw[arr] (rer) -- (cand);
+\draw[arr] (cand) -- (sel);
+% ---- execution row ----
+\node[obox, below=8mm of rer.south west, anchor=north west] (rl)
+  {RL policy\\(interior, farsighted)};
+\node[bbox, right=13mm of rl] (cl)
+  {classical\\(boundary, robust)};
+\node[gbox, right=6mm of cl] (ell) {$\ell$};
+\draw[arr] (rl.east) to[bend left=20]
+  node[above, lbl, yshift=0.3mm] {$\rho<\tau_{\mathrm{exit}}$} (cl.west);
+\draw[arr] (cl.west) to[bend left=20]
+  node[below, lbl, yshift=-0.3mm] {$\rho>\tau_{\mathrm{enter}}$} (rl.east);
+\draw[arr] (cl) -- (ell);
+\draw[arr] (sel.south) -- node[pos=.45, left, lbl]
+  {$\mathbf{q}^{*}_{0}$,\\one rollout} (cl.north east);
+\draw[arr, dashed, green!45!black] (ell.north) to[bend right=18]
+  node[pos=.4, right, lbl, text=green!45!black, xshift=0.3mm]
+  {training:\\complete\\returns of\\every\\candidate} (sel.south);
+\end{tikzpicture}}
 \caption{Overview of the two-stage framework for extreme motion
 generation.}
 \label{fig:overview}
@@ -493,11 +521,7 @@ branch. We decompose the problem into branch-spanning
 
 \begin{figure}[!t]
 \centering
-\phfig{3.2cm}{Self-motion manifold for a fixed end-effector pose:
-(a) the continuous manifold without joint limits; (b)--(d)
-configurations from disconnected branches sharing the pose but
-differing in reachable path length; (e) joint trajectories along the
-arc length with limit-hitting joints marked.}
+\includegraphics[width=\columnwidth]{figures/fig_smm_manifold.pdf}
 \caption{Self-motion manifold branches for a fixed end-effector pose.}
 \label{fig:smm}
 \end{figure}
@@ -517,7 +541,7 @@ minutes for a new kinematic chain. Sec.~\ref{sec:abl-table} shows that
 \textit{sampling} at full scale is essential: compressing the same
 samples into few thousand k-means centroids---averages over large
 cells---degrades the attainable ceiling by more than 20\,mm.} Online,
-$m{=}32$ tool directions are sampled uniformly on the
+$m{=}48$ tool directions are sampled uniformly on the
 $\theta_{\max}$-cone about $\mathbf{n}$; each direction forms a query
 pose whose 200 nearest entries are ranked by the approximated
 joint-space adjustment
@@ -619,7 +643,7 @@ decisions are made on geometry-disjoint internal splits under a
 preregistered protocol with a sealed final evaluation.
 
 Unless otherwise specified, experiments use the default setting:
-(1) table-based initialization with 32 cone directions and at most 4
+(1) table-based initialization with 48 cone directions and at most 4
 re-attempts per direction; (2) hybrid switching thresholds
 $(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})=(0.985,0.96)$;
 (3) classical secondary-objective weights
@@ -666,6 +690,7 @@ Difficulty Buckets on \nEval{} Evaluation Tasks}
 \label{tab:system}
 \centering
 \footnotesize
+\setlength{\tabcolsep}{3pt}
 \begin{tabular}{llcc}
 \toprule
 Eval-Set & $\pi$ & Path Length (m) & Ratio to Reference (\%)\\

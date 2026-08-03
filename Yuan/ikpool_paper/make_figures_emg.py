@@ -120,3 +120,53 @@ if mt.exists():
     ax2.legend(frameon=False, fontsize=6, loc='lower right')
     fig.tight_layout(); fig.savefig(FIG / 'fig_refdist.pdf'); plt.close(fig)
     print('fig_refdist.pdf written')
+
+# ---- Fig: SMM structure of one representative task (Sec III) ----------
+a1b = np.load(A / 'a1_smm.npz')
+best_t, best_n = None, 0
+for t in sorted(set(a1b['task'].tolist())):
+    m = a1b['task'] == t
+    nb = len(set(a1b['branch'][m].tolist()))
+    if nb >= 4 and m.sum() > best_n:
+        best_t, best_n = t, m.sum()
+m = a1b['task'] == best_t
+q, br, arc, pr = a1b['q'][m], a1b['branch'][m], a1b['arc'][m], a1b['progress'][m]
+# two joints with the largest excursion along the manifold
+jsel = np.argsort(q.std(0))[-2:]
+LO = np.array([-2.7437, -1.7837, -2.9007, -3.0421, -2.8065, 0.5445, -3.0159])
+HI = np.array([2.7437, 1.7837, 2.9007, -0.1518, 2.8065, 4.5169, 3.0159])
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.0, 2.3),
+                               gridspec_kw={'width_ratios': [1, 1.35]})
+sc = None
+for b in sorted(set(br.tolist())):
+    mb = br == b
+    o = np.argsort(arc[mb])
+    ax1.plot(q[mb][o, jsel[0]], q[mb][o, jsel[1]], '-', lw=.7, color=GRAY,
+             alpha=.6, zorder=1)
+    sc = ax1.scatter(q[mb][:, jsel[0]], q[mb][:, jsel[1]], c=pr[mb], s=8,
+                     cmap='viridis', vmin=pr.min(), vmax=pr.max(), zorder=2)
+for v, axis in ((LO[jsel[0]], 'v'), (HI[jsel[0]], 'v')):
+    ax1.axvline(v, color=RED, lw=.8, ls='--')
+for v in (LO[jsel[1]], HI[jsel[1]]):
+    ax1.axhline(v, color=RED, lw=.8, ls='--')
+ax1.set_xlabel(f'$q_{{{jsel[0]+1}}}$ [rad]')
+ax1.set_ylabel(f'$q_{{{jsel[1]+1}}}$ [rad]')
+cb = fig.colorbar(sc, ax=ax1, fraction=.05, pad=.02)
+cb.set_label('achieved length [m]', fontsize=6)
+cb.ax.tick_params(labelsize=6)
+# (b) minimum joint-limit margin along the manifold: every branch is a
+# segment whose margin collapses to zero at both ends -- the limits are
+# what disconnects the manifold
+margin = np.minimum(q - LO[None, :], HI[None, :] - q).min(1)
+for b_ in sorted(set(br.tolist())):
+    mb = br == b_
+    o = np.argsort(arc[mb])
+    ax2.plot(arc[mb][o], margin[mb][o], 'o-', ms=2.2, lw=1.0,
+             label=f'branch {b_}')
+ax2.axhline(0.0, color=RED, lw=.8, ls='--')
+ax2.set_xlabel('SMM arc length [rad]')
+ax2.set_ylabel('min joint-limit margin [rad]')
+ax2.legend(frameon=False, fontsize=5.5, ncol=3, loc='upper right')
+fig.tight_layout(); fig.savefig(FIG / 'fig_smm_manifold.pdf'); plt.close(fig)
+print('fig_smm_manifold.pdf written for task', best_t,
+      'branches', len(set(br.tolist())))

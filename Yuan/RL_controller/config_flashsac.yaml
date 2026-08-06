@@ -1,0 +1,110 @@
+# Fair, tensor-native FlashSAC comparison for the existing Yuan controller.
+#
+# Algorithm source:
+#   https://github.com/Holiday-Robot/FlashSAC
+#   commit 87edc9061150ae9e962dd84e6544e27a1554b3ab (MIT)
+#
+# The local environment batch remains 128 to match config.yaml's PPO run.
+# `updates_per_1024_env_steps: 2` scales the official GPU update ratio:
+# at 128 envs the trainer performs one update every four vector steps.
+
+seed: 0
+
+env:
+  n_envs: 128
+  dt: 0.05
+  v: 0.2
+  a_max: 0.5
+  lambda_0: 0.05
+  sigma_thr: 0.05
+  cone_deg: 30.0
+  max_steps: 500
+  tcp_offset: 0.2034
+  r_collision: 0.0
+  r_cone: 0.0
+  r_jl: 0.0
+  w_progress: 1.0
+  manip_damping: 1.0e-3
+  observe_ray_error: true
+
+flashsac:
+  gamma: 0.99
+  # Official IsaacLab GPU launcher uses n_step=3.
+  n_step: 3
+  buffer_max_length: 10000000
+  buffer_min_length: 100000
+  buffer_device: cuda
+  sample_batch_size: 2048
+  normalize_reward: true
+  normalized_g_max: 5.0
+
+  learning_rate_init: 3.0e-4
+  learning_rate_peak: 3.0e-4
+  learning_rate_end: 1.5e-4
+  # Official warmup rate resolves to zero steps at this training budget.
+  learning_rate_warmup_steps: 0
+  # 30M / 1024 * 2 optimizer updates, rounded up.
+  learning_rate_decay_steps: 58594
+
+  actor_num_blocks: 2
+  actor_hidden_dim: 128
+  actor_bc_alpha: 0.0
+  actor_noise_zeta_mu: 2.0
+  actor_noise_zeta_max: 16
+  actor_update_period: 2
+
+  critic_num_blocks: 2
+  critic_hidden_dim: 256
+  critic_num_bins: 101
+  critic_min_v: -5.0
+  critic_max_v: 5.0
+  critic_target_update_tau: 0.01
+
+  temperature_initial_value: 0.01
+  temperature_target_sigma: 0.15
+
+  use_compile: true
+  compile_mode: auto
+  use_amp: true
+
+line_distribution:
+  n_pool: 100000
+  n_target_noise_deg: 5.0
+  train_seed: 0
+  # Independent sampling stream; reseeded after cache load/build so cache
+  # presence cannot change the controller's transition distribution.
+  train_task_seed: 1000003
+  feasibility_filter: true
+  feasibility_threshold_m: 0.1
+
+eval:
+  n_holdout: 200
+  holdout_pool_seed: 42
+  holdout_task_seed: 42001
+
+train:
+  total_env_steps: 30000000
+  updates_per_1024_env_steps: 2.0
+  # Required fair-comparison transition budgets. Vector collection evaluates
+  # immediately after crossing a budget and records both requested/actual step.
+  eval_milestones_env_steps:
+    - 0
+    - 100000
+    - 250000
+    - 500000
+    - 1000000
+    - 2000000
+    - 5000000
+    - 10000000
+    - 20000000
+    - 30000000
+  # Retained only as the fallback when milestones are omitted.
+  eval_every_env_steps: 1000000
+  log_every_env_steps: 100000
+  checkpoint_every_env_steps: 5000000
+  # False creates explicitly named inference-only snapshots. Set true for
+  # atomic replay+agent+RNG+update-credit continuous-resume bundles.
+  save_replay_at_checkpoints: false
+  # Likewise, false avoids a multi-GB final replay bundle.
+  save_final_replay: false
+  synchronize_timing: false

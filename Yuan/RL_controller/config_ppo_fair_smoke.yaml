@@ -1,0 +1,72 @@
+# Non-publishable real-environment integration smoke for the fresh PPO arm.
+# It shares the FlashSAC smoke environment and fixed holdout, but its quality
+# and timing must not be used in the paper tables.
+
+seed: 20260728
+
+env:
+  n_envs: 16
+  dt: 0.05
+  v: 0.2
+  a_max: 0.5
+  lambda_0: 0.05
+  sigma_thr: 0.05
+  cone_deg: 30.0
+  max_steps: 100
+  tcp_offset: 0.2034
+  r_collision: 0.0
+  r_cone: 0.0
+  r_jl: 0.0
+  w_progress: 1.0
+  manip_damping: 1.0e-3
+  observe_ray_error: true
+
+ppo:
+  total_timesteps: 4096
+  learning_rate: 3.0e-4
+  n_steps: 16
+  anneal_lr: true
+  gamma: 0.99
+  gae_lambda: 0.95
+  n_minibatches: 4
+  update_epochs: 2
+  norm_adv: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.02
+  hidden_dim: 128
+  init_log_std: -0.5
+  normalize_returns: true
+  actor_warmup_updates: 0
+  squashed_entropy: false
+
+line_distribution:
+  n_pool: 512
+  n_target_noise_deg: 5.0
+  train_seed: 20260728
+  train_task_seed: 1000003
+  feasibility_filter: false
+  feasibility_threshold_m: 0.1
+
+eval:
+  n_holdout: 16
+  holdout_pool_seed: 20260729
+  holdout_task_seed: 20260730
+
+benchmark:
+  milestones:
+    - 0
+    - 1024
+    - 2048
+    - 4096
+  require_published_milestones: false
+  save_checkpoints: true
+  synchronize_timing: true
+
+analysis:
+  progress_thresholds_m: [0.10, 0.20, 0.30, 0.40, 0.50]
+  bootstrap_samples: 1000
+  bootstrap_seed: 20260729

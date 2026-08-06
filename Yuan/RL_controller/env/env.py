@@ -1,15 +1,25 @@
 """Torch-batched Gymnasium-style env for FR3 position-only NSRL path-following.
 
-Per rules.md, the "line" is an infinite ray (p_0, u_hat, n_target) — no length,
-no success terminate. Agent's only objective is to maximize episode lifetime.
+The task path is an unbounded Cartesian path given by an extension rule:
+origin p_0, initial tangent d, plane normal n_target, and a signed curvature
+kappa [1/m]. kappa = 0 is the infinite ray of the original experiments — no
+length, no success terminate; the agent's only objective is to maximize the
+arc length travelled before a safety constraint is violated. kappa != 0 is a
+constant-curvature arc in the plane through p_0 spanned by (d, n_target x d);
+see env/path_geometry.py.
 
 Reward (P0 progress-only):
-    r_t = w_progress · clip(Δp·u_hat / (v·dt), 0, 1)   ∈ [0, w_progress]
+    r_t = w_progress · clip(Δp·T / (v·dt), 0, 1)   ∈ [0, w_progress]
+with T the instantaneous path tangent (= u_hat when kappa = 0).
 
 Per env state:
     q              (7,)  current joint config
-    line_dir       (3,)  task direction u_hat (unit, world frame)
+    line_dir       (3,)  INSTANTANEOUS path tangent (unit, world frame);
+                         refreshed every step, constant when kappa = 0
+    path_d0        (3,)  reset-time tangent, i.e. the task descriptor d
+    path_kappa     ()    signed curvature of the path [1/m]
     n_target       (3,)  target normal for 30° cone (unit, world frame)
+    arc_progress   ()    arc length travelled this episode [m]
     t              ()    step counter
     a_prev         (4,)  last policy action ∈ [-1,1]^4
     done_persistent ()   True once env terminated/truncated (auto_reset=False mode)
@@ -25,9 +35,11 @@ from one.robots.manipulators.franka.fr3_pen.batched_fr3_kin import BatchedFR3Kin
 from one.robots.manipulators.franka.fr3.sphere_collision import FR3SphereCollision
 
 from Yuan.RL_controller.env.line_distribution import LineDistribution
+from Yuan.RL_controller.env.path_geometry import path_frame
 
 
 OBS_DIM = 31
+RAY_ERROR_DIM = 3
 ACT_DIM = 4
 
 # Framing B: lateral deviation is controlled by a task-space PD term in the
@@ -54,6 +66,17 @@ class EnvConfig:
     # Progress-only shaping reward.
     w_progress: float = 1.0
     manip_damping: float = 1e-3
+    # Task-space proportional feedback on the distance to the path, in 1/s.
+    # On a straight ray the damped pseudo-inverse alone keeps the realized TCP
+    # velocity on-axis, so the submitted results were produced with pure
+    # feed-forward (k_lateral = 0). On a curved path pure feed-forward along
+    # the instantaneous tangent cuts the corner and the error accumulates with
+    # arc length, so this term must be enabled. Default 0 keeps every existing
+    # checkpoint/pipeline bit-identical.
+    k_lateral: float = 0.0
+    # Append normalized lateral(p_tcp - p_start) to the historical 31-D
+    # observation. Disabled by default so existing checkpoints remain compatible.
+    observe_ray_error: bool = False
 
 
 def damped_pinv(J_p: torch.Tensor, lambda_0: float, sigma_thr: float):
@@ -216,6 +239,7 @@ class NSRLBatchedEnv:
                  device: torch.device | str = "cuda"):
         self.cfg = cfg
         self.device = torch.device(device)
+        self.obs_dim = OBS_DIM + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
         self.n_envs = cfg.n_envs
         self.dt = cfg.dt
         self.v = cfg.v
@@ -234,7 +258,19 @@ class NSRLBatchedEnv:
         B = self.n_envs
         d = self.kin.dtype
         self.q = torch.zeros((B, 7), device=self.device, dtype=d)
+        # line_dir is the INSTANTANEOUS tangent of the path at the point
+        # closest to the current TCP; it is refreshed every step. On a straight
+        # ray it never leaves its reset value, so this is a no-op there.
         self.line_dir = torch.zeros((B, 3), device=self.device, dtype=d)
+        # path_d0 is the reset-time tangent, i.e. the task descriptor d.
+        self.path_d0 = torch.zeros((B, 3), device=self.device, dtype=d)
+        # Signed curvature of the path [1/m]; 0 = the straight ray of the
+        # submitted experiments.
+        self.path_kappa = torch.zeros((B,), device=self.device, dtype=d)
+        # Arc length travelled along the path. On a curved path the chord
+        # projection (p - p_0)·d is no longer the travelled distance, so the
+        # objective has to be accumulated step by step.
+        self.arc_progress = torch.zeros((B,), device=self.device, dtype=d)
         self.n_target = torch.zeros((B, 3), device=self.device, dtype=d)
         self.t = torch.zeros((B,), device=self.device, dtype=torch.long)
         self.a_prev = torch.zeros((B, ACT_DIM), device=self.device, dtype=d)
@@ -247,7 +283,7 @@ class NSRLBatchedEnv:
 
     # ---------------------------------------------------------------- helpers
 
-    def _compute_obs(self, R_tcp: torch.Tensor,
+    def _compute_obs(self, p_tcp: torch.Tensor, R_tcp: torch.Tensor,
                      q: torch.Tensor | None = None,
                      a_prev: torch.Tensor | None = None) -> torch.Tensor:
         # q / a_prev default to self.q / self.a_prev, but step() must pass
@@ -260,7 +296,7 @@ class NSRLBatchedEnv:
         cos_angle = (z_tool * self.n_target).sum(-1, keepdim=True)
         z_cross_n = torch.linalg.cross(z_tool, self.n_target, dim=-1)
         q_norm_sq = q_norm * q_norm
-        return torch.cat([
+        obs_parts = [
             q_norm,         # 7
             q_norm_sq,      # 7
             self.line_dir,  # 3, u_hat
@@ -269,12 +305,41 @@ class NSRLBatchedEnv:
             cos_angle,      # 1
             z_cross_n,      # 3
             a_prev,         # 4
-        ], dim=-1)          # = 31
+        ]
+        if self.cfg.observe_ray_error:
+            # The path origin can differ slightly from FK(q0) when a task and
+            # its IK seed are decoupled. Exposing this offset makes the lateral
+            # safety-net state Markov for the continuous controller. Only the
+            # component perpendicular to the path matters; scaling by the
+            # termination radius keeps the observation order-one even after
+            # long travel.
+            _, lateral_vec, _ = self._path_frame(p_tcp)
+            obs_parts.append(-lateral_vec / LATERAL_SAFETY_NET)  # 3
+        return torch.cat(obs_parts, dim=-1)
+
+    def _path_frame(self, p: torch.Tensor):
+        """(tangent, lateral_vec, lateral_dist) of the path at TCP position p.
+
+        lateral_vec points from p to the closest point on the path and is
+        orthogonal to tangent, so feeding it back adds no along-path motion.
+        """
+        return path_frame(p, self.p_start, self.path_d0, self.n_target,
+                          self.path_kappa)
 
     def current_obs(self) -> torch.Tensor:
-        """Public: obs at the current internal state (no step taken)."""
-        _, R, _, _ = self.kin.tcp_fk_jac(self.q)
-        return self._compute_obs(R)
+        """Public: obs at the current internal state (no step taken).
+
+        Also refreshes ``self.line_dir`` to the instantaneous tangent, so an
+        external controller reading ``env.line_dir`` between steps (the hybrid
+        and classical eval loops do) sees the tangent at the current TCP and
+        not a stale one. No-op on a straight ray.
+        """
+        p, R, _, _ = self.kin.tcp_fk_jac(self.q)
+        tangent, _, _ = self._path_frame(p)
+        self.line_dir = torch.where(
+            torch.isfinite(tangent).all(-1, keepdim=True), tangent,
+            self.line_dir)
+        return self._compute_obs(p, R)
 
     def _reset_envs(self, mask: torch.Tensor) -> None:
         n_reset = int(mask.sum().item())
@@ -283,15 +348,38 @@ class NSRLBatchedEnv:
         spec = self.line_dist.sample(n_reset)
         self.q[mask] = spec["q0"]
         self.line_dir[mask] = spec["line_dir"]
+        self.path_d0[mask] = spec["line_dir"]
         self.n_target[mask] = spec["n_target"]
+        # Curvature is optional: distributions that predate the curved-path
+        # extension describe straight rays only.
+        if "kappa" in spec:
+            self.path_kappa[mask] = spec["kappa"].to(
+                device=self.device, dtype=self.kin.dtype).reshape(n_reset)
+        else:
+            self.path_kappa[mask] = 0.0
+        self.arc_progress[mask] = 0.0
         self.t[mask] = 0
         self.a_prev[mask] = 0
         self.done_persistent[mask] = False
         self.episode_reward[mask] = 0.0
         self.episode_steps[mask] = 0
-        # Compute EE start position for the reset envs (FK on the just-sampled q0)
-        p_at_reset, _, _, _ = self.kin.tcp_fk_jac(self.q[mask])
-        self.p_start[mask] = p_at_reset
+        # A task/seed-decoupled distribution may carry the task-defined ray
+        # origin explicitly. This is intentionally not always FK(q0): an IK
+        # projection has finite tolerance, while progress and lateral error
+        # must remain anchored to the original task. Historical distributions
+        # omit p0 and retain the exact old behavior.
+        if 'p0' in spec:
+            p0 = spec['p0'].to(device=self.device, dtype=self.kin.dtype)
+            if p0.shape != (n_reset, 3):
+                raise ValueError(
+                    f'line distribution p0 must have shape ({n_reset}, 3), '
+                    f'got {tuple(p0.shape)}')
+            if not bool(torch.isfinite(p0).all().item()):
+                raise ValueError('line distribution p0 must be finite')
+            self.p_start[mask] = p0
+        else:
+            p_at_reset, _, _, _ = self.kin.tcp_fk_jac(self.q[mask])
+            self.p_start[mask] = p_at_reset
 
     # ---------------------------------------------------------------- API
 
@@ -319,19 +407,30 @@ class NSRLBatchedEnv:
         p, R, J, _ = self.kin.tcp_fk_jac(self.q)
         J_p = J[:, :3, :]
 
+        # Instantaneous path frame at the current TCP. `line_dir` is the
+        # tangent from here on; it feeds the observation, the task-aligned
+        # nullspace basis and the classical controller's directional
+        # manipulability, none of which need to know the path is curved.
+        tangent, lateral_vec, _ = self._path_frame(p)
+        self.line_dir = tangent
+
         J_plus, sigma_min = damped_pinv(J_p, self.cfg.lambda_0, self.cfg.sigma_thr)
         B_basis, fb_mask = build_task_aligned_basis(
             self.kin, self.q, self.line_dir, self.n_target,
             self.kin.q_mid, self.q_half, self.cfg.manip_damping,
         )
 
-        # Task-space command is pure feed-forward along the line. The damped
-        # pseudo-inverse keeps the realized TCP velocity on-axis; at a_max<=0.5
-        # the residual lateral drift from finite-dt nullspace leakage stays
-        # well below LATERAL_SAFETY_NET (verified via kp ablation), so no
-        # proportional lateral-feedback term is used. Lateral deviation is a
-        # safety-net terminate only (see lateral_viol below).
-        x_dot = (self.v * self.line_dir).unsqueeze(-1)
+        # Task-space command: feed-forward along the instantaneous tangent
+        # plus proportional feedback on the distance to the path. On a
+        # straight ray the damped pseudo-inverse alone keeps the realized TCP
+        # velocity on-axis, and k_lateral = 0 recovers the pure feed-forward
+        # command used for the submitted results. On a curved path the
+        # feed-forward term alone cuts the corner by v·dt·|kappa|/2 per step,
+        # an error that accumulates with arc length until the safety net
+        # trips, so k_lateral > 0 is required there. lateral_vec is orthogonal
+        # to the tangent, so this term never changes the along-path speed.
+        x_dot = (self.v * self.line_dir
+                 + self.cfg.k_lateral * lateral_vec).unsqueeze(-1)
         qdot_task = (J_plus @ x_dot).squeeze(-1)
         qdot_null = (B_basis @ a_scaled.unsqueeze(-1)).squeeze(-1)
         qdot = qdot_task + qdot_null
@@ -346,12 +445,13 @@ class NSRLBatchedEnv:
         cos_angle = (z_new * self.n_target).sum(-1).clamp(-1.0, 1.0)
         cone_viol = cos_angle < self.cos_cone
 
-        # Lateral deviation from the infinite ray (p_start, line_dir).
-        # lateral_err = ‖(p − p_0) − ((p − p_0)·û) û‖. Safety-net terminate
-        # only — PD feedback in the controller should keep this far below cap.
-        delta_from_start = p_new - self.p_start
-        along = (delta_from_start * self.line_dir).sum(-1, keepdim=True)
-        lateral_err = (delta_from_start - along * self.line_dir).norm(dim=-1)
+        # Distance from the TCP to the path — NOT to the initial tangent ray.
+        # On a straight ray the two coincide; on an arc of radius R the ray
+        # reference would flag a perfectly tracked path as violating after
+        # sqrt(2 R * LATERAL_SAFETY_NET) of travel (0.2 m at R = 1 m),
+        # which has nothing to do with kinematic capability. Safety-net
+        # terminate only — the k_lateral feedback keeps this far below the cap.
+        tangent_new, lateral_vec_new, lateral_err = self._path_frame(p_new)
         lateral_viol = lateral_err > LATERAL_SAFETY_NET
 
         new_t = self.t + 1
@@ -362,6 +462,7 @@ class NSRLBatchedEnv:
         # backwards drift from finite-dt curvature.
         delta_progress = ((p_new - p) * self.line_dir).sum(-1)
         progress_norm = (delta_progress / (self.v * self.dt)).clamp(0.0, 1.0)
+        arc_step = delta_progress.clamp_min(0.0)
         r_progress_per_env = self.cfg.w_progress * progress_norm
 
         reward = r_progress_per_env.clone()
@@ -388,16 +489,26 @@ class NSRLBatchedEnv:
         term_reason = torch.where(truncated & ~terminated,
                                   torch.full_like(term_reason, TERM_TRUNCATED), term_reason)
 
+        # Chord projection on the tangent the step started from. Kept for the
+        # historical training log only; on a curved path the meaningful
+        # objective is self.arc_progress below.
+        progress_now = ((p_new - self.p_start) * tangent).sum(-1)
+        progress_now = torch.nan_to_num(progress_now, nan=0.0)
+
+        # From here on line_dir is the post-step tangent, so terminal_obs and
+        # the next controller call both refer to the new TCP position. Frozen
+        # envs (auto_reset=False, already done) keep their last tangent.
+        self.line_dir = torch.where(active.unsqueeze(-1), tangent_new,
+                                    self.line_dir)
+
         # snapshot of obs at end-of-step (post-step q, this-step actions);
         # PPO bootstraps V(terminal_obs) for truncated episodes.
-        terminal_obs = self._compute_obs(R_new, q=q_new, a_prev=actions)
+        terminal_obs = self._compute_obs(
+            p_new, R_new, q=q_new, a_prev=actions)
 
         # Accumulate per-episode reward + step counter (before reset wipes them)
         ep_reward_finished = torch.zeros_like(reward)
         ep_steps_finished = torch.zeros_like(self.episode_steps)
-        # EE progress along u_hat = (p_final - p_start) · u_hat (meters). Per episode end.
-        progress_now = ((p_new - self.p_start) * self.line_dir).sum(-1)
-        progress_now = torch.nan_to_num(progress_now, nan=0.0)
         ep_progress_finished = torch.zeros_like(reward)
 
         if auto_reset:
@@ -406,6 +517,7 @@ class NSRLBatchedEnv:
             self.a_prev = actions
             self.episode_reward = self.episode_reward + reward
             self.episode_steps = self.episode_steps + 1
+            self.arc_progress = self.arc_progress + arc_step
             new_done = done
             ep_reward_finished = torch.where(done, self.episode_reward,
                                              torch.zeros_like(self.episode_reward))
@@ -413,6 +525,8 @@ class NSRLBatchedEnv:
                                             torch.zeros_like(self.episode_steps))
             ep_progress_finished = torch.where(done, progress_now,
                                                torch.zeros_like(progress_now))
+            ep_arc_finished = torch.where(done, self.arc_progress,
+                                          torch.zeros_like(self.arc_progress))
             if done.any():
                 self._reset_envs(done)
             obs = self.current_obs()
@@ -431,6 +545,9 @@ class NSRLBatchedEnv:
                                               self.episode_reward)
             self.episode_steps = torch.where(active, self.episode_steps + 1,
                                              self.episode_steps)
+            self.arc_progress = torch.where(active,
+                                            self.arc_progress + arc_step,
+                                            self.arc_progress)
             self.done_persistent = self.done_persistent | done
             ep_reward_finished = torch.where(new_done, self.episode_reward,
                                              torch.zeros_like(self.episode_reward))
@@ -438,6 +555,8 @@ class NSRLBatchedEnv:
                                             torch.zeros_like(self.episode_steps))
             ep_progress_finished = torch.where(new_done, progress_now,
                                                torch.zeros_like(progress_now))
+            ep_arc_finished = torch.where(new_done, self.arc_progress,
+                                          torch.zeros_like(self.arc_progress))
             obs = self.current_obs()
 
         # Episode-reward stats (only mean over envs that finished this step;
@@ -447,10 +566,12 @@ class NSRLBatchedEnv:
             ep_reward_mean = float(ep_reward_finished[new_done].mean().item())
             ep_len_mean = float(ep_steps_finished[new_done].float().mean().item())
             ep_progress_mean = float(ep_progress_finished[new_done].mean().item())
+            ep_arc_mean = float(ep_arc_finished[new_done].mean().item())
         else:
             ep_reward_mean = float("nan")
             ep_len_mean = float("nan")
             ep_progress_mean = float("nan")
+            ep_arc_mean = float("nan")
 
         info = {
             "terminal_obs": terminal_obs,
@@ -463,6 +584,7 @@ class NSRLBatchedEnv:
             "ep_reward_mean": ep_reward_mean,
             "ep_len_mean": ep_len_mean,
             "ep_progress_mean": ep_progress_mean,
+            "ep_arc_progress_mean": ep_arc_mean,
             "n_episodes_done": n_finished,
             # MGS fallback rates (batch-averaged) per anchor column.
             "fb_rate_e0": float(fb_mask[:, 0].float().mean().item()),

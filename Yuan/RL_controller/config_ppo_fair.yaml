@@ -1,0 +1,99 @@
+# Fresh PPO arm of the PPO-versus-FlashSAC controller benchmark.
+#
+# The environment, task distribution, holdout tensors, observation, transition
+# budgets, and deterministic evaluation rule match config_flashsac.yaml.  The
+# runner rejects resume inputs and always initializes PPO from scratch (no C0).
+
+seed: 0
+
+env:
+  n_envs: 128
+  dt: 0.05
+  v: 0.2
+  a_max: 0.5
+  lambda_0: 0.05
+  sigma_thr: 0.05
+  cone_deg: 30.0
+  max_steps: 500
+  tcp_offset: 0.2034
+  r_collision: 0.0
+  r_cone: 0.0
+  r_jl: 0.0
+  w_progress: 1.0
+  manip_damping: 1.0e-3
+  # Required by the fair runner: q/ray/task state is the same 34-D input for
+  # PPO and FlashSAC.
+  observe_ray_error: true
+
+ppo:
+  total_timesteps: 30000000
+  learning_rate: 3.0e-4
+  n_steps: 32
+  anneal_lr: true
+  gamma: 0.99
+  gae_lambda: 0.95
+  n_minibatches: 32
+  update_epochs: 10
+  norm_adv: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.02
+  hidden_dim: 512
+  init_log_std: -0.5
+  normalize_returns: true
+  actor_warmup_updates: 0
+  squashed_entropy: false
+
+line_distribution:
+  n_pool: 100000
+  n_target_noise_deg: 5.0
+  train_seed: 0
+  # Independent reset-task stream seed. The runner adds `seed` and reseeds
+  # after load_or_build so cache hit/miss cannot change the training stream.
+  train_task_seed: 1000003
+  feasibility_filter: true
+  feasibility_threshold_m: 0.1
+
+eval:
+  n_holdout: 200
+  holdout_pool_seed: 42
+  holdout_task_seed: 42001
+
+benchmark:
+  # Transition budgets, not vector-environment calls. PPO is evaluated after
+  # the first complete on-policy update at or beyond each requested budget;
+  # requested_step and actual global_step are both stored.
+  milestones:
+    - 0
+    - 100000
+    - 250000
+    - 500000
+    - 1000000
+    - 2000000
+    - 5000000
+    - 10000000
+    - 20000000
+    - 30000000
+  require_published_milestones: true
+  save_checkpoints: true
+  # CUDA synchronization occurs immediately before/after each timed boundary.
+  # setup_s: config, task pools, env/model/optimizer construction
+  # core_train_s: policy interaction + PPO optimization only
+  # eval_s: deterministic fixed-task rollouts and metric extraction
+  # save_s: fixed-task/checkpoint serialization
+  # e2e_s: process start through the corresponding artifact/final summary
+  synchronize_timing: true
+
+analysis:
+  # Conservative first-observed-checkpoint time-to-threshold values.
+  progress_thresholds_m:
+    - 0.10
+    - 0.20
+    - 0.30
+    - 0.40
+    - 0.50
+  bootstrap_samples: 10000
+  bootstrap_seed: 20260729

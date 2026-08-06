@@ -1,0 +1,59 @@
+\begin{thebibliography}{1}
+
+\bibitem{yuan2026extreme}
+Xinyi Yuan, Weiwei Wan, and Kensuke Harada.
+\newblock Extreme motion generation for straight-line path following via
+  reinforcement learning.
+\newblock In {\em International Symposium on Robotics Research (ISRR)}, 2026.
+
+\bibitem{chen2023sequential}
+Yuanpei Chen, Chen Wang, Li~Fei-Fei, and C.~Karen Liu.
+\newblock Sequential dexterity: Chaining dexterous policies for long-horizon
+  manipulation.
+\newblock In {\em Proceedings of the 7th Conference on Robot Learning (CoRL)},
+  volume 229, pages 3809--3829. PMLR, 2023.
+
+\bibitem{yoshikawa1985manipulability}
+Tsuneo Yoshikawa.
+\newblock Manipulability and redundancy control of robotic mechanisms.
+\newblock In {\em Proceedings. 1985 IEEE International Conference on Robotics
+  and Automation}, volume~2, pages 1004--1009. IEEE, 1985.
+
+\bibitem{shen2023adaptive}
+Henghua Shen, Wen-Fang Xie, Jianyu Tang, and Tao Zhou.
+\newblock Adaptive manipulability-based path planning strategy for industrial
+  robot manipulators.
+\newblock {\em IEEE/ASME transactions on mechatronics}, 28(3):1742--1753, 2023.
+
+\bibitem{cai2025just}
+Kuanqi Cai, Liding Zhang, Xinwen Su, Kejia Chen, Chaoqun Wang, Sami Haddadin,
+  Alois Knoll, Arash Ajoudani, and Luis Figueredo.
+\newblock Just-in-time informed trees: Manipulability-aware asymptotically
+  optimized motion planning.
+\newblock {\em IEEE/ASME Transactions on Mechatronics}, 2025.
+
+\bibitem{ames2022ikflow}
+Barrett Ames, Jeremy Morgan, and George Konidaris.
+\newblock Ikflow: Generating diverse inverse kinematics solutions.
+\newblock {\em IEEE Robotics and Automation Letters}, 7(3):7177--7184, 2022.
+
+\bibitem{zhang2025ikdiffuser}
+Zeyu Zhang and Ziyuan Jiao.
+\newblock Ikdiffuser: a diffusion-based generative inverse kinematics solver
+  for kinematic trees.
+\newblock {\em arXiv preprint arXiv:2506.13087}, 2025.
+
+\bibitem{huang2024diffusionseeder}
+Huang Huang, Balakumar Sundaralingam, Arsalan Mousavian, Adithyavairavan
+  Murali, Ken Goldberg, and Dieter Fox.
+\newblock Diffusionseeder: Seeding motion optimization with diffusion for rapid
+  motion planning.
+\newblock In {\em 8th Annual Conference on Robot Learning}, 2024.
+
+\bibitem{yuan2026iksel}
+Xinyi Yuan, Weiwei Wan, and Kensuke Harada.
+\newblock Iksel: Selecting good seed joint values for iterative model-based ik
+  solving, 2026.
+\newblock preprint.
+
+\end{thebibliography}

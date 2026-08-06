@@ -74,6 +74,29 @@ class _RunningMeanStd:
         self.var = M2 / tot
         self.count = tot
 
+    def state_dict(self) -> dict:
+        return {
+            'mean': self.mean.detach().clone(),
+            'var': self.var.detach().clone(),
+            'count': self.count,
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        mean = torch.as_tensor(state['mean']).to(self.mean)
+        var = torch.as_tensor(state['var']).to(self.var)
+        count = float(state['count'])
+        if mean.shape != self.mean.shape or var.shape != self.var.shape:
+            raise ValueError('running mean/variance shape mismatch')
+        if (not bool(torch.isfinite(mean).all().item())
+                or not bool(torch.isfinite(var).all().item())
+                or bool((var < 0.0).any().item())):
+            raise ValueError('running mean/variance must be finite with variance >= 0')
+        if not np.isfinite(count) or count <= 0.0:
+            raise ValueError('running-stat count must be finite and positive')
+        self.mean.copy_(mean)
+        self.var.copy_(var)
+        self.count = count
+
 
 class RewardScaler:
     """Divide rewards by running std of discounted returns.
@@ -99,6 +122,31 @@ class RewardScaler:
     @property
     def scale(self) -> float:
         return float(torch.sqrt(self.rms.var + self.epsilon).item())
+
+    def state_dict(self) -> dict:
+        return {
+            'rms': self.rms.state_dict(),
+            'return_acc': self.return_acc.detach().clone(),
+            'gamma': self.gamma,
+            'epsilon': self.epsilon,
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        gamma = float(state.get('gamma', self.gamma))
+        epsilon = float(state.get('epsilon', self.epsilon))
+        if not np.isfinite(gamma) or not 0.0 <= gamma <= 1.0:
+            raise ValueError(f'invalid RewardScaler gamma: {gamma}')
+        if not np.isfinite(epsilon) or epsilon <= 0.0:
+            raise ValueError(f'invalid RewardScaler epsilon: {epsilon}')
+        return_acc = state['return_acc']
+        if tuple(return_acc.shape) != tuple(self.return_acc.shape):
+            raise ValueError(
+                f'RewardScaler return_acc shape {tuple(return_acc.shape)} '
+                f'does not match {tuple(self.return_acc.shape)}')
+        self.rms.load_state_dict(state['rms'])
+        self.return_acc.copy_(return_acc.to(self.return_acc))
+        self.gamma = gamma
+        self.epsilon = epsilon
 
 
 def _layer_init(layer: nn.Linear, std: float = np.sqrt(2.0), bias_const: float = 0.0):
@@ -204,7 +252,13 @@ def train(cfg: PPOConfig, env, device: torch.device,
           guide_anneal_start: float | None = None,
           guide_anneal_end: float = 0.9,
           critic_floor_fn=None,
-          critic_floor_coef: float = 0.5):
+          critic_floor_coef: float = 0.5,
+          anchor_agent: Agent | None = None,
+          actor_anchor_coef: float = 0.0,
+          actor_anchor_anneal: bool = False,
+          agent: Agent | None = None,
+          optimizer: torch.optim.Optimizer | None = None,
+          reward_scaler: RewardScaler | None = None):
     """Train PPO on `env`.
 
     `env` must expose: `n_envs`, `obs_dim`, `act_dim`, `device`, `reset()`,
@@ -250,6 +304,18 @@ def train(cfg: PPOConfig, env, device: torch.device,
     policy), so the critic may exceed the floor but never sit below it —
     danger-zone states that classical can survive keep positive advantage for
     classical-like actions even in unprotected curriculum episodes.
+
+    Phase-start actor anchor (stable alternating optimization): when a frozen
+    ``anchor_agent`` and ``actor_anchor_coef > 0`` are supplied, every PPO
+    minibatch also minimizes the deterministic-action MSE
+
+        ||tanh(mu(s)) - tanh(mu_anchor(s))||^2.
+
+    The states are the current on-policy rollout states, so the constraint
+    follows the seed-induced reset distribution without a separate replay
+    buffer.  Only the deterministic actor is anchored; the critic and
+    exploration variance remain free to adapt.  The anchor is training-only
+    and adds no deployment inference cost.
     """
     obs_dim = env.obs_dim
     act_dim = env.act_dim
@@ -258,13 +324,41 @@ def train(cfg: PPOConfig, env, device: torch.device,
     minibatch_size = batch_size // cfg.n_minibatches
     n_updates = cfg.total_timesteps // batch_size
 
-    agent = Agent(obs_dim, act_dim, hidden_dim=cfg.hidden_dim,
-                  init_log_std=cfg.init_log_std,
-                  squashed_entropy=cfg.squashed_entropy).to(device)
+    if agent is None:
+        agent = Agent(obs_dim, act_dim, hidden_dim=cfg.hidden_dim,
+                      init_log_std=cfg.init_log_std,
+                      squashed_entropy=cfg.squashed_entropy).to(device)
+    else:
+        agent = agent.to(device)
     if resume_from_ckpt is not None:
+        if optimizer is not None:
+            raise ValueError(
+                'resume_from_ckpt cannot be combined with an injected optimizer')
         print(f"[ppo] resuming policy weights from {resume_from_ckpt}")
         agent.load_state_dict(torch.load(resume_from_ckpt, map_location=device))
-    optimizer = torch.optim.Adam(agent.parameters(), lr=cfg.learning_rate, eps=1e-5)
+    if optimizer is None:
+        optimizer = torch.optim.Adam(
+            agent.parameters(), lr=cfg.learning_rate, eps=1e-5)
+    else:
+        optimizer_parameters = {
+            id(parameter) for group in optimizer.param_groups
+            for parameter in group['params']}
+        agent_parameters = {id(parameter) for parameter in agent.parameters()}
+        if optimizer_parameters != agent_parameters:
+            raise ValueError('injected optimizer does not own exactly agent parameters')
+
+    if not np.isfinite(actor_anchor_coef) or actor_anchor_coef < 0.0:
+        raise ValueError('actor_anchor_coef must be finite and non-negative')
+    use_actor_anchor = anchor_agent is not None and actor_anchor_coef > 0.0
+    if use_actor_anchor:
+        anchor_agent = anchor_agent.to(device).eval()
+        anchor_parameters = tuple(anchor_agent.parameters())
+        if any(parameter.requires_grad for parameter in anchor_parameters):
+            for parameter in anchor_parameters:
+                parameter.requires_grad_(False)
+        if (anchor_agent._actor_trunk[0].in_features != obs_dim
+                or anchor_agent._mean_head.out_features != act_dim):
+            raise ValueError('anchor_agent observation/action dimensions mismatch')
 
     # Storage
     obs_buf = torch.zeros((cfg.n_steps, n_envs, obs_dim), device=device)
@@ -276,8 +370,20 @@ def train(cfg: PPOConfig, env, device: torch.device,
     values_buf = torch.zeros((cfg.n_steps, n_envs), device=device)
     terminal_obs_buf = torch.zeros((cfg.n_steps, n_envs, obs_dim), device=device)
 
-    reward_scaler = (RewardScaler(n_envs, cfg.gamma, device)
-                     if cfg.normalize_returns else None)
+    if cfg.normalize_returns and reward_scaler is None:
+        reward_scaler = RewardScaler(n_envs, cfg.gamma, device)
+    if not cfg.normalize_returns:
+        reward_scaler = None
+    if (reward_scaler is not None
+            and reward_scaler.return_acc.shape != (n_envs,)):
+        raise ValueError(
+            f'reward scaler has {reward_scaler.return_acc.shape[0]} envs, '
+            f'but training env has {n_envs}')
+    if reward_scaler is not None and not np.isclose(
+            reward_scaler.gamma, cfg.gamma):
+        raise ValueError(
+            f'reward scaler gamma {reward_scaler.gamma} does not match '
+            f'PPO gamma {cfg.gamma}')
 
     use_bc = (bc_obs is not None and bc_actions is not None
               and bc_coef > 0.0 and bc_obs.shape[0] > 0)
@@ -286,6 +392,11 @@ def train(cfg: PPOConfig, env, device: torch.device,
         bc_actions = bc_actions.to(device=device, dtype=torch.float32)
 
     next_obs = env.reset()
+    # An injected scaler may carry long-running RMS statistics across outer
+    # training phases, but reset() starts fresh episodes for every env. Do not
+    # leak partial discounted-return accumulators across that hard boundary.
+    if reward_scaler is not None:
+        reward_scaler.return_acc.zero_()
     next_done = torch.zeros(n_envs, device=device)
     global_step = 0
     next_eval = eval_every
@@ -437,7 +548,12 @@ def train(cfg: PPOConfig, env, device: torch.device,
 
         bc_coef_now = (bc_coef * (1.0 - progress) if bc_anneal else bc_coef) \
             if use_bc else 0.0
+        anchor_coef_now = (
+            actor_anchor_coef * (1.0 - progress)
+            if use_actor_anchor and actor_anchor_anneal
+            else actor_anchor_coef if use_actor_anchor else 0.0)
         bc_loss_value = 0.0
+        anchor_loss_value = 0.0
         floor_pen_value = 0.0
         floor_viol_frac = 0.0
 
@@ -461,13 +577,12 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 ratio = logratio.clamp(-20.0, 2.0).exp()
 
                 with torch.no_grad():
-                    approx_kl = ((ratio - 1) - logratio).mean().item()
-                    approx_kl_value = approx_kl
                     clipfracs.append(((ratio - 1.0).abs() > cfg.clip_coef).float().mean().item())
 
                 mb_adv = b_advantages[mb_inds]
                 if cfg.norm_adv:
-                    mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
+                    mb_adv = ((mb_adv - mb_adv.mean())
+                              / (mb_adv.std(unbiased=False) + 1e-8))
 
                 pg_loss1 = -mb_adv * ratio
                 pg_loss2 = -mb_adv * torch.clamp(ratio, 1 - cfg.clip_coef, 1 + cfg.clip_coef)
@@ -510,6 +625,15 @@ def train(cfg: PPOConfig, env, device: torch.device,
                     bc_loss_value = float(bc_loss.item())
                     loss = loss + bc_coef_now * bc_loss
 
+                if use_actor_anchor and anchor_coef_now > 0.0:
+                    current_action = agent.actor_mean(b_obs[mb_inds])
+                    with torch.no_grad():
+                        anchor_action = anchor_agent.actor_mean(b_obs[mb_inds])
+                    anchor_loss = (
+                        (current_action - anchor_action).square().mean())
+                    anchor_loss_value = float(anchor_loss.item())
+                    loss = loss + anchor_coef_now * anchor_loss
+
                 optimizer.zero_grad()
                 loss.backward()
                 grad_norm = nn.utils.clip_grad_norm_(agent.parameters(),
@@ -519,6 +643,18 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 if bool(torch.isfinite(grad_norm).item()):
                     optimizer.step()
 
+            # Measure the final policy produced by this epoch against the
+            # rollout policy. Minibatch-local pre-step KL can be identically
+            # zero with one minibatch and systematically underreports the
+            # completed epoch update.
+            with torch.no_grad():
+                _, epoch_logprob, _, _, _ = agent.get_action_and_value(
+                    b_obs, b_actions)
+                epoch_logratio = (
+                    epoch_logprob - b_logprobs).clamp(-20.0, 20.0)
+                approx_kl_value = float((
+                    torch.expm1(epoch_logratio) - epoch_logratio
+                ).mean().item())
             if cfg.target_kl is not None and approx_kl_value > cfg.target_kl:
                 break
 
@@ -542,6 +678,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
             if use_bc:
                 log_dict["train/bc_loss"] = bc_loss_value
                 log_dict["train/bc_coef"] = bc_coef_now
+            if use_actor_anchor:
+                log_dict["train/actor_anchor_loss"] = anchor_loss_value
+                log_dict["train/actor_anchor_coef"] = anchor_coef_now
             if guide_action_fn is not None:
                 log_dict["train/guide_frac"] = (
                     rollout_guide_frac_sum / max(rollout_term_n, 1))

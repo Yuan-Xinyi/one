@@ -1,0 +1,83 @@
+# Non-publishable real-environment integration smoke for FlashSAC.
+# It exercises CUDA replay/AMP and the Yuan batched environment with a small
+# task pool. Quality or timing from this configuration must not enter tables.
+
+seed: 20260728
+
+env:
+  n_envs: 16
+  dt: 0.05
+  v: 0.2
+  a_max: 0.5
+  lambda_0: 0.05
+  sigma_thr: 0.05
+  cone_deg: 30.0
+  max_steps: 100
+  tcp_offset: 0.2034
+  r_collision: 0.0
+  r_cone: 0.0
+  r_jl: 0.0
+  w_progress: 1.0
+  manip_damping: 1.0e-3
+  observe_ray_error: true
+
+flashsac:
+  gamma: 0.99
+  n_step: 3
+  buffer_max_length: 8192
+  buffer_min_length: 512
+  buffer_device: cuda
+  sample_batch_size: 256
+  normalize_reward: true
+  normalized_g_max: 5.0
+  learning_rate_init: 3.0e-4
+  learning_rate_peak: 3.0e-4
+  learning_rate_end: 1.5e-4
+  learning_rate_warmup_steps: 0
+  learning_rate_decay_steps: 32
+  actor_num_blocks: 2
+  actor_hidden_dim: 128
+  actor_bc_alpha: 0.0
+  actor_noise_zeta_mu: 2.0
+  actor_noise_zeta_max: 16
+  actor_update_period: 2
+  critic_num_blocks: 2
+  critic_hidden_dim: 256
+  critic_num_bins: 101
+  critic_min_v: -5.0
+  critic_max_v: 5.0
+  critic_target_update_tau: 0.01
+  temperature_initial_value: 0.01
+  temperature_target_sigma: 0.15
+  use_compile: false
+  compile_mode: auto
+  use_amp: true
+
+line_distribution:
+  n_pool: 512
+  n_target_noise_deg: 5.0
+  train_seed: 20260728
+  train_task_seed: 1000003
+  feasibility_filter: false
+  feasibility_threshold_m: 0.1
+
+eval:
+  n_holdout: 16
+  holdout_pool_seed: 20260729
+  holdout_task_seed: 20260730
+
+train:
+  total_env_steps: 4096
+  updates_per_1024_env_steps: 2.0
+  eval_milestones_env_steps:
+    - 0
+    - 1024
+    - 2048
+    - 4096
+  eval_every_env_steps: 2048
+  log_every_env_steps: 1024
+  checkpoint_every_env_steps: 4096
+  # Small smoke artifacts also exercise strict continuous-resume serialization.
+  save_replay_at_checkpoints: true
+  save_final_replay: true
+  synchronize_timing: true

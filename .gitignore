@@ -69,6 +69,7 @@ Thumbs.db
 Yuan/seed_selection/runs/
 Yuan/system_eval/runs/
 Yuan/RL_controller/runs/
+Yuan/unified_rl/runs/
 *.npz
 scene.xml
 scene_free.xml
@@ -85,3 +86,5 @@ scene_free.xml
 
 *.wandb
 wandb/
+
+.claude/

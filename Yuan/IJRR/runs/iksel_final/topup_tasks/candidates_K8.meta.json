@@ -1,0 +1,132 @@
+{
+  "audit": {
+    "exclusions": {
+      "/home/lqin/one/Yuan/seed_selection/runs/rank_train/candidates_K8.npz": {
+        "n_overlap": 0,
+        "n_tasks": 20480,
+        "n_unique_tasks": 18408
+      },
+      "/home/lqin/one/Yuan/seed_selection/runs/rank_train_b/candidates_K8.npz": {
+        "n_overlap": 0,
+        "n_tasks": 20480,
+        "n_unique_tasks": 18357
+      },
+      "/home/lqin/one/Yuan/seed_selection/runs/rank_train_c/candidates_K8.npz": {
+        "n_overlap": 0,
+        "n_tasks": 20480,
+        "n_unique_tasks": 18467
+      },
+      "/home/lqin/one/Yuan/unified_rl/runs/external_dev_v1/candidates_K8.npz": {
+        "n_overlap": 0,
+        "n_tasks": 2048,
+        "n_unique_tasks": 2048
+      },
+      "/home/lqin/one/Yuan/unified_rl/runs/final_holdout_joint_v1/candidates_K8.npz": {
+        "n_overlap": 0,
+        "n_tasks": 10000,
+        "n_unique_tasks": 10000
+      },
+      "/home/lqin/one/Yuan/unified_rl/runs/final_holdout_joint_v2/candidates_K8.npz": {
+        "n_overlap": 0,
+        "n_tasks": 10000,
+        "n_unique_tasks": 10000
+      }
+    },
+    "n_internal_duplicates": 0,
+    "n_tasks": 1568,
+    "n_unique_tasks": 1568
+  },
+  "output": {
+    "path": "/home/lqin/one/Yuan/unified_rl/runs/iksel_final/topup_tasks/candidates_K8.npz",
+    "sha256": "f0ca0b1f88642a7a5363d3a70f0b1748404708fd936f79095a2f0e3dddaaae42",
+    "size": 415997
+  },
+  "parameters": {
+    "allow_incomplete_exclusions": false,
+    "cfg_w": 1.5,
+    "chunk_tasks": 64,
+    "ddim_steps": 50,
+    "device": "cuda",
+    "diffusion_seed": 2026073113,
+    "feasibility_threshold_m": 0.1,
+    "line_pool_filter": {
+      "n_feasible": 94303,
+      "n_initial": 100000,
+      "threshold_m": 0.1,
+      "threshold_steps": 10
+    },
+    "n_candidates": 8,
+    "n_exclusion_caches": 6,
+    "n_pool_valid": 94303,
+    "n_target_noise_deg": 5.0,
+    "n_tasks": 1568,
+    "pool_seed": 2026073111,
+    "pool_size": 100000,
+    "seed_profile": "explicit-custom",
+    "selected_pool_indices_sha256": "075eb3ab5220712ac6600c41e563a78cb0b7b45247d7aa80c49a86ccbf1ebc05",
+    "task_seed": 2026073112,
+    "use_ema": true
+  },
+  "pool_artifact": {
+    "path": "/home/lqin/one/Yuan/unified_rl/runs/iksel_final/topup_tasks/candidates_K8.pool.pt",
+    "sha256": "043b125615a85efe6a38f5b38d8ac621d46d46a01639c086e9187dcd534958d9",
+    "size": 5302449
+  },
+  "publication": {
+    "atomic_boundary": "each rename is atomic, but the three-file group is not a single filesystem transaction",
+    "commit_marker": "/home/lqin/one/Yuan/unified_rl/runs/iksel_final/topup_tasks/candidates_K8.meta.json",
+    "protocol": "stage all files; reserve all final names with O_EXCL; atomically replace pool and cache; publish metadata last",
+    "reader_rule": "require parseable metadata and verify its output and pool_artifact hashes before use; an empty reservation is not a commit marker"
+  },
+  "purpose": "external-holdout",
+  "schema": "unified-external-holdout-v1",
+  "sources": {
+    "controller_config": {
+      "path": "/home/lqin/one/Yuan/unified_rl/runs/r2_grouped_best/config.yaml",
+      "sha256": "0a54077641c3342a4c9fc8ce8555ce47dc18f0464ba2feca80c76d9af03e88f8",
+      "size": 1512
+    },
+    "diffusion_checkpoint": {
+      "path": "/home/lqin/one/Yuan/seed_selection/runs/pilot_20k/q0_20k_cfg_mirror_ckpts/step_300000.pt",
+      "sha256": "ea7523c25f32323cedf3854464e81d94df67a2145e4c0b04420753db6e136441",
+      "size": 39102065
+    },
+    "diffusion_config": {
+      "path": "/home/lqin/one/Yuan/system_eval/config.yaml",
+      "sha256": "6747ca7114fcb88aeadabebe8e3864e8153f99ad644acd99480675ff32abbb62",
+      "size": 3722
+    },
+    "excluded_candidates": [
+      {
+        "path": "/home/lqin/one/Yuan/seed_selection/runs/rank_train/candidates_K8.npz",
+        "sha256": "6db03f46aa8f5fc1e72c7f42b4ba154316128ee07107e74b485fbba1f5838c58",
+        "size": 5403227
+      },
+      {
+        "path": "/home/lqin/one/Yuan/seed_selection/runs/rank_train_b/candidates_K8.npz",
+        "sha256": "75a04483192b9bf608580143b9f037be234cd883efe851d47d1791775315a288",
+        "size": 5404836
+      },
+      {
+        "path": "/home/lqin/one/Yuan/seed_selection/runs/rank_train_c/candidates_K8.npz",
+        "sha256": "a7af7c80a7b9499f06ee7c5fe00deb8870109928f5afb36226ab3690a9b9fd12",
+        "size": 5403033
+      },
+      {
+        "path": "/home/lqin/one/Yuan/unified_rl/runs/external_dev_v1/candidates_K8.npz",
+        "sha256": "4040bab5319a39acc0382a47c2b06f2e9ea2a8f5ae4d54866ae9a435b9e4ce6c",
+        "size": 543419
+      },
+      {
+        "path": "/home/lqin/one/Yuan/unified_rl/runs/final_holdout_joint_v1/candidates_K8.npz",
+        "sha256": "d8149537f663af3d2e16bee19ef44b7c596935fde2e84b520e0a23b5711d8faf",
+        "size": 2647508
+      },
+      {
+        "path": "/home/lqin/one/Yuan/unified_rl/runs/final_holdout_joint_v2/candidates_K8.npz",
+        "sha256": "baae4cc4fcac8e72f2c43d9d687817614fdd903f861573273bef85fd5cc507c5",
+        "size": 2646791
+      }
+    ]
+  }
+}

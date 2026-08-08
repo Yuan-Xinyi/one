@@ -88,3 +88,15 @@ scene_free.xml
 wandb/
 
 .claude/
+
+# LaTeX build products
+*.aux
+*.bbl
+*.blg
+*.synctex.gz
+Yuan/IJRR/2026_Yuan_RAL/*.out
+
+# manual snapshots taken before an edit
+*.bak
+*.tex.pre*
+*.py.pre*

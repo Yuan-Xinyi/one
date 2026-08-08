@@ -1,0 +1,43 @@
+{
+ "format": "iksel-final-campaign-preregistration-v3",
+ "frozen_at": "2026-07-31",
+ "supersedes": "ikpool_final_freeze_v2.json (candidate layer replaced per user design)",
+ "final_system": {
+  "candidate_layer": "faithful IKSel: CVT-sampled table (201,600 entries, Lloyd on 2M pool, seed 20260738), key (pos/0.05, tool-z), per task 32 cone directions (29.5 deg), k=200 query, full-6D Jacobian rerank (top-20), DLS with farthest-from-tried reshuffle retries (max 4), strict validation, dedup 0.08 rad; classical q0_pilot fallback slot; fully self-contained, no experiment data, no train-task exclusion needed",
+  "selector": "5-member SetSel (unchanged recipe), 45-D features, trained on the 20,000-task iksel-pool return tables labeled under HYBRID",
+  "controller": "HYBRID tau 0.985/0.96 (unchanged)",
+  "deployment": "one table query + one selector forward + one seed + one rollout; 0 probes"
+ },
+ "training_tasks": {
+  "n": 20000,
+  "composition": "18,432 historical train split + 1,568 fresh top-up tasks",
+  "topup_seeds": {
+   "pool_seed": 2026073111,
+   "task_seed": 2026073112,
+   "diffusion_seed": 2026073113
+  },
+  "topup_exclusions": "rank_train(+b,c), external_dev_v1, final_holdout v1/v2 via builder; systematic-10k extra audit"
+ },
+ "win_criterion": "IKSel is the sole mainline; no external baseline. The enumeration+its-own-hybrid-selector arm is an internal candidate-layer ABLATION: parity or better at ~1/3 solve budget = pass. Within-pool references: first-feasible, oracle (diagnostic).",
+ "selector_multiseed": {
+  "run_seeds": [
+   0,
+   41000,
+   42000,
+   43000,
+   44000,
+   45000
+  ],
+  "publish_rule": "median of mean progress across validation+external among run seeds; ties toward lower seed; frozen before sealed read"
+ },
+ "sealed_v3": {
+  "n_tasks": 10000,
+  "seeds": {
+   "pool_seed": 2026073121,
+   "task_seed": 2026073122,
+   "diffusion_seed": 2026073123
+  },
+  "note": "generated only after selector publication; exclusions = all prior caches incl. top-up; single read"
+ },
+ "note_20260731": "diffusion baseline removed per user directive; paper presents IKSel mainline only"
+}

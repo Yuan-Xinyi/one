@@ -1,0 +1,50 @@
+{
+ "n_tasks": 2048,
+ "tau": [
+  0.98,
+  0.94
+ ],
+ "ckpt": "Yuan/IJRR/runs/rl_vertex_line_30M",
+ "config": "Yuan/IJRR/stage2_traj/config_vertex.yaml",
+ "seed": 12345,
+ "observe_curvature": false,
+ "swing_max_deg": 0.0,
+ "k_lateral": 0.0,
+ "buckets": {
+  "straight": {
+   "n": 2048,
+   "classical": {
+    "mean": 1.0,
+    "median": 1.0
+   },
+   "rl": {
+    "mean": 1.3890577554702759,
+    "median": 1.133018970489502
+   },
+   "hybrid": {
+    "mean": 1.4299609661102295,
+    "median": 1.1422700881958008
+   }
+  }
+ },
+ "term": {
+  "classical": {
+   "collision": 0.78125,
+   "cone": 81.54296875,
+   "jl": 8.642578125,
+   "lateral": 9.033203125
+  },
+  "rl": {
+   "collision": 3.271484375,
+   "cone": 56.982421875,
+   "jl": 26.26953125,
+   "lateral": 13.4765625
+  },
+  "hybrid": {
+   "collision": 3.02734375,
+   "cone": 68.310546875,
+   "jl": 14.55078125,
+   "lateral": 14.111328125
+  }
+ }
+}

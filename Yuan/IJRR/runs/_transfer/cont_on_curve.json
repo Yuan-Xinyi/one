@@ -1,0 +1,80 @@
+{
+ "n_tasks": 2048,
+ "tau": [
+  0.98,
+  0.94
+ ],
+ "ckpt": "Yuan/IJRR/runs/rl_curve_cont_30M",
+ "config": "Yuan/IJRR/stage2_traj/config_vertex.yaml",
+ "seed": 12345,
+ "observe_curvature": true,
+ "swing_max_deg": 30.0,
+ "k_lateral": 5.0,
+ "buckets": {
+  "swing 0-10": {
+   "n": 710,
+   "classical": {
+    "mean": 1.0,
+    "median": 1.0
+   },
+   "rl": {
+    "mean": 1.2883758544921875,
+    "median": 1.0824291706085205
+   },
+   "hybrid": {
+    "mean": 1.321494221687317,
+    "median": 1.0971828699111938
+   }
+  },
+  "swing 10-20": {
+   "n": 679,
+   "classical": {
+    "mean": 1.0,
+    "median": 1.0
+   },
+   "rl": {
+    "mean": 1.2425827980041504,
+    "median": 1.0877702236175537
+   },
+   "hybrid": {
+    "mean": 1.2958698272705078,
+    "median": 1.094356894493103
+   }
+  },
+  "swing 20-30": {
+   "n": 659,
+   "classical": {
+    "mean": 1.0,
+    "median": 1.0
+   },
+   "rl": {
+    "mean": 1.2499390840530396,
+    "median": 1.0721957683563232
+   },
+   "hybrid": {
+    "mean": 1.2916383743286133,
+    "median": 1.0822770595550537
+   }
+  }
+ },
+ "term": {
+  "classical": {
+   "collision": 0.87890625,
+   "cone": 81.005859375,
+   "jl": 8.642578125,
+   "lateral": 9.47265625
+  },
+  "rl": {
+   "collision": 2.9296875,
+   "cone": 61.5234375,
+   "jl": 25.29296875,
+   "lateral": 10.25390625
+  },
+  "hybrid": {
+   "collision": 2.685546875,
+   "cone": 72.314453125,
+   "jl": 14.208984375,
+   "lateral": 10.791015625
+  }
+ }
+}

@@ -90,14 +90,16 @@ def main():
     sd = ck['agent'] if isinstance(ck, dict) and 'agent' in ck else ck
     if any(k.startswith('_logits_head') for k in sd):
         from Yuan.IJRR.stage2_traj.vertex_agent import VertexAgent
-        ag = VertexAgent(obs_dim=env.obs_dim, act_dim=4, hidden_dim=512).to(dev)
+        ag = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                         hidden_dim=512).to(dev)
     else:
-        ag = Agent(obs_dim=env.obs_dim, act_dim=4, hidden_dim=512).to(dev)
+        ag = Agent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                   hidden_dim=512).to(dev)
     ag.load_state_dict(sd); ag.eval()
 
     env.reset()
     prev = None
-    flips = torch.zeros(N, 4, device=dev)      # per-coordinate sign changes
+    flips = torch.zeros(N, env.act_dim, device=dev)  # per-coord sign changes
     vswitch = torch.zeros(N, device=dev)       # changes of the whole vertex
     steps = torch.zeros(N, device=dev)
     dwell_cur = torch.zeros(N, device=dev)

@@ -144,7 +144,7 @@ Extreme Motion Generation, Continuous Kinematic Reachability, Reinforcement Lear
 However, extreme motion generation, especially under precise path-following, is challenging in practice. The joint motion at the current step may gradually steer the subsequent motion toward a safety boundary, ultimately forcing it to terminate. Therefore, the problem is inherently a long-term decision-making problem, as each step must account for its consequences over the entire motion. \new{Existing motion generation tools, however, occupy the two ends of a robustness--foresight trade-off.} On the one hand, a classical law optimizes an instantaneous secondary objective while realizing the desired end-effector motion. Such laws are myopic, optimizing an instantaneous surrogate and overlooking its long-horizon consequences. Yet near the joint limits, their behavior is robust and predictable by design. On the other hand, the learning-based policy is designed to have the foresight suitable for exploitation. However, the learning paradigm is based on probabilistic distribution approximation, and near-boundary configurations are rarely sampled. As a result, the derived policy is particularly fragile near the boundary regions that are most critical to extreme motion generation.
 
 
-Motivated by this complementarity, we delegate the long-horizon decision-making in the well-sampled interior to a Reinforcement-Learning (RL) policy, where foresight can be trusted. The near-boundary region is handled by the classical law, whose robustness is guaranteed by construction. The two regimes are coordinated at every control step by a hysteresis rule on the normalized joint-limit distance, ensuring that each model operates within the region where it is most reliable. \new{In addition, the initial configuration is selected before execution: a table-based inverse-kinematics layer enumerates candidate configurations spread over the disconnected branches of the self-motion manifold, and a learned selector scores them by their complete closed-loop return.}
+Motivated by this complementarity, we delegate the long-horizon decision-making in the well-sampled interior to a Reinforcement-Learning (RL) policy, where foresight can be trusted. The near-boundary region is handled by the classical law, whose robustness is guaranteed by construction. The two regimes are coordinated at every control step by a hysteresis rule on the normalized joint-limit distance, ensuring that each operates within the region where it is most reliable. \new{The learned policy acts on the $2^{m}$ vertices of the null-space command box, an action space the HJB analysis of Section~\ref{sec:hjb} shows to be value-preserving.} \new{In addition, the initial configuration is selected before execution: a table-based inverse-kinematics layer enumerates candidate configurations spread over the disconnected branches of the self-motion manifold, and a learned selector scores them by their complete closed-loop return.}
 
 \new{We evaluate the proposed framework on straight-line path-following tasks across three manipulators, measuring the achieved path length against the pointwise-reachable length of the same task, so that the reported fraction is bounded by construction. The contribution of each component is then separated: for the initial configuration, the learned selector is compared against the first feasible candidate, hand-designed heuristic initializations, and the within-pool oracle; for the trajectory stage, the hybrid scheme is compared against the classical law and the learned policy in isolation. We further ablate the secondary-objective weights and the hysteresis switching thresholds, and examine generalization to curved paths, non-planar surfaces, and base placement.}
 
@@ -157,6 +157,21 @@ number of manipulators, and in the generalization and placement studies.}
 
 \new{The contributions are as follows.}
 \begin{itemize}
+\item \new{\textbf{An exit-time optimal-control characterization of extreme
+motion generation, and the action-space structure it implies.} Maximizing
+the feasible extent is cast as a discounted exit-time problem whose HJB
+Hamiltonian is affine in the box-bounded null-space command. Two
+consequences follow. The greedy policy with respect to \emph{any}
+differentiable value estimate can be taken on the $2^{m}$ vertices of the
+command box, so the categorical vertex action space is a value-preserving
+reduction rather than a heuristic discretization; trained over it, the
+policy exceeds its continuous counterpart by $+0.088$ (alone) and $+0.042$
+(in the hybrid) on identical tasks, with intervals excluding zero --- the
+restriction that theory prices at zero turns out to be easier to optimize.
+And the classical null-space law is absorbed into the same framework as the
+gradient of an instantaneous surrogate read with its magnitude, against the
+value gradient read by sign alone, which turns the classical baseline into a
+member of the theory rather than an external competitor.}
 \item \new{\textbf{A one-shot selector for a decision whose label is only
 available afterwards.} How far a stroke reaches is decided by which branch of
 the self-motion manifold it starts on, a discrete choice that a continuous
@@ -189,8 +204,7 @@ the feasibility search alone, and its validity as a bound is itself checked
 doubled. Against this reference we report,
 across three manipulators, how much of the pointwise-reachable length the
 framework realizes, that the shortfall is not an artifact of the workspace
-envelope, and that on curved paths the degradation is governed by the total
-angle the path turns through rather than by its curvature. Because a query costs
+envelope, and how the transfer to curved paths degrades. Because a query costs
 one forward pass, the same measurement can be swept over thousands of base
 poses, which corrects a systematic optimism in reachability-map-based placement.}
 \end{itemize}
@@ -717,10 +731,10 @@ Table~\ref{tab:hyper} change.} The evaluation set \new{for each manipulator} com
 \midrule
 DoF                                          & 7 & 7 & 6 \\
 Null-space dimension                         & 4 & 4 & 3 \\
-Cone half-angle $\theta_{\max}$              & -- & -- & -- \\
+Cone half-angle $\theta_{\max}$              & $30^{\circ}$ & $30^{\circ}$ & $30^{\circ}$ \\
 Candidates $K$ / directions $N_{\mathrm{dir}}$ & -- & -- & -- \\
-$(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})$ & -- & -- & -- \\
-$(k_{\mu},k_{\mathrm{jl}},k_{\theta})$        & -- & -- & -- \\
+$(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})$ & (0.98, 0.94) & (0.98, 0.94) & (0.98, 0.94) \\
+$(k_{\mu},k_{\mathrm{jl}},k_{\theta})$        & (0.8, 0.4, 0.2) & (0.8, 0.4, 0.2) & (0.8, 0.4, 0.2) \\
 Evaluation tasks                              & -- & -- & -- \\
 \bottomrule
 \end{tabular}
@@ -1094,9 +1108,9 @@ one.}}
 Null-space command & \shortstack{Policy\\ratio} & \shortstack{Hybrid\\ratio}
 & \shortstack{$\Delta$ policy\\{[}95\% CI{]}} & \shortstack{$\Delta$ hybrid\\{[}95\% CI{]}} \\
 \midrule
-Continuous in $[-1,1]^{4}$      & -- & -- & --- & --- \\
-Projected onto nearest vertex   & -- & -- & -- & -- \\
-Trained over the $2^{4}$ vertices & -- & -- & -- & -- \\
+Continuous in $[-1,1]^{4}$      & 1.295 & 1.398 & --- & --- \\
+Projected onto nearest vertex   & 1.299 & 1.403 & $+0.004$ {\scriptsize$[\ni 0]$} & $+0.005$ {\scriptsize$[\ni 0]$} \\
+Trained over the $2^{4}$ vertices & \textbf{1.383} & \textbf{1.440} & $+0.088$ {\scriptsize$[+0.057,+0.119]$} & $+0.042$ {\scriptsize$[+0.014,+0.070]$} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1149,14 +1163,85 @@ require this alignment.
 
 
 
+\subsubsection{\new{Cross-Arm Replication}}
+\label{sec:crossarm}
+{\color{red}
+Everything above was measured on one arm; this subsection asks what
+replicates when only the embodiment changes. The pipeline was ported to the
+xArm7 and the Cobotta with every experimental setting shared --- the same
+task speed, control period, command bound, cone, reward and PPO
+configuration --- so the action space follows the morphology alone: $2^{4}$
+vertices for the 7-DoF arms, $2^{3}$ for the Cobotta, whose three objective
+gradients fill its null space exactly. Table~\ref{tab:multiarm} reports the
+outcome under the mechanism protocol.
+
+Three things replicate. The failure conversion: on every arm the classical
+law dies overwhelmingly on the cone ($81$--$85\%$) and the learned policy
+converts part of those endings into longer strokes at the price of more
+joint-limit endings, which the supervisor then reclaims. The switching
+behavior: the effective vertex-switching rate spends most of the $20$\,Hz
+control budget on every arm ($16.3$, $16.7$ and $13.7$\,Hz). And the
+strategy itself, made comparable by the shared basis semantics: on all
+three arms the cone coordinate is pushed positive throughout the stroke and
+increasingly so ($+0.60\!\to\!+0.82$, $+0.72\!\to\!+0.92$,
+$+0.71\!\to\!+0.84$ from the first to the last third), the manipulability
+coordinate is near-neutral early and strongly positive late
+($+0.14\!\to\!+0.64$, $+0.11\!\to\!+0.61$, $+0.06\!\to\!+0.76$), the
+centering coordinate starts positive and decays, and the orthogonal
+complement of the 7-DoF arms carries no preference at all --- consistent
+with the critic's value being flat along it
+(Section~\ref{sec:setup}). The learned resolutions are one strategy
+instantiated three times: bank joint-limit margin while the stroke is
+young, then spend it defending the two quantities whose exhaustion ends
+strokes.
+
+The commonality extends to the weights. The two 7-DoF arms share the
+$31$-dimensional observation layout, so the FR3-trained policy can be
+executed on the xArm7 unchanged: zero-shot it reaches $1.337$ (policy) and
+$1.382$ (hybrid) against the xArm7's classical law, retaining about $80\%$
+of the natively trained gain ($1.410$/$1.440$) across different link
+lengths, joint limits and collision geometry. In the normalized coordinates
+of the observation, much of what the policy learned is not specific to the
+arm it was trained on. What does scale with the embodiment is the size of
+the gain: the Cobotta, with no spare null-space direction and tight joint
+ranges, gains least, uses the centering coordinate sparingly (net $+0.10$
+against $+0.72$ and $+0.55$), and offers the supervisor a third as many
+takeover occasions.
+
+% cross-arm summary, mechanism protocol
+\begin{table}[!htbp]
+\centering
+\color{red}
+\caption{\new{Cross-arm replication under the mechanism protocol (ratio to
+each arm's classical law, $2048$ straight tasks per arm,
+$\tau=(0.98,0.94)$).}}
+\label{tab:multiarm}
+\begin{tabular}{lccc}
+\toprule
+& FR3 & xArm7 & Cobotta \\
+\midrule
+Null-space dimension $m$ (vertices)   & 4 (16) & 4 (16) & 3 (8) \\
+Vertex policy / classical             & 1.399 & 1.410 & 1.256 \\
+Hybrid / classical                    & 1.435 & 1.440 & 1.270 \\
+Classical cone terminations (\%)      & 81.4 & 84.6 & 82.6 \\
+Policy cone terminations (\%)         & 58.3 & 63.1 & 65.9 \\
+Switching rate (Hz, of 20)            & 16.3 & 16.7 & 13.7 \\
+FR3 policy zero-shot, hybrid          & ---  & 1.382 & n/a \\
+\bottomrule
+\end{tabular}
+\end{table}
+}
+
 \subsubsection{Hybrid Switching Hyperparameters}
 \xinyitodo{现在增加了不同机械臂之后，需要增加参数泛化性方面的分析，然后证明关节轨迹的连续性没有受到影响。如果后续需要运行的话，可以通过运动规划的方法来做。例如toppra或者ruckig}\\
 \new{Two questions arise once the framework is applied to more than one
 manipulator. The first is whether the thresholds have to be retuned for each of
 them. Since $\rho$ is normalized by each joint's own range, the same pair of
 thresholds denotes the same relative proximity to a limit on any manipulator,
-and the sweep in Appendix~\ref{app:sweeps}, run on all three, shows that the
-optimum does not move appreciably. The second is whether switching leaves a
+and the sweep in Appendix~\ref{app:sweeps}, run on all three, puts the
+optimum at $0.97$--$0.98$ on each: the curve loses $0.10$--$0.23$ by
+$0.85$, while the top three settings differ by at most $0.015$ --- steep
+below, flat on top, in the same place on every arm. The second is whether switching leaves a
 trajectory that can still be executed. The switch changes only the null-space
 component of the increment, so the end-effector motion is unaffected and the
 joint-space discontinuity is bounded by $a_{\max}$; we verify this directly by
@@ -1212,7 +1297,7 @@ smoothed deployment is justified.}
     under rate-limited execution.}}
     \label{fig:ratelimit}
 \end{figure}
-\new{The threshold sweep (Appendix~\ref{app:sweeps}) shows the hysteresis gap reducing the mean number of switches per stroke from $1.43$ to $0.44$ at a cost of $0.1$\,pp in length; $(0.98,0.94)$ is therefore used throughout.}
+\new{The hysteresis gap cuts the mean number of switches per stroke by two to three times on every arm ($1.37\to0.45$ on the FR3) at a cost of $0.01$--$0.02$ in the ratio (Appendix~\ref{app:sweeps}); $(0.98,0.94)$ is therefore used throughout, on all three arms.}
 
 
 
@@ -1526,39 +1611,45 @@ $k_{\mu}$ & $k_{\mathrm{jl}}$ & $k_{\theta}$
 \end{threeparttable}
 \end{table*}
 
-Table~\ref{tab:ablate_switch} varies the switching thresholds of Eq.~\eqref{eq:rho}. The top rows sweep a single threshold $\tau_{\mathrm{enter}}=\tau_{\mathrm{exit}}\in\{0.85,0.90,0.95,\\0.97,0.98,0.99\}$, tracing the performance comparison as the boundary region widens or shrinks. The bottom rows, in contrast, introduce a hysteresis gap with $\tau_{\mathrm{enter}}>\tau_{\mathrm{exit}}$, and the \emph{switches} column reports the mean number of transitions per episode. \new{Introducing the hysteresis gap reduces the mean number of switches per stroke from $1.43$ to $0.44$, at a cost of $0.1$\,pp in length; we therefore adopt $(0.98,0.94)$ as the default.}
+{\color{red}
+Table~\ref{tab:ablate_switch} sweeps the switching thresholds of
+Eq.~\eqref{eq:rho} on all three manipulators: six single-threshold settings
+$\tau_{\mathrm{enter}}=\tau_{\mathrm{exit}}$ tracing the comparison as the
+boundary shell widens, and two hysteresis pairs. Ratios are to each arm's
+classical law on $1024$ paired straight tasks (the mechanism protocol);
+\emph{sw} is the mean number of controller transitions per stroke. The
+optimum sits at $0.97$--$0.98$ on every arm, the curve is steep below
+$0.95$ and flat across the top three settings, and the hysteresis pairs cut
+the transitions by two to three times at a cost of $0.01$--$0.02$ in the
+ratio.
 
 \begin{table*}[!htbp]
 \centering
-\setlength{\tabcolsep}{4.8pt}
-\caption{Ablation of the Switching Thresholds $(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})$.}
+\color{red}
+\setlength{\tabcolsep}{6pt}
+\caption{\new{Switching-threshold sweep on three manipulators.
+Hybrid-to-classical ratio and switches per stroke (sw), $1024$ paired
+straight tasks per arm.}}
 \label{tab:ablate_switch}
-\begin{threeparttable}
-\begin{tabular}{lccc}
+\begin{tabular}{lcccccc}
 \toprule
-$(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})$
-& \shortstack{Switches\\ {\scriptsize Mean / Episode}}
-& \shortstack{Path Length (m)\\ {\scriptsize Mean / Std / Min / Max}}
-& \shortstack{Ratio to Reference ($\%$)\\ {\scriptsize Mean / Std / Min / Max}} \\
+& \multicolumn{2}{c}{FR3} & \multicolumn{2}{c}{xArm7} & \multicolumn{2}{c}{Cobotta} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+$(\tau_{\mathrm{enter}},\tau_{\mathrm{exit}})$ & ratio & sw & ratio & sw & ratio & sw \\
 \midrule
-$(0.85,\,0.85)$ & \pinkbox{2.50} & \pinkbox{0.534} / 0.231 / 0.010 / 1.427 & \pinkbox{86.1} / 24.3 / 0.8 / \phantom{0}601.3 \\
-$(0.90,\,0.90)$ & 2.49 & 0.556 / 0.239 / 0.010 / 1.437 & 88.8 / 22.9 / 0.8 / \phantom{0}601.3 \\
-$(0.95,\,0.95)$ & 1.97 & 0.571 / 0.244 / 0.010 / 1.437 & 90.7 / 23.7 / 0.8 / 1001.2 \\
-$(0.97,\,0.97)$ & 1.65 & \limebox{0.573} / 0.246 / 0.010 / 1.448 & \limebox{90.9} / 23.1 / 0.8 / 1001.9 \\
-$(0.98,\,0.98)$ & 1.43 & 0.572 / 0.247 / 0.010 / 1.448 & 90.7 / 22.7 / 0.8 / 1002.2 \\
-$(0.99,\,0.99)$ & 0.99 & 0.563 / 0.253 / 0.010 / 1.448 & 89.3 / 24.8 / 0.8 / 1017.6 \\
+$(0.85,\,0.85)$ & 1.229 & 1.70 & 1.226 & 1.29 & 1.193 & 0.71 \\
+$(0.90,\,0.90)$ & 1.320 & 1.73 & 1.312 & 1.42 & 1.235 & 0.73 \\
+$(0.95,\,0.95)$ & 1.407 & 1.68 & 1.414 & 1.20 & 1.277 & 0.62 \\
+$(0.97,\,0.97)$ & 1.429 & 1.53 & 1.437 & 0.98 & \textbf{1.294} & 0.51 \\
+$(0.98,\,0.98)$ & \textbf{1.431} & 1.37 & \textbf{1.452} & 0.85 & 1.288 & 0.42 \\
+$(0.99,\,0.99)$ & 1.410 & 0.94 & 1.448 & 0.60 & 1.287 & 0.27 \\
 \midrule
-$(0.98,\,0.94)$ & 0.44 & 0.571 / 0.246 / 0.010 / 1.448 & 90.6 / 23.1 / 0.8 / 1000.8 \\
-$(0.99,\,0.93)$ & \limebox{0.32} & 0.567 / 0.247 / 0.010 / 1.448 & 90.0 / 23.9 / 0.8 / 1017.6 \\
+$(0.98,\,0.94)$ & 1.422 & 0.45 & 1.429 & 0.31 & 1.283 & 0.27 \\
+$(0.99,\,0.93)$ & 1.415 & 0.31 & 1.439 & 0.22 & 1.282 & 0.17 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-    \item[Note 1] Only representative swept hysteresis combinations are listed.
-    \item[Note 2] \new{To be regenerated: measured on one manipulator against the
-    earlier best-of-$K$ reference length.}
-\end{tablenotes}
-\end{threeparttable}
 \end{table*}
+}
 
 \normalem
 % \bibliographystyle{IEEEtran}

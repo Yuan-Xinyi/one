@@ -181,10 +181,12 @@ kinematic choice.}
 \item \new{\textbf{An evaluation protocol that makes the claim verifiable, and
 the measurement it yields.} Reporting stroke length against the longest of $K$
 sampled candidates, as our earlier version did~\cite{yuan2026extreme}, is not
-sound: we show that achieved strokes exceed such a reference. We instead bound
-each task from above by marching along its own path and testing whether any
-admissible configuration exists at each sample, which depends on the kinematics
-alone and cannot be exceeded by any resolution law. Against this bound we report,
+sound: we show that achieved strokes exceed such a reference. We instead reference
+each task by marching along its own path and testing whether any admissible
+configuration exists at each sample; the result depends on the kinematics and
+the feasibility search alone, and its validity as a bound is itself checked
+--- no executed stroke exceeds it, and it is stable when the search budget is
+doubled. Against this reference we report,
 across three manipulators, how much of the pointwise-reachable length the
 framework realizes, that the shortfall is not an artifact of the workspace
 envelope, and that on curved paths the degradation is governed by the total
@@ -335,14 +337,18 @@ where $\mathcal{L}$ denotes the stroke length, $\mathbf{q}_0^*$ and $\pi$ are th
 During this process, since only the $3$-DoF end-effector position must be precisely tracked, the remaining freedom makes the manipulator kinematically redundant for $n>3$. This redundancy is resolved in the null space of the position Jacobian, which decomposes the commanded joint velocity into a task term and a null-space term,
 \begin{equation}
 \label{eq:nullspace}
-\dot{\mathbf{q}} = \mathbf{J}^{+}\dot{\mathbf{x}} + (\mathbf{I}-\mathbf{J}^{+}\mathbf{J})\,\boldsymbol{\xi},
+{\color{red}
+\dot{\mathbf{q}} = \mathbf{J}^{+}_{\lambda}\dot{\mathbf{x}} + \mathbf{B}(\mathbf{q})\,\mathbf{u},
+\qquad
+\mathbf{J}\mathbf{B}=\mathbf{0},\quad
+\mathbf{B}^{\!\top}\mathbf{B}=\mathbf{I},}
 \end{equation}
-where $\mathbf{J}^{+}$ is the damped pseudo-inverse and $(\mathbf{I}-\mathbf{J}^{+}\mathbf{J})$ projects the secondary command $\boldsymbol{\xi}$ onto the null space. \new{In implementation the projected term is written in an exact null-space basis (Section~\ref{sec:traj}), so the damping affects only the task term.} Within this null space, several secondary objectives can be pursued without disturbing the end-effector position:
+\new{where $\mathbf{J}^{+}_{\lambda}$ is the damped pseudo-inverse of the position Jacobian $\mathbf{J}$, $\mathbf{B}(\mathbf{q})\in\mathbb{R}^{n\times(n-3)}$ is an orthonormal basis of the exact null space of $\mathbf{J}$ (identified by a double-precision SVD; its task-aligned construction is given in Section~\ref{sec:traj}), and $\mathbf{u}$ collects the null-space coordinates of the secondary motion. The exact basis, rather than the projector $(\mathbf{I}-\mathbf{J}^{+}_{\lambda}\mathbf{J})$, matters here: with a damped pseudo-inverse that matrix is not an exact projector, whereas $\mathbf{J}\mathbf{B}=\mathbf{0}$ holds by construction, so the secondary motion cannot disturb the end-effector position regardless of the damping.} Within this null space, several secondary objectives can be pursued:
 \begin{equation}
 \label{eq:secondary}
 \boldsymbol{\xi}=k_{\mu}\,\nabla_{\mathbf{q}}w_{\mathbf{d}}(\mathbf{q})\;-\;k_{\mathrm{jl}}\,\frac{\mathbf{q}-\mathbf{q}_{\mathrm{mid}}}{\mathbf{q}_{\max}-\mathbf{q}_{\min}}\;+\;k_{\theta}\,g(\theta)\,\nabla_{\mathbf{q}}\!\big(\mathbf{z}(\mathbf{q})^{\top}\mathbf{n}\big),
 \end{equation}
-where the secondary command $\boldsymbol{\xi}$ combines a directional-manipulability term $w_{\mathbf{d}}$ that retreats from singularities along $\mathbf{d}$, a centering term that pulls each joint toward the middle $\mathbf{q}_{\mathrm{mid}}$ of its range, and a cone term gated by $g(\theta)$ that activates only as the tool axis approaches the $\theta_{\max}$ boundary. All subsequent controllers share this task decomposition, differing only in the strategy used to generate the secondary command $\boldsymbol{\xi}$.
+where the secondary field $\boldsymbol{\xi}$ combines a directional-manipulability term $w_{\mathbf{d}}$ that retreats from singularities along $\mathbf{d}$, a centering term that pulls each joint toward the middle $\mathbf{q}_{\mathrm{mid}}$ of its range, and a cone term gated by $g(\theta)$ that activates only as the tool axis approaches the $\theta_{\max}$ boundary. \new{The classical law enters the decomposition through its null-space coordinates, $\mathbf{u}\propto\mathbf{B}^{\!\top}\boldsymbol{\xi}$ up to the gain scaling and a saturation; all subsequent controllers share Eq.~(\ref{eq:nullspace}) and differ only in how $\mathbf{u}$ is generated.}
 
 {\color{red}
 The horizon of this problem is not an input: the stroke ends at the first
@@ -362,20 +368,17 @@ and let
 \end{equation}
 denote the exit time of a closed-loop trajectory (not to be confused with the
 dimensionless switching thresholds $\tau_{\mathrm{enter}},\tau_{\mathrm{exit}}$
-of Section~\ref{sec:traj}). Throughout this work the
-secondary command is bounded through the parameterization
-$\boldsymbol{\xi} = a_{\max}\,\mathbf{B}(\mathbf{q})\,\mathbf{a}$ with
-$\mathbf{a} \in \mathcal{A} := [-1,1]^{m}$, where $m$ is the dimension of the
-null space left by the position task ($m=4$ for the two 7-DoF arms, $m=3$ for
-Cobotta) and $\mathbf{B}(\mathbf{q})$ is
-the task-aligned null-space basis constructed in Section~\ref{sec:traj}. Under
-this parameterization the decomposition of Eq.~(\ref{eq:nullspace}) is
-control-affine,
+of Section~\ref{sec:traj}). Throughout this work the null-space coordinates
+are bounded, $\mathbf{u} = a_{\max}\,\mathbf{a}$ with
+$\mathbf{a} \in \mathcal{A} := [-1,1]^{m}$, where $m = n-3$ is the dimension
+of the null space left by the position task ($m=4$ for the two 7-DoF arms,
+$m=3$ for Cobotta). Under this bound the decomposition of
+Eq.~(\ref{eq:nullspace}) is control-affine,
 \begin{equation}
 \label{eq:affine}
 \dot{\mathbf{q}} \;=\; \mathbf{f}(\mathbf{q}) \;+\; \mathbf{G}(\mathbf{q})\,\mathbf{a},
 \qquad
-\mathbf{f} := \mathbf{J}^{+}\dot{\mathbf{x}},\quad
+\mathbf{f} := \mathbf{J}^{+}_{\lambda}\dot{\mathbf{x}},\quad
 \mathbf{G} := a_{\max}\,\mathbf{B},
 \end{equation}
 with the task condition $\mathbf{c}$ entering $\mathbf{f}$ and $\Omega$ as a
@@ -389,26 +392,29 @@ V(\mathbf{q}_{0}) \;=\; \sup_{\mathbf{a}(\cdot)}
 \end{equation}
 where the supremum runs over measurable commands into $\mathcal{A}$ and the
 discount $\beta > 0$ matches the implementation ($\gamma = 0.99$ at a $50$\,ms
-control period gives $\beta = (1-\gamma)/\Delta t = 0.2\,\mathrm{s}^{-1}$). On
+control period gives $\beta = -\ln\gamma/\Delta t \approx 0.2\,\mathrm{s}^{-1}$). On
 the straight-line family the task term of Eq.~(\ref{eq:nullspace}) holds the
 advance rate at the commanded speed $v$ up to the damping-induced tracking
 error, so $r \approx v$ and
 $V \approx (v/\beta)\bigl(1 - e^{-\beta\tau}\bigr)$ is an increasing function
 of the exit time alone: on this family the discounted problem is a
-maximum-exit-time problem. The two decision variables of the constrained
-program above reappear as the two stages of the framework: the selection stage
-chooses $\mathbf{q}_{0}^{*}$ to maximize $V$ across the branches of the
-self-motion manifold, and the trajectory stage learns a feedback policy that
-pursues the same objective.
+maximum-exit-time problem. $V$ in (\ref{eq:value}) is the optimal value; the learned components of this
+paper approximate values of \emph{policies}: the critic of
+Section~\ref{sec:traj} regresses $V^{\pi}$ of the policy being trained, and
+the selector is supervised by rollouts of the deployed closed loop, so it
+ranks candidates by that loop's $V^{\pi}$, not by $V$. The two decision
+variables of the constrained program above reappear as the two stages of the
+framework: the selection stage chooses $\mathbf{q}_{0}^{*}$ by that ranking
+across the disconnected components of the feasible set, and the trajectory
+stage learns a feedback policy that pursues the same objective.
 
 Two facts about this formulation are properties of the system as constructed,
 not modeling assumptions, and they are all that the analysis of
 Section~\ref{sec:hjb} uses. First, the dynamics (\ref{eq:affine}) are affine
-in $\mathbf{a}$ by the definition of the null-space decomposition. Second, the
-advance rate $r$ does not depend on $\mathbf{a}$: $\mathbf{B}$ is an exact
-basis of the null space of the position Jacobian (identified by SVD in double
-precision; the damping of $\mathbf{J}^{+}$ enters only the particular
-solution), so the secondary command cannot alter the instantaneous advance.
+in $\mathbf{a}$ by the definition of the null-space decomposition. Second,
+the advance rate $r$ does not depend on $\mathbf{a}$, because
+$\mathbf{J}\mathbf{B}=\mathbf{0}$ holds exactly in
+Eq.~(\ref{eq:nullspace}): the damping enters only the particular solution.
 What separates the exit-time form from instantaneous null-space optimization
 is therefore the argument of the maximization alone: a command at $\mathbf{q}$
 is judged by how it changes all future feasible progress, through $V$, and not
@@ -539,7 +545,10 @@ the manner of per-direction rate limits; its vertex set is tied to that
 basis. A ball constraint on the secondary command would instead yield the
 full-magnitude solution $\mathbf{a}\propto\boldsymbol{\sigma}$ with no vertex
 structure. The analysis is exact for the system as defined and claims no
-canonical status for the box.
+canonical status for the box. The constructed basis can moreover change
+discontinuously with $\mathbf{q}$ (the fallback branches of its
+task-aligned construction, Section~\ref{sec:traj}), one more reason
+Remark~\ref{rem:value} remains conditional.
 \end{remark}
 
 The structural conclusion has a precedent in a different corner of robotics:
@@ -553,7 +562,8 @@ the kinematic counterpart of that mechanism for redundancy resolution.
 \label{sec:relation}
 The classical secondary command of Eq.~(\ref{eq:secondary}) performs gradient
 ascent on a weighted instantaneous objective; writing that objective, gains
-absorbed, as $\Phi(\mathbf{q})$, the two laws read, in the shared basis,
+and $a_{\max}$ absorbed, as $\Phi(\mathbf{q})$, the two laws read, in the
+shared basis and up to scaling,
 \begin{equation}
 \label{eq:cl-vs-opt}
 \mathbf{a}_{\mathrm{cl}}(\mathbf{q})
@@ -567,11 +577,12 @@ hand-designed surrogate evaluated at the current configuration, while $V$
 carries the discounted future feasible progress. And the use of the gradient:
 the classical law keeps its magnitude, so the command shrinks wherever the
 surrogate is flat, while the value-based feedback keeps only its sign. The
-classical law is thereby a member of the same family of
-switching-function controllers, with $\Phi$ in place of $V$ and the magnitude
-retained --- a characterization confirmed empirically in
-Table~\ref{tab:action_space}, where the deployed classical law uses a median
-$14\%$ of its command authority and the learned policy $100\%$.
+two laws thereby share one feedback form,
+$\mathbf{a} = h\bigl(\mathbf{G}^{\!\top}\nabla(\cdot)\bigr)$, and differ in
+which scalar field is read and in what $h$ retains of the gradient --- a
+distinction visible empirically in Table~\ref{tab:action_space}: the deployed
+classical law uses a median $14\%$ of its command authority, the learned
+policy $100\%$.
 
 What the analysis leaves open is computational: $V$ has no closed form, and
 its domain --- configurations crossed with task conditions --- is far beyond
@@ -593,7 +604,7 @@ examined in Section~\ref{sec:setup}.
 \subsection{Initial Joint Configuration Selection}
 % quick state that the smm shows that the infinte joint configurations are actually in disconnected branchs. so this module is to ensure that the derived framework doesn't start from an invalid initalizing joint angle.(detailed analysis of the smm put in the appendix). Then introduce the generation process.
 
-For many tasks, the achievable path length is largely determined by the initial joint configuration even before motion begins. For example, for a 7-DoF arm, a fixed end-effector pose constrains 6-DoF, and the remaining one forms a one-dimensional self-motion manifold (SMM). However, this does not imply that the arm can move freely along the manifold, as the joint limits split it into several disconnected branches. As shown in Fig.~\ref{smm}, configurations on different branches share the same pose but differ sharply in joint space and in reachable path length. \new{This structure, and its consequence for redundancy resolution, are long established: Burdick and Seraji~\cite{burdick1989characterization} write global resolution as an outer maximization over the self-motion manifolds and an inner maximization within one of them, and observe that null-space techniques \emph{can only optimize over a single self-motion manifold}, so that an optimum lying on another manifold cannot be reached by such a technique. Joint-limit-induced splitting of the manifold was characterized by L\"uck and Lee~\cite{luck1993self}, and for 7-DoF arms the feasible arm-angle set and its disconnected structure are given analytically by Shimizu et al.~\cite{shimizu2008analytical}. What this paper adds is not the structure but a measurement of its magnitude, in the sense made precise in Section~\ref{sec:setup}.}
+For many tasks, the achievable path length is largely determined by the initial joint configuration even before motion begins. For example, for a 7-DoF arm, a fixed end-effector pose constrains 6-DoF, and the remaining one forms a one-dimensional self-motion manifold (SMM). However, this does not imply that the arm can move freely along the manifold, as the joint limits split it into several disconnected branches. As shown in Fig.~\ref{smm}, configurations on different branches share the same pose but differ sharply in joint space and in reachable path length. \new{This structure, and its consequence for redundancy resolution, are long established: Burdick and Seraji~\cite{burdick1989characterization} write global resolution as an outer maximization over the self-motion manifolds and an inner maximization within one of them, and observe that null-space techniques \emph{can only optimize over a single self-motion manifold}, so that an optimum lying on another manifold cannot be reached by such a technique. Joint-limit-induced splitting of the manifold was characterized by L\"uck and Lee~\cite{luck1993self}, and for 7-DoF arms the feasible arm-angle set and its disconnected structure are given analytically by Shimizu et al.~\cite{shimizu2008analytical}. One precision matters for this paper: the task pins only the tool position and constrains the orientation by an inequality, so what the candidates span are the \emph{connected components of the task-feasible configuration set} at the starting point --- exactly the object the branch test of Section~\ref{sec:branch} computes --- of which the fixed-pose self-motion-manifold branches above are the fully constrained special case. We keep the shorter word \emph{branch} throughout. What this paper adds is not the structure but a measurement of its magnitude, in the sense made precise in Section~\ref{sec:setup}.}
 
 \begin{figure}[!htbp]
     \centering
@@ -626,9 +637,9 @@ position constraint of Eq.~\eqref{eq:pos_constraint} is imposed at every increme
 over a whole horizon, so the deviation never accumulates beyond the tolerance.
 The redundancy at each increment is resolved in the null space of the position
 Jacobian, following the decomposition of Eq.~\eqref{eq:nullspace}, and the only
-design choice left is the secondary command $\boldsymbol{\xi}$.}
+design choice left is the null-space command $\mathbf{u}$.}
 
-\new{The classical choice is to set $\boldsymbol{\xi}$ by gradient ascent on the
+\new{The classical choice takes $\mathbf{u}$ from gradient ascent on the
 weighted objective of Eq.~\eqref{eq:secondary}, which is evaluated entirely at
 the current configuration. This is enough to steer away from a limit that is
 about to be violated, but it cannot arrange the configuration now so that a
@@ -659,7 +670,7 @@ Since the objective is simply to maximize the path length, the reward needs no e
 \label{eq:reward}
 r_{t} = w_{p}\,\mathrm{clip}\!\left(\frac{(\mathbf{p}_{t+1}-\mathbf{p}_{t})^{\top}\mathbf{d}}{v\,\Delta t},\,0,\,1\right)\in[0,\,w_{p}],
 \end{equation}
-the per-step advance along $\mathbf{d}$ normalized by its maximum attainable value\new{; $w_{p}=1$ throughout}. With no terminal penalty, any violation simply ends the episode, so the return reduces to the survival time, and the policy is rewarded solely for sustaining the motion.
+the per-step advance along $\mathbf{d}$ normalized by its maximum attainable value\new{; $w_{p}=1$ throughout}. With no terminal penalty, any violation simply ends the episode\new{; since the task term holds each step's advance near its commanded value, $r_{t}\approx 1$ and the return approximates the survival time}, so the policy is rewarded solely for sustaining the motion.
 
 \new{The learned policy buys this foresight where it has seen enough data,
 and loses it where it has not. Configurations pressed against a joint limit are
@@ -689,7 +700,7 @@ Table~\ref{tab:hyper} change.} The evaluation set \new{for each manipulator} com
 
 \new{Unless otherwise specified, experiments use the default setting: (1) a candidate pool of $K$ configurations retrieved from the IKSel table along $N_{\mathrm{dir}}$ directions inside the orientation cone, with the task-generating configuration as a fallback slot; (2) an ensemble selector that picks one candidate, followed by a single damped-least-squares refinement and no deployment-time rollout; (3) hybrid switching thresholds $\tau_{\mathrm{enter}},\tau_{\mathrm{exit}}$; (4) classical secondary-objective weights $k_{\mu},k_{\mathrm{jl}},k_{\theta}$. The numerical values are reported per manipulator in Table~\ref{tab:hyper}.}
 
-\new{A stroke has to pass through every point of the prescribed path up to the point where it stops, so the first point at which no admissible configuration exists bounds the achievable length from above. We march along each task's own path and, at every sample, search for a configuration that places the tool within the position tolerance of Eq.~\eqref{eq:pos_constraint} and keeps the tool axis inside the cone of Eq.~\eqref{eq:ori_constraint} without violating joint limits or self-collision. The arc length of the first sample at which this search fails is the \emph{pointwise-reachable length} $\ell^{\mathrm{pw}}$, and we report the achieved length as the fraction $\mathcal{L}/\ell^{\mathrm{pw}}$ of it that a single continuous stroke realizes. Unlike a best-of-$K$ reference, this quantity depends only on the kinematics, so $100\%$ cannot be exceeded.}
+\new{A stroke has to pass through every point of the prescribed path up to the point where it stops, so the first point at which no admissible configuration exists bounds the achievable length from above. We march along each task's own path and, at every sample, search for a configuration that places the tool within the position tolerance of Eq.~\eqref{eq:pos_constraint} and keeps the tool axis inside the cone of Eq.~\eqref{eq:ori_constraint} without violating joint limits or self-collision. The arc length of the first sample at which this search fails is the \emph{pointwise-reachable length} $\ell^{\mathrm{pw}}$, and we report the achieved length as the fraction $\mathcal{L}/\ell^{\mathrm{pw}}$ of it that a single continuous stroke realizes. Unlike a best-of-$K$ reference, this quantity involves no resolution law; because the per-sample feasibility test is a finite search, its status as an upper bound is checked rather than assumed --- Table~\ref{tab:bound} verifies that no executed stroke exceeds it and that it is stable under a doubled search budget.}
 
 \new{We group the evaluation set by stroke length rather than by difficulty, using the terciles of $\ell^{\mathrm{pw}}$ within each manipulator: long-, medium- and short-stroke. Because the boundaries are defined per manipulator, the realized fraction is comparable across methods on one manipulator, while absolute path lengths are not comparable across manipulators. Grouping by stroke length also avoids reading a geometric property of the task as a statement about how hard it is.}
 
@@ -914,8 +925,8 @@ given.}
 \setlength{\tabcolsep}{5pt}
 \caption{Realized fraction of the pointwise-reachable length across three manipulators and stroke-length
 buckets. Each cell reports the achieved Cartesian path length (m) and the fraction of the
-pointwise-reachable length realized by a single continuous stroke (\%); $100\%$ is a strict
-upper bound. Best results in \textbf{bold}.}
+pointwise-reachable length realized by a single continuous stroke (\%); no stroke exceeds
+$100\%$, a property verified in Table~\ref{tab:bound} rather than assumed. Best results in \textbf{bold}.}
 \label{tab:mainresult}
 \begin{threeparttable}
 \begin{tabular}{l cccc cccc cccc}
@@ -1444,10 +1455,12 @@ actually be realized by a single continuous stroke. The two quantities differ
 substantially, and the gap is not caused by the workspace running out but by a
 kinematic constraint being violated while the end-effector is still far from the
 reachable boundary. We formalized the realizable part as continuous kinematic
-reachability, measured it against a bound that depends on the kinematics alone
-and therefore cannot be exceeded, and proposed a two-stage framework to close
+reachability, measured it against a per-task reference that involves no
+resolution law and whose validity as a bound is itself verified, and proposed
+a two-stage framework to close
 part of the gap. The first stage treats the choice of initial configuration as a
-choice among the disconnected branches of the self-motion manifold: candidates
+choice among the disconnected branches of the task-feasible configuration set:
+candidates
 are enumerated so that the branches are covered, and one is selected by a network
 supervised by the complete outcome of each candidate, because no quantity
 evaluated at the start of the stroke predicts how it ends. The second stage

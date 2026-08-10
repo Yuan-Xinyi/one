@@ -198,7 +198,8 @@ class LineDistribution:
                   feasibility_threshold_m=None) -> str:
         """Deterministic short key for cache filename. Include a_max since
         the feasibility filter's classical controller is clamped by it."""
-        sig = (f"seed={seed}|n={n_pool}|noise={n_target_noise_deg}|"
+        sig = (f"robot={getattr(env_cfg, 'robot', 'fr3')}|"
+               f"seed={seed}|n={n_pool}|noise={n_target_noise_deg}|"
                f"v={env_cfg.v}|dt={env_cfg.dt}|tcp={env_cfg.tcp_offset}|"
                f"amax={env_cfg.a_max}|thr={feasibility_threshold_m}|"
                f"swing={getattr(env_cfg, '_swing_max_deg', 0.0)}|"

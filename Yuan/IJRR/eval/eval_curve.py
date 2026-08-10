@@ -38,16 +38,17 @@ from Yuan.IJRR.stage2_traj.ppo import Agent
 REPO = Path(__file__).resolve().parents[3]
 
 
-def _agent(ckpt_dir: Path, obs_dim: int, device):
+def _agent(ckpt_dir: Path, obs_dim: int, device, act_dim: int = 4):
     ck = torch.load(ckpt_dir / 'agent.pt', map_location=device,
                     weights_only=False)
     sd = ck['agent'] if isinstance(ck, dict) and 'agent' in ck else ck
     # A vertex-action checkpoint is recognised by its categorical head.
     if any(k.startswith('_logits_head') for k in sd):
         from Yuan.IJRR.stage2_traj.vertex_agent import VertexAgent
-        a = VertexAgent(obs_dim=obs_dim, act_dim=4, hidden_dim=512).to(device)
+        a = VertexAgent(obs_dim=obs_dim, act_dim=act_dim,
+                        hidden_dim=512).to(device)
     else:
-        a = Agent(obs_dim=obs_dim, act_dim=4, hidden_dim=512).to(device)
+        a = Agent(obs_dim=obs_dim, act_dim=act_dim, hidden_dim=512).to(device)
     a.load_state_dict(sd)
     return a.eval()
 
@@ -127,7 +128,7 @@ def main():
             'n_target': pool.n_target_pool[idx],
             'amp': pool.amp_pool[idx], 'wavelen': pool.wavelen_pool[idx]}
 
-    agent = _agent(REPO / a.ckpt, env.obs_dim, dev)
+    agent = _agent(REPO / a.ckpt, env.obs_dim, dev, act_dim=env.act_dim)
     classical = ClassicalNullspaceController(env.kin)
     arms = {
         'classical': cn_action_fn(classical),

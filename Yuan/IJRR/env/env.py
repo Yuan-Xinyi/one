@@ -34,6 +34,9 @@ import torch
 from one.robots.manipulators.franka.fr3_pen.batched_fr3_kin import BatchedFR3Kinematics
 from one.robots.manipulators.franka.fr3.sphere_collision import FR3SphereCollision
 
+from Yuan.IJRR.kinematics.batched_chain_kin import BatchedChainKinematics
+from Yuan.IJRR.kinematics.chain_sphere_collision import ChainSphereCollision
+
 from Yuan.IJRR.env.line_distribution import LineDistribution
 from Yuan.IJRR.env.path_geometry import path_frame, serpentine_curvature
 
@@ -53,6 +56,10 @@ CURV_SCALE = 0.25
 
 @dataclass
 class EnvConfig:
+    # Which arm: 'fr3' keeps the original FR3 classes; 'xarm7' / 'cobotta'
+    # use the generic chain kinematics and the generated sphere sets. The
+    # action and observation dimensions follow from the arm (m = n - 3).
+    robot: str = "fr3"
     n_envs: int = 128
     dt: float = 0.01
     v: float = 0.05
@@ -158,9 +165,10 @@ def build_task_aligned_basis(
     J_p_d = J_p_det.double()
     g1d, g2d, g3d = g1.double(), g2.double(), g3.double()
 
+    m = d - 3   # null-space dimension of the 3-DoF position task
     with torch.no_grad():
         _, _, Vh = torch.linalg.svd(J_p_d, full_matrices=True)
-        N = Vh.transpose(-1, -2)[..., -4:]
+        N = Vh.transpose(-1, -2)[..., -m:]
         NNt = N @ N.transpose(-1, -2)
 
     p1 = (NNt @ g1d.unsqueeze(-1)).squeeze(-1)
@@ -170,8 +178,8 @@ def build_task_aligned_basis(
         [g1d.norm(dim=-1), g2d.norm(dim=-1), g3d.norm(dim=-1)],
         dim=-1).clamp_min(1e-20)
 
-    used = torch.zeros((B_size, 4), dtype=torch.bool, device=device)
-    arange4 = torch.arange(4, device=device).view(1, -1)
+    used = torch.zeros((B_size, m), dtype=torch.bool, device=device)
+    arange_m = torch.arange(m, device=device).view(1, -1)
     fb_flags: list[torch.Tensor] = []
 
     def _gs(p, prev, gi, g_raw):
@@ -197,7 +205,7 @@ def build_task_aligned_basis(
         v_fb = sgn * v_fb
         e_fb = v_fb / v_fb.norm(dim=-1, keepdim=True).clamp_min(eps_abs)
         e = torch.where(ok.unsqueeze(-1), e_main, e_fb)
-        used = used | ((~ok).unsqueeze(-1) & (arange4 == fb_idx.view(-1, 1)))
+        used = used | ((~ok).unsqueeze(-1) & (arange_m == fb_idx.view(-1, 1)))
         fb_flags.append(~ok)
         return e
 
@@ -205,17 +213,24 @@ def build_task_aligned_basis(
     e1 = _gs(p2, [e0], 1, g2d)
     e2 = _gs(p3, [e0, e1], 2, g3d)
 
-    fb_idx = (~used).float().argmax(dim=-1)
-    n_col = torch.gather(
-        N, -1, fb_idx.view(-1, 1, 1).expand(-1, d, 1)).squeeze(-1)
-    v3 = n_col
-    for e in (e0, e1, e2):
-        v3 = v3 - (v3 * e).sum(-1, keepdim=True) * e
-    for e in (e0, e1, e2):
-        v3 = v3 - (v3 * e).sum(-1, keepdim=True) * e
-    e3 = v3 / v3.norm(dim=-1, keepdim=True).clamp_min(eps_abs)
+    # Complete the basis with the m - 3 remaining null directions (one for
+    # the 7-DoF arms, none for Cobotta, whose three objective gradients
+    # already fill the null space).
+    cols = [e0, e1, e2]
+    for _ in range(m - 3):
+        fb_idx = (~used).float().argmax(dim=-1)
+        n_col = torch.gather(
+            N, -1, fb_idx.view(-1, 1, 1).expand(-1, d, 1)).squeeze(-1)
+        v3 = n_col
+        for e in cols:
+            v3 = v3 - (v3 * e).sum(-1, keepdim=True) * e
+        for e in cols:
+            v3 = v3 - (v3 * e).sum(-1, keepdim=True) * e
+        e3 = v3 / v3.norm(dim=-1, keepdim=True).clamp_min(eps_abs)
+        used = used | (arange_m == fb_idx.view(-1, 1))
+        cols.append(e3)
 
-    B_basis = torch.stack([e0, e1, e2, e3], dim=-1).to(dtype)
+    B_basis = torch.stack(cols, dim=-1).to(dtype)
     fb_mask = torch.stack(fb_flags, dim=-1)
     return B_basis, fb_mask
 
@@ -246,17 +261,29 @@ class NSRLBatchedEnv:
                  device: torch.device | str = "cuda"):
         self.cfg = cfg
         self.device = torch.device(device)
-        self.obs_dim = (OBS_DIM
-                        + (1 if getattr(cfg, 'observe_curvature', False) else 0)
-                        + (RAY_ERROR_DIM if cfg.observe_ray_error else 0))
         self.n_envs = cfg.n_envs
         self.dt = cfg.dt
         self.v = cfg.v
         self.a_max = cfg.a_max
         self.max_steps = cfg.max_steps
         self.cos_cone = math.cos(cfg.cone_deg * math.pi / 180.0)
-        self.kin = BatchedFR3Kinematics(device=self.device, tcp_offset=cfg.tcp_offset)
-        self.collision = FR3SphereCollision(device=self.device)
+        robot = getattr(cfg, 'robot', 'fr3')
+        if robot == 'fr3':
+            self.kin = BatchedFR3Kinematics(device=self.device,
+                                            tcp_offset=cfg.tcp_offset)
+            self.collision = FR3SphereCollision(device=self.device)
+            self.n_joints = 7
+        else:
+            self.kin = BatchedChainKinematics(robot, device=self.device,
+                                              tcp_offset=cfg.tcp_offset)
+            self.collision = ChainSphereCollision(
+                robot, self.kin.n_joints + 1, device=self.device)
+            self.n_joints = self.kin.n_joints
+        self.act_dim = self.n_joints - 3
+        # 2n (q_norm, q_norm^2) + 13 task channels + a_prev (m); 31 for FR3.
+        self.obs_dim = (2 * self.n_joints + 13 + self.act_dim
+                        + (1 if getattr(cfg, 'observe_curvature', False) else 0)
+                        + (RAY_ERROR_DIM if cfg.observe_ray_error else 0))
         self.line_dist = line_dist
 
         self.lmt_lo = self.kin.lmt_lo
@@ -266,7 +293,7 @@ class NSRLBatchedEnv:
 
         B = self.n_envs
         d = self.kin.dtype
-        self.q = torch.zeros((B, 7), device=self.device, dtype=d)
+        self.q = torch.zeros((B, self.n_joints), device=self.device, dtype=d)
         # line_dir is the INSTANTANEOUS tangent of the path at the point
         # closest to the current TCP; it is refreshed every step. On a straight
         # ray it never leaves its reset value, so this is a no-op there.
@@ -288,7 +315,8 @@ class NSRLBatchedEnv:
         self.arc_progress = torch.zeros((B,), device=self.device, dtype=d)
         self.n_target = torch.zeros((B, 3), device=self.device, dtype=d)
         self.t = torch.zeros((B,), device=self.device, dtype=torch.long)
-        self.a_prev = torch.zeros((B, ACT_DIM), device=self.device, dtype=d)
+        self.a_prev = torch.zeros((B, self.act_dim), device=self.device,
+                                  dtype=d)
         self.done_persistent = torch.zeros((B,), device=self.device, dtype=torch.bool)
         # Cumulative per-episode reward (logged on done)
         self.episode_reward = torch.zeros((B,), device=self.device, dtype=d)

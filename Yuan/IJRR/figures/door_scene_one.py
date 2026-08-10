@@ -58,7 +58,8 @@ class DoorLeaf:
         self.panel = ossop.box(half_extents=(hw, 0.018, hh), rgb=WOOD, alpha=alpha)
         # local geometry, placed by set_rotmat_pos below
         self.bar = ossop.cylinder(spos=(0.0, 0.0, -0.10), epos=(0.0, 0.0, 0.10),
-                                  radius=0.011, segments=16, rgb=STEEL, alpha=bar_a)
+                                  radius=door.handle_radius, segments=16,
+                                  rgb=STEEL, alpha=bar_a)
         self.stub = ossop.cylinder(spos=(0.0, 0.0, 0.0),
                                    epos=(0.0, -door.handle_offset, 0.0),
                                    radius=0.009, segments=12, rgb=STEEL, alpha=bar_a)
@@ -105,10 +106,11 @@ def build_static(scene, door: F.DoorSpec, base: F.BasePose, offset: np.ndarray,
 
 
 def spawn_arm(scene, base: F.BasePose, offset: np.ndarray, q: np.ndarray,
-              alpha: float):
-    """One FR3 with the Franka Hand, at a fixed pose and opacity."""
+              alpha: float, jaw_width: float = 0.026):
+    """One FR3 with the Franka Hand closed on the handle, at a fixed pose."""
     pos = np.asarray(base.t + offset, np.float32)
-    arm, hand = fr3_with_hand(rotmat=_rotz(math.radians(base.yaw_deg)), pos=pos)
+    arm, hand = fr3_with_hand(rotmat=_rotz(math.radians(base.yaw_deg)), pos=pos,
+                              jaw_width=jaw_width)
     arm.attach_to(scene)
     arm.fk(np.asarray(q, np.float32))
     if alpha < 1.0:
@@ -124,10 +126,12 @@ def main():
                     help='show only this variant of the scenario')
     ap.add_argument('--ghosts', type=int, default=6,
                     help='how many poses of each rollout to overlay')
-    ap.add_argument('--ghost-alpha', type=float, default=0.30,
+    ap.add_argument('--ghost-alpha', type=float, default=0.16,
                     help='opacity of the earliest ghost (the last one is opaque)')
-    ap.add_argument('--door-alpha', type=float, default=0.25)
-    ap.add_argument('--wall-alpha', type=float, default=0.12)
+    ap.add_argument('--jaw', type=float, default=None,
+                    help='override the gripper opening [m]')
+    ap.add_argument('--door-alpha', type=float, default=0.14)
+    ap.add_argument('--wall-alpha', type=float, default=0.06)
     ap.add_argument('--animate', action='store_true',
                     help='also play an opaque arm through the rollout, in a loop')
     ap.add_argument('--fps', type=float, default=30.0)
@@ -163,13 +167,15 @@ def main():
         for j, ti in enumerate(idx):
             a = 1.0 if len(idx) == 1 else (
                 args.ghost_alpha + (1.0 - args.ghost_alpha)
-                * (j / (len(idx) - 1)) ** 1.6)
-            spawn_arm(world.scene, v.base, off, v.roll.q[ti], a)
+                * (j / (len(idx) - 1)) ** 2.4)
+            spawn_arm(world.scene, v.base, off, v.roll.q[ti], a,
+                      jaw_width=args.jaw or v.door.jaw_width)
             leaf = DoorLeaf(world.scene, v.door, off,
                             args.door_alpha * (0.6 + 0.4 * a))
             leaf.set_angle(float(v.roll.theta[ti]))
         if args.animate:
-            arm, _ = spawn_arm(world.scene, v.base, off, v.roll.q[0], 1.0)
+            arm, _ = spawn_arm(world.scene, v.base, off, v.roll.q[0], 1.0,
+                               jaw_width=args.jaw or v.door.jaw_width)
             live.append((v, arm, DoorLeaf(world.scene, v.door, off, 0.85)))
 
     if live:

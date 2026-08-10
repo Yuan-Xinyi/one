@@ -125,6 +125,9 @@ class DoorSpec:
     handle_r: float = 0.64              # grasp radius from the hinge [m]
     handle_z: float = 0.95              # grasp height [m]
     handle_offset: float = 0.06         # how far the bar stands off the leaf [m]
+    handle_radius: float = 0.011        # the bar itself [m]
+    jaw_width: float = 0.004            # gripper opening, total across both
+                                        # fingers: closed on the 22 mm bar
     grasp_roll_deg: float = -40.0       # approach direction, about the bar axis
     grasp_flip: float = -1.0            # +-1: the hand's 180-deg roll about z_ee
     swing: float = -1.0                 # -1: pulls toward the robot, +1: pushes away
@@ -1023,9 +1026,10 @@ class RobotArtists:
         p_tcp, R_tcp = arm.tcp_world(q, v.base)
         p_tcp, R_tcp = p_tcp[0], R_tcp[0]
         y, z = R_tcp[:, 1], R_tcp[:, 2]
+        half_jaw = 0.5 * v.door.jaw_width
         for art, sgn in ((self.finger1, 1.0), (self.finger2, -1.0)):
-            a = p_tcp - 0.06 * z + sgn * 0.035 * y
-            b = p_tcp + 0.01 * z + sgn * 0.035 * y
+            a = p_tcp - 0.06 * z + sgn * half_jaw * y
+            b = p_tcp + 0.01 * z + sgn * half_jaw * y
             art.set_data([a[0], b[0]], [a[1], b[1]])
             art.set_3d_properties([a[2], b[2]])
 

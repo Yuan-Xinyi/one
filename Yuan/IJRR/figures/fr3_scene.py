@@ -42,7 +42,7 @@ ZERO_TFS = [(0.0, (0.0, 0.0, 0.333)),
             (math.pi / 2, (0.088, 0.0, 0.0))]
 
 WOOD = '0.72 0.55 0.35'
-WALL_RGBA = '0.80 0.81 0.84 0.32'   # translucent so it never hides the arm
+WALL_RGBA = '0.80 0.81 0.84 0.16'   # translucent so it never hides the arm
 DARK = '0.18 0.18 0.20 1'
 
 
@@ -58,18 +58,19 @@ def _rgba(color: str | None, alpha: float = 1.0, tint: float = 0.0) -> str:
     return f'{v[0]:.3f} {v[1]:.3f} {v[2]:.3f} {alpha:.3f}'
 
 
-def _arm_xml(k: int, rgba: str, group: int, depth: int = 0) -> str:
+def _arm_xml(k: int, rgba: str, group: int, jaw: float = 0.026,
+             depth: int = 0) -> str:
     rx, pos = ZERO_TFS[depth]
     if depth < 6:
-        inner = _arm_xml(k, rgba, group, depth + 1)
+        inner = _arm_xml(k, rgba, group, jaw, depth + 1)
     else:
         inner = f"""
           <body name="r{k}_hand" pos="0 0 0.107" euler="0 0 {-math.pi / 4}">
             <geom type="mesh" mesh="hand" rgba="{rgba}" group="{group}"/>
-            <body name="r{k}_lfinger" pos="0 0 0.0584">
+            <body name="r{k}_lfinger" pos="0 {0.5 * jaw} 0.0584">
               <geom type="mesh" mesh="finger" rgba="{DARK}" group="{group}"/>
             </body>
-            <body name="r{k}_rfinger" pos="0 0 0.0584" euler="0 0 {math.pi}">
+            <body name="r{k}_rfinger" pos="0 {-0.5 * jaw} 0.0584" euler="0 0 {math.pi}">
               <geom type="mesh" mesh="finger" rgba="{DARK}" group="{group}"/>
             </body>
             <site name="r{k}_tcp" pos="0 0 0.1034" size="0.004" group="4"/>
@@ -109,14 +110,14 @@ def _copy_xml(k: int, spec) -> str:
     {walls}{_frame_xml(k, door, h, group)}"""
     return f"""
     <body name="r{k}_base" pos="{bx} {by} {bz}" euler="0 0 {math.radians(base.yaw_deg)}">
-      <geom type="mesh" mesh="link0" rgba="{rgba}" group="{group}"/>{_arm_xml(k, rgba, group)}
+      <geom type="mesh" mesh="link0" rgba="{rgba}" group="{group}"/>{_arm_xml(k, rgba, group, door.jaw_width)}
     </body>{scenery}
     <body name="r{k}_leaf" pos="{h[0]} {h[1]} {door.z_bottom}" euler="0 0 {yaw_leaf}">
       <joint name="r{k}_door" type="hinge" axis="0 0 1" range="-3.2 3.2"/>
       <geom type="box" pos="{hw} 0 {hh}" size="{hw} 0.018 {hh}"
             rgba="{WOOD} {a:.3f}" group="{group}"/>
       <geom type="cylinder" pos="{door.handle_r} {-door.handle_offset} {door.handle_z}"
-            size="0.011 0.10" rgba="0.55 0.56 0.60 {a:.3f}" group="{group}"/>
+            size="{door.handle_radius} 0.10" rgba="0.55 0.56 0.60 {a:.3f}" group="{group}"/>
       <geom type="cylinder" fromto="{door.handle_r} -0.018 {door.handle_z}
             {door.handle_r} {-door.handle_offset} {door.handle_z}"
             size="0.009" rgba="0.55 0.56 0.60 {a:.3f}" group="{group}"/>
@@ -164,7 +165,7 @@ class DoorScene:
     """
 
     @classmethod
-    def from_variants(cls, variants, ghosts: int = 1, alpha_min: float = 0.30,
+    def from_variants(cls, variants, ghosts: int = 1, alpha_min: float = 0.16,
                       tint: float = 0.0, **kw) -> 'DoorScene':
         specs, offsets = [], []
         for k, v in enumerate(variants):
@@ -172,7 +173,7 @@ class DoorScene:
             offsets.append(off)
             for j in range(ghosts):
                 a = 1.0 if ghosts == 1 else (
-                    alpha_min + (1.0 - alpha_min) * (j / (ghosts - 1)) ** 1.6)
+                    alpha_min + (1.0 - alpha_min) * (j / (ghosts - 1)) ** 2.4)
                 specs.append(CopySpec(door=v.door, base=v.base, offset=off,
                                       group=1 + k, alpha=a, color=v.color,
                                       tint=tint, scenery=(j == ghosts - 1)))

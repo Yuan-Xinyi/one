@@ -75,6 +75,16 @@ class EnvConfig:
     r_jl: float = 0.0
     # Progress-only shaping reward.
     w_progress: float = 1.0
+    # Potential-based margin shaping: r += w_margin*(margin_gamma*phi' - phi)
+    # with phi = -tau*logsumexp(-m/tau) over the normalized joint-limit and
+    # cone margins -- the two components the myopic one-step ablation showed
+    # carry the whole effect. Potential-based, so the optimal policy of the
+    # exit-time objective is unchanged (the sum telescopes); what changes is
+    # the learning signal, which under progress-only reward is informative
+    # only at the moment of death. margin_gamma must equal the PPO gamma.
+    w_margin: float = 0.0
+    margin_gamma: float = 0.99
+    margin_tau: float = 0.1
     manip_damping: float = 1e-3
     # Task-space proportional feedback on the distance to the path, in 1/s.
     # On a straight ray the damped pseudo-inverse alone keeps the realized TCP
@@ -317,6 +327,8 @@ class NSRLBatchedEnv:
         self.t = torch.zeros((B,), device=self.device, dtype=torch.long)
         self.a_prev = torch.zeros((B, self.act_dim), device=self.device,
                                   dtype=d)
+        # Potential of the margin-shaping term at the previous step.
+        self.phi_prev = torch.zeros((B,), device=self.device, dtype=d)
         self.done_persistent = torch.zeros((B,), device=self.device, dtype=torch.bool)
         # Cumulative per-episode reward (logged on done)
         self.episode_reward = torch.zeros((B,), device=self.device, dtype=d)
@@ -439,6 +451,17 @@ class NSRLBatchedEnv:
             p_at_reset, _, _, _ = self.kin.tcp_fk_jac(self.q[mask])
             self.p_start[mask] = p_at_reset
 
+        if self.cfg.w_margin != 0.0:
+            q0 = self.q[mask]
+            _, R0, _, _ = self.kin.tcp_fk_jac(q0)
+            cos0 = (R0[:, :, 2] * self.n_target[mask]).sum(-1).clamp(-1., 1.)
+            m_jl = ((self.q_half - (q0 - self.q_mid).abs())
+                    / self.q_half).amin(dim=-1)
+            m_cone = (cos0 - self.cos_cone) / (1.0 - self.cos_cone)
+            tau = self.cfg.margin_tau
+            self.phi_prev[mask] = -tau * torch.logsumexp(
+                -torch.stack([m_jl, m_cone], dim=-1) / tau, dim=-1)
+
     # ---------------------------------------------------------------- API
 
     def reset(self) -> torch.Tensor:
@@ -533,6 +556,17 @@ class NSRLBatchedEnv:
         r_progress_per_env = self.cfg.w_progress * progress_norm
 
         reward = r_progress_per_env.clone()
+        if self.cfg.w_margin != 0.0:
+            m_jl = ((self.q_half - (q_new - self.q_mid).abs())
+                    / self.q_half).amin(dim=-1)
+            m_cone = (cos_angle - self.cos_cone) / (1.0 - self.cos_cone)
+            tau = self.cfg.margin_tau
+            phi_new = -tau * torch.logsumexp(
+                -torch.stack([m_jl, m_cone], dim=-1) / tau, dim=-1)
+            reward = reward + self.cfg.w_margin * (
+                self.cfg.margin_gamma * phi_new - self.phi_prev)
+            self.phi_prev = torch.where(
+                self.done_persistent, self.phi_prev, phi_new)
         reward = torch.where(is_coll, reward + self.cfg.r_collision, reward)
         reward = torch.where(cone_viol & ~is_coll, reward + self.cfg.r_cone, reward)
         reward = torch.where(jl_viol & ~is_coll & ~cone_viol,

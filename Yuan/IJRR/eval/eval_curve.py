@@ -42,8 +42,13 @@ def _agent(ckpt_dir: Path, obs_dim: int, device, act_dim: int = 4):
     ck = torch.load(ckpt_dir / 'agent.pt', map_location=device,
                     weights_only=False)
     sd = ck['agent'] if isinstance(ck, dict) and 'agent' in ck else ck
-    # A vertex-action checkpoint is recognised by its categorical head.
-    if any(k.startswith('_logits_head') for k in sd):
+    # A vertex-action checkpoint is recognised by its categorical head; an
+    # 'alpha' entry marks the prior-logits variant.
+    if 'alpha' in sd:
+        from Yuan.IJRR.stage2_traj.vertex_agent import PriorVertexAgent
+        a = PriorVertexAgent(obs_dim=obs_dim, act_dim=act_dim,
+                             hidden_dim=512).to(device)
+    elif any(k.startswith('_logits_head') for k in sd):
         from Yuan.IJRR.stage2_traj.vertex_agent import VertexAgent
         a = VertexAgent(obs_dim=obs_dim, act_dim=act_dim,
                         hidden_dim=512).to(device)

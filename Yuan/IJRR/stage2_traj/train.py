@@ -32,7 +32,7 @@ import yaml
 from Yuan.IJRR.env.env import NSRLBatchedEnv, EnvConfig, TERM_NAMES
 from Yuan.IJRR.env.line_distribution import LineDistribution
 from Yuan.IJRR.stage2_traj.ppo import PPOConfig, train as ppo_train, Agent
-from Yuan.IJRR.stage2_traj.vertex_agent import VertexAgent
+from Yuan.IJRR.stage2_traj.vertex_agent import VertexAgent, PriorVertexAgent
 
 
 def _resolve_log_path(out_dir: Path) -> Path:
@@ -194,11 +194,19 @@ def main():
     # The admissible-command box has its optimum at the vertices, so the
     # action space can be the vertex set itself; see vertex_agent.py.
     agent_obj = None
-    if cfg_yaml.get("agent", {}).get("kind") == "vertex":
+    kind = cfg_yaml.get("agent", {}).get("kind")
+    if kind == "vertex":
         agent_obj = VertexAgent(obs_dim=train_env.obs_dim,
                                 act_dim=train_env.act_dim,
                                 hidden_dim=ppo_cfg.hidden_dim).to(device)
         print(f"[train] vertex action space: {agent_obj.n_actions} actions")
+    elif kind == "vertex_prior":
+        agent_obj = PriorVertexAgent(obs_dim=train_env.obs_dim,
+                                     act_dim=train_env.act_dim,
+                                     hidden_dim=ppo_cfg.hidden_dim).to(device)
+        print(f"[train] vertex-prior action space: "
+              f"{agent_obj.n_actions} actions, alpha init "
+              f"{float(agent_obj.alpha):.1f}")
 
     agent = ppo_train(ppo_cfg, train_env, device=device, agent=agent_obj,
                       eval_fn=eval_fn,

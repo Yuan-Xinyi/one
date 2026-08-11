@@ -79,3 +79,37 @@ class VertexAgent(nn.Module):
     @torch.no_grad()
     def actor_mean(self, x: torch.Tensor) -> torch.Tensor:
         return self.vertices[self._logits_head(self._actor_trunk(x)).argmax(-1)]
+
+
+class PriorVertexAgent(VertexAgent):
+    """Vertex policy whose logits ride on the analytic margin prior.
+
+        z(q, v) = alpha * sigma_margin(q)^T v + dz_theta(q, v)
+
+    The environment appends the 2^m prior scores to the observation; the
+    first term reproduces the margin-gradient law (strong from step one),
+    and the learned head starts near zero, so training begins at the
+    analytic controller's level and PPO learns when to deviate from it.
+    """
+
+    def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 512,
+                 **_ignored):
+        super().__init__(obs_dim=obs_dim, act_dim=act_dim,
+                         hidden_dim=hidden_dim)
+        self.n_prior = 2 ** act_dim
+        self.alpha = nn.Parameter(torch.tensor(5.0))
+
+    def _logits(self, x: torch.Tensor) -> torch.Tensor:
+        prior = x[..., -self.n_prior:]
+        return self.alpha * prior + self._logits_head(self._actor_trunk(x))
+
+    def get_action_and_value(self, x: torch.Tensor,
+                             action: torch.Tensor | None = None):
+        dist = Categorical(logits=self._logits(x))
+        idx = dist.sample() if action is None else action.squeeze(-1).long()
+        return (idx.unsqueeze(-1).float(), dist.log_prob(idx), dist.entropy(),
+                self.critic(x).squeeze(-1), None)
+
+    @torch.no_grad()
+    def actor_mean(self, x: torch.Tensor) -> torch.Tensor:
+        return self.vertices[self._logits(x).argmax(-1)]

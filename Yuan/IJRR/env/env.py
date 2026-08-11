@@ -85,6 +85,10 @@ class EnvConfig:
     w_margin: float = 0.0
     margin_gamma: float = 0.99
     margin_tau: float = 0.1
+    # Append the 2^m analytic prior scores sigma_margin^T v to the
+    # observation, one per vertex, so a policy can treat the margin-gradient
+    # law as a prior and learn deviations from it.
+    observe_prior_logits: bool = False
     manip_damping: float = 1e-3
     # Task-space proportional feedback on the distance to the path, in 1/s.
     # On a straight ray the damped pseudo-inverse alone keeps the realized TCP
@@ -293,7 +297,17 @@ class NSRLBatchedEnv:
         # 2n (q_norm, q_norm^2) + 13 task channels + a_prev (m); 31 for FR3.
         self.obs_dim = (2 * self.n_joints + 13 + self.act_dim
                         + (1 if getattr(cfg, 'observe_curvature', False) else 0)
-                        + (RAY_ERROR_DIM if cfg.observe_ray_error else 0))
+                        + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
+                        + (2 ** self.act_dim
+                           if getattr(cfg, 'observe_prior_logits', False)
+                           else 0))
+        if getattr(cfg, 'observe_prior_logits', False):
+            import numpy as _np
+            grid = _np.stack(_np.meshgrid(
+                *[[-1.0, 1.0]] * self.act_dim, indexing='ij'),
+                -1).reshape(-1, self.act_dim)
+            self._prior_verts = torch.as_tensor(
+                grid, device=self.device, dtype=torch.float32)
         self.line_dist = line_dist
 
         self.lmt_lo = self.kin.lmt_lo
@@ -369,6 +383,8 @@ class NSRLBatchedEnv:
                                      self.path_wavelen),
                 self.path_kappa)
             obs_parts.append(kap.unsqueeze(-1) * CURV_SCALE)   # 1
+        if getattr(self.cfg, 'observe_prior_logits', False):
+            obs_parts.append(self._prior_scores(q))
         if self.cfg.observe_ray_error:
             # The path origin can differ slightly from FK(q0) when a task and
             # its IK seed are decoupled. Exposing this offset makes the lateral
@@ -379,6 +395,36 @@ class NSRLBatchedEnv:
             _, lateral_vec, _ = self._path_frame(p_tcp)
             obs_parts.append(-lateral_vec / LATERAL_SAFETY_NET)  # 3
         return torch.cat(obs_parts, dim=-1)
+
+    def _prior_scores(self, q: torch.Tensor) -> torch.Tensor:
+        """Analytic sigma_margin^T v for every vertex v, shape (B, 2^m).
+
+        grad m_cone = J_rot^T (z x n) / (1 - cos_cone); grad m_jl is the
+        subgradient at the binding joint. Softmin weights combine them, the
+        task-aligned basis projects to null-space coordinates, and the score
+        of a vertex is the inner product. Purely analytic: no autograd."""
+        _, R, J, _ = self.kin.tcp_fk_jac(q)
+        z = R[:, :, 2]
+        m_jl_per = (self.q_half - (q - self.q_mid).abs()) / self.q_half
+        m_jl, j_star = m_jl_per.min(dim=-1)
+        cos = (z * self.n_target).sum(-1).clamp(-1.0, 1.0)
+        m_cone = (cos - self.cos_cone) / (1.0 - self.cos_cone)
+        tau = self.cfg.margin_tau
+        w = torch.softmax(
+            -torch.stack([m_jl, m_cone], dim=-1) / tau, dim=-1)
+        g_jl = torch.zeros_like(q)
+        slope = -torch.sign(q - self.q_mid) / self.q_half
+        g_jl.scatter_(1, j_star.unsqueeze(-1),
+                      torch.gather(slope, 1, j_star.unsqueeze(-1)))
+        zxn = torch.linalg.cross(z, self.n_target, dim=-1)
+        g_cone = torch.einsum('bij,bi->bj', J[:, 3:, :], zxn) \
+            / (1.0 - self.cos_cone)
+        g_phi = w[:, :1] * g_jl + w[:, 1:] * g_cone
+        B_basis, _ = build_task_aligned_basis(
+            self.kin, q, self.line_dir, self.n_target,
+            self.kin.q_mid, self.q_half, self.cfg.manip_damping)
+        sigma = torch.einsum('bij,bi->bj', B_basis, g_phi)
+        return sigma @ self._prior_verts.T
 
     def _path_frame(self, p: torch.Tensor):
         """(tangent, lateral_vec, lateral_dist) of the path at TCP position p.

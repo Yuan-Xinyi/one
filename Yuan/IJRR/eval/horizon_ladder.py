@@ -229,6 +229,37 @@ def make_margin_tree2(model):
     return fn
 
 
+def make_learnedW(env):
+    """a = sgn(B^T grad W_theta(q, c)): the learned value field consumed
+    exactly like the handcrafted margin field in make_sgngrad. The gradient
+    is taken through the same state-task encoding the field was trained on;
+    nothing else differs from the analytic law, so the comparison isolates
+    the field."""
+    from Yuan.IJRR.stage2_traj.wfield import WNet, obs27
+    ck = torch.load(REPO / 'Yuan/IJRR/runs/w_field/w_field.pt',
+                    map_location=env.device, weights_only=False)
+    net = WNet(ck['in_dim']).to(env.device)
+    net.load_state_dict(ck['state_dict'])
+    net.eval()
+    mu = ck['mu'].to(env.device)
+    sd = ck['sd'].to(env.device)
+
+    @torch.no_grad()
+    def fn(env_, done):
+        q = env_.q.detach().clone().requires_grad_(True)
+        with torch.enable_grad():
+            o = obs27(q, env_.line_dir, env_.n_target,
+                      env_.kin.q_mid, env_.q_half, env_.kin)
+            w = net((o - mu) / sd)
+            g, = torch.autograd.grad(w.sum(), q)
+        B, _ = build_task_aligned_basis(
+            env_.kin, env_.q, env_.line_dir, env_.n_target,
+            env_.kin.q_mid, env_.q_half, env_.cfg.manip_damping)
+        s = torch.sign(torch.einsum('bij,bi->bj', B, g))
+        return torch.where(s == 0, torch.ones_like(s), s)
+    return fn
+
+
 def make_cem(model, H, pop=64, iters=3, elite=8, objective='progress'):
     @torch.no_grad()
     def fn(env, done):
@@ -367,6 +398,8 @@ def main():
             arms[name] = make_sgnclassical(classical)
         elif name == 'mtree2':
             arms[name] = make_margin_tree2(model)
+        elif name == 'learnedW':
+            arms[name] = make_learnedW(env)
         elif name == 'vertex':
             ag = _agent(REPO / CKPT, env.obs_dim, dev, act_dim=env.act_dim)
             arms[name] = lambda e, dn, g_=ag: g_.actor_mean(e.current_obs())

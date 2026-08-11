@@ -229,6 +229,102 @@ def make_margin_tree2(model):
     return fn
 
 
+def make_qsbe(env):
+    """argmax_v Q(s, v) of a fitted margin Q. The checkpoint path comes
+    from $QSBE_CKPT (default the discounted-SBE net), the head to execute
+    from $QSBE_HEAD (finite-horizon checkpoints; 1-indexed, default the
+    deepest). One forward pass either way."""
+    import os
+    from Yuan.IJRR.stage2_traj.qsbe import QNet, DuelingQNet
+    from Yuan.IJRR.stage2_traj.wfield import obs27
+    path = os.environ.get('QSBE_CKPT', 'Yuan/IJRR/runs/qsbe/q_net.pt')
+    ck = torch.load(REPO / path, map_location=env.device, weights_only=False)
+    heads = ck.get('heads', 1)
+    cls_ = DuelingQNet if ck.get('mode') == 'dq' else QNet
+    net = cls_(ck['in_dim'], ck['n_act'], heads=heads).to(env.device)
+    net.load_state_dict(ck['state_dict'])
+    net.eval()
+    head = int(os.environ.get('QSBE_HEAD', heads)) - 1 if heads > 1 else None
+    m = env.act_dim
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * m, indexing='ij'),
+                 -1).reshape(-1, m), dtype=torch.float32, device=env.device)
+
+    @torch.no_grad()
+    def fn(env_, done):
+        o = obs27(env_.q, env_.line_dir, env_.n_target,
+                  env_.kin.q_mid, env_.q_half, env_.kin)
+        q = net(o, head=head) if heads > 1 else net(o)
+        return verts[q.argmax(-1)]
+    return fn
+
+
+def make_beam(model, width, H, chunk=32768):
+    """Beam search over vertex sequences, scored by the worst softmin
+    margin along the path (dead branches score -inf). width = 2^m at depth
+    1 reproduces the myopic arm; unlimited width equals exhaustive search.
+    A deterministic, sampling-free long-horizon optimizer on the margin
+    objective, chunked to stay under the batched-eigvalsh limit."""
+    m = model.act_dim
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * m, indexing='ij'),
+                 -1).reshape(-1, m), dtype=torch.float32,
+        device=model.q_mid.device)
+    K = verts.shape[0]
+
+    def _chunk_step(q, d, n, a):
+        return torch.cat([model.step(q[i:i + chunk], d[i:i + chunk],
+                                     n[i:i + chunk], a[i:i + chunk])
+                          for i in range(0, q.shape[0], chunk)])
+
+    def _chunk_margin(q, p0, d, n):
+        return torch.cat([model.softmin_margin(q[i:i + chunk],
+                                               p0[i:i + chunk],
+                                               d[i:i + chunk],
+                                               n[i:i + chunk])
+                          for i in range(0, q.shape[0], chunk)])
+
+    @torch.no_grad()
+    def fn(env, done):
+        N = env.n_envs
+        dev = env.device
+        q = env.q.unsqueeze(1)                       # (N, W, 7)
+        worst = torch.full((N, 1), 1e6, device=dev)
+        first = torch.zeros((N, 1), dtype=torch.long, device=dev)
+        for h in range(H):
+            Wc = q.shape[1]
+            qe = q.unsqueeze(2).expand(-1, -1, K, -1).reshape(N * Wc * K, -1)
+            ae = verts.view(1, 1, K, m).expand(N, Wc, -1, -1).reshape(
+                N * Wc * K, m)
+            de = env.line_dir.view(N, 1, 1, 3).expand(
+                -1, Wc, K, -1).reshape(-1, 3)
+            ne = env.n_target.view(N, 1, 1, 3).expand(
+                -1, Wc, K, -1).reshape(-1, 3)
+            pe = env.p_start.view(N, 1, 1, 3).expand(
+                -1, Wc, K, -1).reshape(-1, 3)
+            qn = _chunk_step(qe, de, ne, ae)
+            mg = _chunk_margin(qn, pe, de, ne).reshape(N, Wc, K)
+            wn = torch.minimum(worst.unsqueeze(-1).expand(-1, -1, K), mg)
+            wn = torch.where(mg > 0, wn, torch.full_like(wn, -1e9))
+            if h == 0:
+                fn_new = torch.arange(K, device=dev).view(1, 1, K).expand(
+                    N, Wc, -1)
+            else:
+                fn_new = first.unsqueeze(-1).expand(-1, -1, K)
+            wn = wn.reshape(N, Wc * K)
+            fn_new = fn_new.reshape(N, Wc * K)
+            qn = qn.reshape(N, Wc * K, -1)
+            Wk = min(width, Wc * K)
+            top = wn.topk(Wk, dim=-1).indices
+            worst = torch.gather(wn, 1, top)
+            first = torch.gather(fn_new, 1, top)
+            q = torch.gather(qn, 1, top.unsqueeze(-1).expand(
+                -1, -1, qn.shape[-1]))
+        best = worst.argmax(dim=1)
+        return verts[first[torch.arange(N, device=dev), best]]
+    return fn
+
+
 def make_learnedW(env):
     """a = sgn(B^T grad W_theta(q, c)): the learned value field consumed
     exactly like the handcrafted margin field in make_sgngrad. The gradient
@@ -400,6 +496,11 @@ def main():
             arms[name] = make_margin_tree2(model)
         elif name == 'learnedW':
             arms[name] = make_learnedW(env)
+        elif name == 'qsbe':
+            arms[name] = make_qsbe(env)
+        elif name.startswith('beam'):
+            w_, h_ = name[4:].split('x')
+            arms[name] = make_beam(model, int(w_), int(h_))
         elif name == 'vertex':
             ag = _agent(REPO / CKPT, env.obs_dim, dev, act_dim=env.act_dim)
             arms[name] = lambda e, dn, g_=ag: g_.actor_mean(e.current_obs())

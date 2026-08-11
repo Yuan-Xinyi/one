@@ -33,6 +33,12 @@ class PPOConfig:
     clip_coef: float = 0.2
     clip_vloss: bool = True
     ent_coef: float = 0.0
+    # Prior anchoring for PriorVertexAgent: adds
+    # kl_prior_coef * KL(pi_theta || softmax(anchor_alpha * prior_scores))
+    # to the loss. Deviating from the analytic law is allowed, but has to be
+    # paid for by return improvement.
+    kl_prior_coef: float = 0.0
+    anchor_alpha: float = 5.0
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     target_kl: float | None = None
@@ -472,11 +478,22 @@ def train(cfg: PPOConfig, env, device: torch.device,
                     v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                 ent_loss = entropy.mean()
+
+                kl_prior = None
+                if cfg.kl_prior_coef > 0.0 and hasattr(agent, 'n_prior'):
+                    mb_obs = b_obs[mb_inds]
+                    logp = torch.log_softmax(agent._logits(mb_obs), dim=-1)
+                    logp0 = torch.log_softmax(
+                        cfg.anchor_alpha * mb_obs[..., -agent.n_prior:],
+                        dim=-1)
+                    kl_prior = (logp.exp() * (logp - logp0)).sum(-1).mean()
                 if update <= cfg.actor_warmup_updates:
                     # Critic-only warmup: no policy/entropy gradient.
                     loss = cfg.vf_coef * v_loss
                 else:
                     loss = pg_loss - cfg.ent_coef * ent_loss + cfg.vf_coef * v_loss
+                if kl_prior is not None:
+                    loss = loss + cfg.kl_prior_coef * kl_prior
 
 
 
@@ -516,6 +533,7 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 "train/clipfrac": float(np.mean(clipfracs)) if clipfracs else 0.0,
                 "train/lr": optimizer.param_groups[0]["lr"],
                 "train/ent_coef": cfg.ent_coef,
+                "train/kl_prior": float(kl_prior.item()) if kl_prior is not None else 0.0,
                 "train/reward_scale": (reward_scaler.scale
                                        if reward_scaler is not None else 1.0),
                 "train/sigma_mean": rollout_sigma_sum / max(rollout_term_n, 1),

@@ -259,8 +259,9 @@ def main():
 
     print(f'\n{"achieved":<20s} {"bound":<6s} {"ratio med":>10s} {"ratio mean":>11s} '
           f'{">1 frac":>9s} {"max":>8s}')
-    ach = {"L_seed": t["L_seed"][sel].astype(np.float64),
-           "L_oracle(labels)": t["max_label_L"][sel].astype(np.float64)}
+    ach = {k: t[f].astype(np.float64)[sel]
+           for k, f in (("L_seed", "L_seed"),
+                        ("L_oracle(labels)", "max_label_L")) if f in t}
     hyb = REPO / "Yuan/IJRR/runs/eval_10k_systematic/cell_oracle_hyb_results.npz"
     if hyb.exists():
         z = np.load(hyb, allow_pickle=False)

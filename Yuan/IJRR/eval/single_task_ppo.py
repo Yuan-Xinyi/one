@@ -745,6 +745,167 @@ def stage_goexplore(a, dev):
 
 
 @torch.no_grad()
+def stage_goexplore_env(a, dev):
+    """Interaction-only Go-Explore: NO model, NO state teleport.
+
+    Every probe starts at q0 in the REAL batched env and REPLAYS its action
+    prefix (the env is deterministic, so the archive is reachable by
+    construction); cells allow up to 3 representatives to break the
+    doomed-representative aliasing seen at the 0.85 pinch. The archive
+    stores action sequences only — everything the agent knows, it learned
+    by acting from q0.
+    """
+    y = yaml.safe_load(open(CFG))
+    B = a.ge_batch
+    env = NSRLBatchedEnv(EnvConfig(**{**y['env'], 'n_envs': B}), None, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    env.line_dist = SingleTaskDistribution(spec1)
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    primes = torch.randint(1, 2 ** 61, (7,), dtype=torch.int64,
+                           generator=torch.Generator().manual_seed(7)).to(dev)
+    CELL, K, RMAX = a.ge_cell, a.ge_k, 3
+
+    def cells_of(q):
+        c = torch.round(q / CELL).to(torch.int64)
+        return ((c * primes).sum(-1)).cpu().numpy()
+
+    seqs = [np.zeros(0, dtype=np.int16)]
+    depth = [0]
+    visits = [0]
+    cellcount: dict = {}
+    rng = np.random.default_rng(a.torch_seed)
+    best_i, stall, t0 = 0, 0, time.time()
+
+    for gen in range(a.ge_generations):
+        dep = np.array(depth, dtype=np.float64)
+        vis = np.array(visits, dtype=np.float64)
+        w = (dep + 1.0) ** 2 / (vis + 1.0)
+        sel = rng.choice(len(w), size=B, p=w / w.sum())
+        top = np.argsort(dep)[-256:]
+        sel[: B // 2] = rng.choice(top, size=B // 2)
+        for i in np.unique(sel):
+            visits[i] += int((sel == i).sum())
+        L = np.array([len(seqs[i]) for i in sel])
+        Lmax = int(L.max()) + K
+        A = rng.integers(0, 16, (B, Lmax)).astype(np.int64)
+        for r in range(B):
+            if L[r]:
+                A[r, :L[r]] = seqs[sel[r]]
+        env.reset()
+        new_before = len(seqs)
+        for t in range(Lmax):
+            a_idx = torch.as_tensor(A[:, t], device=dev)
+            env.step(verts[a_idx], auto_reset=False)
+            alive = (~env.done_persistent).cpu().numpy()
+            rec = alive & (t >= L)
+            if not alive.any():
+                break
+            if rec.any():
+                rows = np.nonzero(rec)[0]
+                hs = cells_of(env.q[torch.as_tensor(rows, device=dev)])
+                for row, h in zip(rows, hs):
+                    h = int(h)
+                    c = cellcount.get(h, 0)
+                    if c < RMAX:
+                        cellcount[h] = c + 1
+                        seqs.append(A[row, :t + 1].astype(np.int16))
+                        depth.append(t + 1)
+                        visits.append(0)
+                        if t + 1 > depth[best_i]:
+                            best_i = len(seqs) - 1
+        stall = 0 if len(seqs) > new_before else stall + 1
+        if gen % 10 == 0 or stall >= a.ge_stall:
+            print(f"gen {gen:>4}  archive {len(seqs):>7}  frontier "
+                  f"{depth[best_i]:>4} (~{depth[best_i] * 0.01:.2f} m)  "
+                  f"{time.time() - t0:.0f}s", flush=True)
+            np.savez(OUT / 'goexplore_env.npz',
+                     action_idx=seqs[best_i].astype(np.int64),
+                     frontier_depth=depth[best_i], archive_size=len(seqs),
+                     gen=gen, cell=CELL)
+        if stall >= a.ge_stall:
+            break
+
+    env.reset()
+    for ai in seqs[best_i]:
+        env.step(verts[int(ai)][None].expand(B, -1), auto_reset=False)
+    p, _, _, _ = env.kin.tcp_fk_jac(env.q)
+    prog = float(((p[0] - env.p_start[0]) * env.line_dir[0]).sum())
+    print(f"\ngoexplore-env: frontier {depth[best_i]} steps, replay "
+          f"{prog:.4f} m (alive {not bool(env.done_persistent[0])}); "
+          f"archive {len(seqs)}")
+    np.savez(OUT / 'goexplore_env.npz',
+             action_idx=seqs[best_i].astype(np.int64), progress=prog,
+             frontier_depth=depth[best_i], archive_size=len(seqs), cell=CELL)
+    print(f"wrote {OUT / 'goexplore_env.npz'}")
+
+
+def stage_selfimitate(a, dev):
+    """Self-imitation: distill the agent's own best discovered episode
+    (goexplore_env.npz, pure interaction data) into a policy, then evaluate
+    deterministically from q0. Also fits the critic to the episode's
+    discounted returns so a later PPO fine-tune can resume stably."""
+    y, env = _env_and_yaml(2, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    ge = np.load(OUT / 'goexplore_env.npz')
+    seq = ge['action_idx']
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    obs_l, act_l, rew_l = [], [], []
+    with torch.no_grad():
+        for ai in seq:
+            obs_l.append(env.current_obs()[0].clone())
+            _, r, _, _, _ = env.step(verts[int(ai)][None].expand(2, -1),
+                                     auto_reset=False)
+            act_l.append(int(ai))
+            rew_l.append(float(r[0]))
+    obs = torch.stack(obs_l)
+    acts = torch.tensor(act_l, device=dev)
+    ret = np.zeros(len(rew_l), dtype=np.float64)
+    acc = 0.0
+    for i in range(len(rew_l) - 1, -1, -1):
+        acc = rew_l[i] + 0.99 * acc
+        ret[i] = acc
+    ret_t = torch.tensor(ret, device=dev, dtype=torch.float32)
+    print(f"[selfimitate] episode: {len(seq)} steps, replayed reward "
+          f"{sum(rew_l):.1f}")
+
+    agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                        hidden_dim=y['ppo']['hidden_dim']).to(dev)
+    opt = torch.optim.Adam(agent.parameters(), lr=3e-4)
+    for ep in range(a.bc_epochs):
+        logits = agent._logits_head(agent._actor_trunk(obs))
+        v = agent.critic(obs).squeeze(-1)
+        loss = (torch.nn.functional.cross_entropy(logits, acts)
+                + 0.5 * torch.nn.functional.mse_loss(v, ret_t))
+        opt.zero_grad(); loss.backward(); opt.step()
+        if ep % 500 == 0:
+            acc_frac = float((logits.argmax(-1) == acts).float().mean())
+            print(f"  bc {ep:>5}  loss {float(loss):.4f}  "
+                  f"argmax-match {acc_frac:.3f}", flush=True)
+    torch.save(agent.state_dict(), OUT / 'agent_bc.pt')
+
+    agent.eval()
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    with torch.no_grad():
+        for t in range(env.max_steps):
+            env.step(agent.actor_mean(env.current_obs()), auto_reset=False)
+            if bool(env.done_persistent.all()):
+                break
+    p, _, _, _ = env.kin.tcp_fk_jac(env.q)
+    prog = float(((p[0] - env.p_start[0]) * env.line_dir[0]).sum())
+    print(f"[selfimitate] deterministic policy from q0: {prog:.4f} m "
+          f"-> {OUT / 'agent_bc.pt'}")
+
+
+@torch.no_grad()
 def _record_traj(env, spec1, fn):
     """Roll one episode on the single task, recording q after every step."""
     env.line_dist = SingleTaskDistribution(spec1)
@@ -841,13 +1002,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', required=True,
                     choices=['select', 'select2', 'train', 'report',
-                             'ceiling', 'traj', 'reachtree', 'goexplore'])
+                             'ceiling', 'traj', 'reachtree', 'goexplore',
+                             'goexplore_env', 'selfimitate'])
     ap.add_argument('--ge-generations', type=int, default=400)
     ap.add_argument('--ge-batch', type=int, default=4096)
     ap.add_argument('--ge-k', type=int, default=15)
     ap.add_argument('--ge-cell', type=float, default=0.04)
     ap.add_argument('--ge-stall', type=int, default=30,
                     help='stop after this many generations w/o new cells')
+    ap.add_argument('--bc-epochs', type=int, default=5000)
     ap.add_argument('--ent-coef', type=float, default=None,
                     help='override the config entropy coefficient')
     ap.add_argument('--novelty-beta', type=float, default=None,
@@ -891,7 +1054,8 @@ def main():
     {'select': stage_select, 'select2': stage_select2, 'train': stage_train,
      'report': stage_report, 'ceiling': stage_ceiling,
      'traj': stage_traj, 'reachtree': stage_reachtree,
-     'goexplore': stage_goexplore}[a.stage](a, dev)
+     'goexplore': stage_goexplore, 'goexplore_env': stage_goexplore_env,
+     'selfimitate': stage_selfimitate}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

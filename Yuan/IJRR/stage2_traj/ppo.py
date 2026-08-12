@@ -327,6 +327,7 @@ def train(cfg: PPOConfig, env, device: torch.device,
         reward_scaler.return_acc.zero_()
     next_done = torch.zeros(n_envs, device=device)
     global_step = 0
+    ep_progress_alltime_max = float("-inf")
     next_eval = eval_every
     # criterion max|q_norm| needs no env internals).
     # Per-term reward accumulators (averaged per update)
@@ -346,6 +347,7 @@ def train(cfg: PPOConfig, env, device: torch.device,
         rollout_term_n = 0
         ep_accum = {k: 0.0 for k in _episode_keys}
         ep_total_finished = 0
+        ep_progress_rollout_max = float("-inf")
         rollout_fb_accum = {k: 0.0 for k in _fb_keys}
         rollout_sigma_sum = 0.0          # Σ over steps of (mean σ across env×dim)
         rollout_sigma_clamp_sum = 0.0    # Σ over steps of fraction at log_std min
@@ -396,6 +398,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
                     if v == v:  # not NaN
                         ep_accum[k] += float(v) * n_done
                 ep_total_finished += n_done
+                v = info.get("ep_progress_max", float("nan"))
+                if v == v:
+                    ep_progress_rollout_max = max(ep_progress_rollout_max, v)
 
         # Bootstrap: V(next_obs) for ongoing envs; V(terminal_obs) for truncated;
         # 0 for terminated. We compute V(next_obs) for the boundary and
@@ -553,6 +558,11 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 log_dict["episode/length_mean"] = ep_accum["ep_len_mean"] / ep_total_finished
                 log_dict["episode/progress_mean_m"] = ep_accum["ep_progress_mean"] / ep_total_finished
                 log_dict["episode/n_finished"] = ep_total_finished
+                ep_progress_alltime_max = max(ep_progress_alltime_max,
+                                              ep_progress_rollout_max)
+                log_dict["episode/progress_max_m"] = ep_progress_rollout_max
+                log_dict["episode/progress_alltime_max_m"] = \
+                    ep_progress_alltime_max
             log_fn(log_dict)
 
         if eval_fn is not None and global_step >= next_eval:

@@ -759,11 +759,13 @@ class NSRLBatchedEnv:
             ep_reward_mean = float(ep_reward_finished[new_done].mean().item())
             ep_len_mean = float(ep_steps_finished[new_done].float().mean().item())
             ep_progress_mean = float(ep_progress_finished[new_done].mean().item())
+            ep_progress_max = float(ep_progress_finished[new_done].max().item())
             ep_arc_mean = float(ep_arc_finished[new_done].mean().item())
         else:
             ep_reward_mean = float("nan")
             ep_len_mean = float("nan")
             ep_progress_mean = float("nan")
+            ep_progress_max = float("nan")
             ep_arc_mean = float("nan")
 
         info = {
@@ -777,6 +779,7 @@ class NSRLBatchedEnv:
             "ep_reward_mean": ep_reward_mean,
             "ep_len_mean": ep_len_mean,
             "ep_progress_mean": ep_progress_mean,
+            "ep_progress_max": ep_progress_max,
             "ep_arc_progress_mean": ep_arc_mean,
             "n_episodes_done": n_finished,
             # MGS fallback rates (batch-averaged) per anchor column.

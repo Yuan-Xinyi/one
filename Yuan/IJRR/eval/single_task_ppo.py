@@ -793,7 +793,7 @@ def stage_goexplore_env(a, dev):
         order = np.argsort(dep + rng.uniform(0.0, 0.5, len(dep)))
         front = order[-2048:]
         sel[: B // 2] = rng.choice(front, size=B // 2)
-        fan = (gen % 5 == 4)
+        fan = (gen % 5 == 4) and depth[best_i] > 60
         if fan:
             # exhaustive 3-step fan of ONE frontier entry (rotating through
             # the deepest 32): the full 16^3 = 4096 three-step fan with

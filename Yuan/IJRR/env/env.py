@@ -75,6 +75,12 @@ class EnvConfig:
     r_jl: float = 0.0
     # Progress-only shaping reward.
     w_progress: float = 1.0
+    # Non-empty: the policy also chooses a tangential speed each step, as a
+    # trailing action channel holding one of these fractions of cfg.v. The
+    # progress reward stays normalized by the FULL v, so a half-speed step
+    # earns half the reward and the return still equals arc length: slowing
+    # down is priced, surviving longer pays for it.
+    speed_levels: tuple = ()
     # Potential-based margin shaping: r += w_margin*(margin_gamma*phi' - phi)
     # with phi = -tau*logsumexp(-m/tau) over the normalized joint-limit and
     # cone margins -- the two components the myopic one-step ablation showed
@@ -559,6 +565,12 @@ class NSRLBatchedEnv:
         polls `env.done_persistent` to know when all envs have finished.
         """
         actions = actions.clamp(-1.0, 1.0).to(device=self.device, dtype=self.kin.dtype)
+        if self.cfg.speed_levels:
+            speed_frac = actions[:, self.act_dim].clamp(
+                min(self.cfg.speed_levels), 1.0)
+            actions = actions[:, :self.act_dim]
+        else:
+            speed_frac = None
         a_scaled = actions * self.a_max
         active = ~self.done_persistent  # only matters when auto_reset=False
 
@@ -588,7 +600,9 @@ class NSRLBatchedEnv:
         # an error that accumulates with arc length until the safety net
         # trips, so k_lateral > 0 is required there. lateral_vec is orthogonal
         # to the tangent, so this term never changes the along-path speed.
-        x_dot = (self.v * self.line_dir
+        v_eff = (self.v if speed_frac is None
+                 else (self.v * speed_frac).unsqueeze(-1))
+        x_dot = (v_eff * self.line_dir
                  + self.cfg.k_lateral * lateral_vec).unsqueeze(-1)
         qdot_task = (J_plus @ x_dot).squeeze(-1)
         qdot_null = (B_basis @ a_scaled.unsqueeze(-1)).squeeze(-1)

@@ -81,6 +81,28 @@ class VertexAgent(nn.Module):
         return self.vertices[self._logits_head(self._actor_trunk(x)).argmax(-1)]
 
 
+class SpeedVertexAgent(VertexAgent):
+    """Vertex policy that also picks the tangential speed each step.
+
+    Action space = 2**act_dim vertices x len(speed_levels); ``to_env``
+    appends the chosen fraction of cfg.v as a trailing channel, consumed by
+    the environment when ``EnvConfig.speed_levels`` is set.
+    """
+
+    def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 512,
+                 speed_levels: tuple = (1.0, 0.5), **_ignored):
+        super().__init__(obs_dim=obs_dim, act_dim=act_dim,
+                         hidden_dim=hidden_dim)
+        lv = torch.tensor(speed_levels, dtype=torch.float32)
+        base = self.vertices                                  # (2^m, m)
+        self.vertices = torch.cat(
+            [base.repeat_interleave(len(lv), 0),
+             lv.repeat(base.shape[0]).unsqueeze(-1)], dim=-1)
+        self.n_actions = self.vertices.shape[0]
+        self._logits_head = _layer_init(
+            nn.Linear(hidden_dim, self.n_actions), std=0.01)
+
+
 class PriorVertexAgent(VertexAgent):
     """Vertex policy whose logits ride on the analytic margin prior.
 

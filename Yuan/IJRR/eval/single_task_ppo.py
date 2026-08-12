@@ -103,10 +103,10 @@ class RestartBankDistribution(SingleTaskDistribution):
         return out
 
 
-def _env_and_yaml(n_envs: int, dev: torch.device):
+def _env_and_yaml(n_envs: int, dev: torch.device, extra: dict | None = None):
     y = yaml.safe_load(open(CFG))
-    env = NSRLBatchedEnv(EnvConfig(**{**y['env'], 'n_envs': n_envs}),
-                         None, dev)
+    env = NSRLBatchedEnv(EnvConfig(**{**y['env'], 'n_envs': n_envs,
+                                      **(extra or {})}), None, dev)
     return y, env
 
 
@@ -265,7 +265,12 @@ def stage_select2(a, dev):
 
 
 def stage_train(a, dev):
-    y, env = _env_and_yaml(a.n_envs, dev)
+    extra = None
+    levels = None
+    if a.speed_levels:
+        levels = tuple(float(x) for x in a.speed_levels.split(','))
+        extra = {'speed_levels': levels}
+    y, env = _env_and_yaml(a.n_envs, dev, extra)
     task, spec1 = _load_task(dev, env.kin.dtype)
     if a.restart_bank:
         bank = np.load(REPO / a.restart_bank)['q']
@@ -278,7 +283,7 @@ def stage_train(a, dev):
         env.line_dist = SingleTaskDistribution(spec1)
     myopic_ref = float(task['myopic_progress'])
 
-    _, eval_env = _env_and_yaml(2, dev)
+    _, eval_env = _env_and_yaml(2, dev, extra)
 
     def eval_fn(agent):
         @torch.no_grad()
@@ -296,8 +301,15 @@ def stage_train(a, dev):
     if a.ent_coef is not None:
         ppo_kw['ent_coef'] = a.ent_coef
     ppo_cfg = PPOConfig(**ppo_kw)
-    agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
-                        hidden_dim=ppo_cfg.hidden_dim).to(dev)
+    if levels:
+        from Yuan.IJRR.stage2_traj.vertex_agent import SpeedVertexAgent
+        agent = SpeedVertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                                 hidden_dim=ppo_cfg.hidden_dim,
+                                 speed_levels=levels).to(dev)
+        print(f"[train] speed levels {levels}: {agent.n_actions} actions")
+    else:
+        agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                            hidden_dim=ppo_cfg.hidden_dim).to(dev)
     print(f"[train] single task {int(task['task_index'])}, myopic ref "
           f"{myopic_ref:.4f} m; PPO {a.total_steps} steps on "
           f"{a.n_envs} envs, {agent.n_actions} vertex actions", flush=True)
@@ -620,6 +632,9 @@ def main():
                              'ceiling', 'traj', 'reachtree'])
     ap.add_argument('--ent-coef', type=float, default=None,
                     help='override the config entropy coefficient')
+    ap.add_argument('--speed-levels', default=None,
+                    help='e.g. "1.0,0.5": the policy also picks a tangential '
+                         'speed each step; reward stays arc length')
     ap.add_argument('--restart-bank', default=None,
                     help='npz with a q array (e.g. reachtree.npz); a '
                          'fraction of training resets start from these '

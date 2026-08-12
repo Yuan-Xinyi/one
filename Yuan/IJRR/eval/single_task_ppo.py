@@ -79,6 +79,38 @@ class SingleTaskDistribution:
                 for k, v in self._spec.items()}
 
 
+class CurriculumBankDistribution(SingleTaskDistribution):
+    """Reverse-order curriculum over an RRT-style archive: bank resets start
+    from the DEEPEST states only, and the admissible depth window slides back
+    toward q0 as training proceeds. Each stage asks the policy to extend an
+    already-competent region by one notch, sidestepping the V^pi bootstrap
+    trap (mid-corridor states look worthless while the policy dies there)."""
+
+    def __init__(self, spec, q_bank, depths, frac, total_resets):
+        super().__init__(spec)
+        self._bank = q_bank.clone()
+        self._depths = depths.clone()
+        self._dmax = int(depths.max())
+        self._frac = float(frac)
+        self._total = float(total_resets)
+        self._seen = 0
+
+    def sample(self, n, generator=None):
+        out = super().sample(n)
+        prog = min(1.0, self._seen / self._total)
+        self._seen += n
+        d_lo = int(round((1.0 - prog) * 0.9 * self._dmax))
+        elig = (self._depths >= d_lo).nonzero(as_tuple=False).squeeze(-1)
+        use = torch.rand(n, device=self._bank.device) < self._frac
+        if bool(use.any()) and elig.numel() > 0:
+            rows = elig[torch.randint(0, elig.numel(), (int(use.sum()),),
+                                      device=self._bank.device)]
+            q0 = out['q0'].clone()
+            q0[use] = self._bank[rows]
+            out['q0'] = q0
+        return out
+
+
 class NoveltyEnv(NSRLBatchedEnv):
     """Count-based intrinsic exploration: r += beta / sqrt(N(cell(q))).
 
@@ -317,12 +349,21 @@ def stage_train(a, dev):
         _, env = _env_and_yaml(a.n_envs, dev, extra)
     task, spec1 = _load_task(dev, env.kin.dtype)
     if a.restart_bank:
-        bank = np.load(REPO / a.restart_bank)['q']
-        q_bank = torch.tensor(bank, device=dev, dtype=env.kin.dtype)
-        env.line_dist = RestartBankDistribution(spec1, q_bank,
-                                                a.restart_frac)
-        print(f"[train] restart bank: {q_bank.shape[0]} states from "
-              f"{a.restart_bank}, frac {a.restart_frac}")
+        bk = np.load(REPO / a.restart_bank)
+        q_bank = torch.tensor(bk['q'], device=dev, dtype=env.kin.dtype)
+        if a.restart_curriculum:
+            depths = torch.tensor(bk['depth'], device=dev)
+            env.line_dist = CurriculumBankDistribution(
+                spec1, q_bank, depths, a.restart_frac,
+                a.restart_curriculum)
+            print(f"[train] curriculum bank: {q_bank.shape[0]} states, "
+                  f"deep-first window over {a.restart_curriculum} resets, "
+                  f"frac {a.restart_frac}")
+        else:
+            env.line_dist = RestartBankDistribution(spec1, q_bank,
+                                                    a.restart_frac)
+            print(f"[train] restart bank: {q_bank.shape[0]} states from "
+                  f"{a.restart_bank}, frac {a.restart_frac}")
     else:
         env.line_dist = SingleTaskDistribution(spec1)
     myopic_ref = float(task['myopic_progress'])
@@ -577,13 +618,15 @@ def stage_reachtree(a, dev):
     # RRT-style archive: a subsample of every depth's surviving pool, i.e.
     # states covering the whole reachable frontier, not just the best route.
     rng2 = np.random.default_rng(1)
-    bank = []
-    for pool in pools:
+    bank, bank_depth = [], []
+    for di, pool in enumerate(pools):
         k = min(128, pool.shape[0])
         bank.append(pool[np.sort(rng2.choice(pool.shape[0], k,
                                              replace=False))].numpy())
+        bank_depth.append(np.full(k, di, dtype=np.int64))
     bank = np.concatenate(bank)
-    np.savez(OUT / 'reachtree_bank.npz', q=bank)
+    np.savez(OUT / 'reachtree_bank.npz', q=bank,
+             depth=np.concatenate(bank_depth))
     print(f"wrote {OUT / 'reachtree_bank.npz'} ({bank.shape[0]} states "
           f"across {len(pools)} depths)")
 
@@ -700,6 +743,10 @@ def main():
                          'fraction of training resets start from these '
                          'states instead of q0')
     ap.add_argument('--restart-frac', type=float, default=0.5)
+    ap.add_argument('--restart-curriculum', type=int, default=0,
+                    help='>0: reverse-order curriculum — bank resets start '
+                         'deepest-only and the window slides to the full '
+                         'bank over this many resets')
     ap.add_argument('--tree-width', type=int, default=4096)
     ap.add_argument('--tree-dedupe', type=float, default=0.03,
                     help='joint-space grid (rad) for reachtree dedup')

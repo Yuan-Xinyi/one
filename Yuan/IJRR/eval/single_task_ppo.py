@@ -79,6 +79,30 @@ class SingleTaskDistribution:
                 for k, v in self._spec.items()}
 
 
+class RestartBankDistribution(SingleTaskDistribution):
+    """Same task, but a fraction of resets start from bank states (e.g. the
+    reachtree corridor) instead of q0: the Kakade-Langford restart
+    distribution. Every bank state is itself reachable from q0, so nothing
+    unreachable is being trained on; evaluation still starts from q0 only."""
+
+    def __init__(self, spec, q_bank: torch.Tensor, frac: float):
+        super().__init__(spec)
+        self._bank = q_bank.clone()
+        self._frac = float(frac)
+
+    def sample(self, n: int, generator=None) -> dict[str, torch.Tensor]:
+        out = super().sample(n, generator)
+        use = torch.rand(n, device=self._bank.device) < self._frac
+        if bool(use.any()):
+            rows = torch.randint(0, self._bank.shape[0],
+                                 (int(use.sum()),),
+                                 device=self._bank.device)
+            q0 = out['q0'].clone()
+            q0[use] = self._bank[rows]
+            out['q0'] = q0
+        return out
+
+
 def _env_and_yaml(n_envs: int, dev: torch.device):
     y = yaml.safe_load(open(CFG))
     env = NSRLBatchedEnv(EnvConfig(**{**y['env'], 'n_envs': n_envs}),
@@ -243,7 +267,15 @@ def stage_select2(a, dev):
 def stage_train(a, dev):
     y, env = _env_and_yaml(a.n_envs, dev)
     task, spec1 = _load_task(dev, env.kin.dtype)
-    env.line_dist = SingleTaskDistribution(spec1)
+    if a.restart_bank:
+        bank = np.load(REPO / a.restart_bank)['q']
+        q_bank = torch.tensor(bank, device=dev, dtype=env.kin.dtype)
+        env.line_dist = RestartBankDistribution(spec1, q_bank,
+                                                a.restart_frac)
+        print(f"[train] restart bank: {q_bank.shape[0]} states from "
+              f"{a.restart_bank}, frac {a.restart_frac}")
+    else:
+        env.line_dist = SingleTaskDistribution(spec1)
     myopic_ref = float(task['myopic_progress'])
 
     _, eval_env = _env_and_yaml(2, dev)
@@ -583,6 +615,11 @@ def main():
     ap.add_argument('--stage', required=True,
                     choices=['select', 'select2', 'train', 'report',
                              'ceiling', 'traj', 'reachtree'])
+    ap.add_argument('--restart-bank', default=None,
+                    help='npz with a q array (e.g. reachtree.npz); a '
+                         'fraction of training resets start from these '
+                         'states instead of q0')
+    ap.add_argument('--restart-frac', type=float, default=0.5)
     ap.add_argument('--tree-width', type=int, default=4096)
     ap.add_argument('--tree-dedupe', type=float, default=0.03,
                     help='joint-space grid (rad) for reachtree dedup')

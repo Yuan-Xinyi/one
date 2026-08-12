@@ -175,6 +175,11 @@ def main():
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--chunk", type=int, default=512)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--save-witness", action="store_true",
+                    help="also save the feasibility-witness configuration "
+                         "at every certified march point (q_witness, NaN "
+                         "where infeasible); a chain of IK solutions, not "
+                         "a dynamically consistent trajectory")
     a = ap.parse_args()
 
     dev = torch.device(a.device)
@@ -223,6 +228,8 @@ def main():
     first_bad = np.full(N, -1, np.int64)
     alive = np.arange(N)
     q_prev = np.full((N, 7), np.nan, np.float32)
+    witness = (np.full((N, n_steps + 1, 7), np.nan, np.float32)
+               if a.save_witness else None)
     t0 = time.time()
 
     for r in range(n_steps + 1):
@@ -241,6 +248,8 @@ def main():
         any_ok = ok.any(axis=1)
         pick = ok.argmax(axis=1)
         q_prev[alive[any_ok]] = q[np.arange(len(alive)), pick][any_ok]
+        if witness is not None:
+            witness[alive[any_ok], r] = q_prev[alive[any_ok]]
         first_bad[alive[~any_ok]] = r
         alive = alive[any_ok]
         if r % 10 == 0 or not len(alive):
@@ -280,7 +289,9 @@ def main():
     np.savez_compressed(out, idx=sel, L_lo=L_lo, L_hi=L_hi, first_bad=first_bad,
                         censored=censored, step=np.float32(a.step),
                         cone_deg=np.float32(a.cone_deg),
-                        collision=a.collision, n_dirs=np.int32(M))
+                        collision=a.collision, n_dirs=np.int32(M),
+                        **({"q_witness": witness} if witness is not None
+                           else {}))
     print(f"\n[bound] wrote {out}  ({time.time() - t0:.1f}s)")
 
 

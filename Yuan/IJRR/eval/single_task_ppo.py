@@ -784,8 +784,11 @@ def stage_goexplore_env(a, dev):
         vis = np.array(visits, dtype=np.float64)
         w = (dep + 1.0) ** 2 / (vis + 1.0)
         sel = rng.choice(len(w), size=B, p=w / w.sum())
-        top = np.argsort(dep)[-256:]
-        sel[: B // 2] = rng.choice(top, size=B // 2)
+        # frontier band, not just the newest ties at max depth: random-walk
+        # endpoints are biased toward barely-alive postures, so probe from
+        # the whole near-frontier band for posture diversity
+        band = np.nonzero(dep >= dep.max() - 15)[0]
+        sel[: B // 2] = rng.choice(band, size=B // 2)
         for i in np.unique(sel):
             visits[i] += int((sel == i).sum())
         L = np.array([len(seqs[i]) for i in sel])

@@ -632,6 +632,113 @@ def stage_reachtree(a, dev):
 
 
 @torch.no_grad()
+def stage_goexplore(a, dev):
+    """Combination-lock paradigm, oracle-free: E3/Go-Explore phase 1.
+
+    The agent builds its OWN archive from scratch: cells are joint
+    configurations rounded to --ge-cell radians; each generation samples
+    archive entries biased toward deep & rarely-visited cells, resets there,
+    probes --ge-k random vertex steps, and archives every new surviving cell
+    with a parent pointer. No reachtree data, no policy, no reward: the only
+    privileges are the exact step model and reset-to-visited-state. The
+    deepest entry's action chain is replayed through the real env at the end.
+    """
+    y, env = _env_and_yaml(1, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    p0, d, n = env.p_start[0], env.line_dir[0], env.n_target[0]
+    model = hl.StraightModel(env)
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    B, K, CELL = a.ge_batch, a.ge_k, a.ge_cell
+    primes = torch.randint(1, 2 ** 61, (7,), dtype=torch.int64,
+                           generator=torch.Generator().manual_seed(7)).to(dev)
+
+    def cells_of(q):
+        c = torch.round(q / CELL).to(torch.int64)
+        return ((c * primes).sum(-1)).cpu().numpy()
+
+    # archive arrays (grown in chunks)
+    Q = [env.q[0].clone()]
+    depth = [0]
+    visits = [0]
+    parent = [-1]
+    acts = [np.zeros(0, dtype=np.int64)]     # action chunk from parent
+    index = {int(cells_of(env.q[:1])[0]): 0}
+
+    rng = np.random.default_rng(0)
+    t0 = time.time()
+    best_i = 0
+    stall = 0
+    for gen in range(a.ge_generations):
+        dep = np.array(depth, dtype=np.float64)
+        vis = np.array(visits, dtype=np.float64)
+        w = (dep + 1.0) ** 2 / (vis + 1.0)
+        sel = rng.choice(len(w), size=B, p=w / w.sum())
+        for i in np.unique(sel):
+            visits[i] += int((sel == i).sum())
+        q = torch.stack([Q[i] for i in sel])
+        alive = torch.ones(B, dtype=torch.bool, device=dev)
+        a_hist = np.zeros((B, K), dtype=np.int64)
+        new_before = len(Q)
+        for k in range(K):
+            a_idx = torch.randint(0, 16, (B,), device=dev)
+            a_hist[:, k] = a_idx.cpu().numpy()
+            qn = model.step(q, d.expand(B, 3), n.expand(B, 3), verts[a_idx])
+            m = model.margins(qn, p0.expand(B, 3), d.expand(B, 3),
+                              n.expand(B, 3))
+            alive = alive & (m.amin(-1) > 0)
+            q = torch.where(alive.unsqueeze(-1), qn, q)
+            if not bool(alive.any()):
+                break
+            live = alive.nonzero(as_tuple=False).squeeze(-1).cpu().numpy()
+            hs = cells_of(q[live])
+            for j, h in zip(live, hs):
+                h = int(h)
+                if h not in index:
+                    index[h] = len(Q)
+                    Q.append(q[j].clone())
+                    dnew = depth[sel[j]] + k + 1
+                    depth.append(dnew)
+                    visits.append(0)
+                    parent.append(int(sel[j]))
+                    acts.append(a_hist[j, :k + 1].copy())
+                    if dnew > depth[best_i]:
+                        best_i = len(Q) - 1
+        stall = 0 if len(Q) > new_before else stall + 1
+        if gen % 10 == 0 or stall >= a.ge_stall:
+            print(f"gen {gen:>4}  archive {len(Q):>7}  frontier depth "
+                  f"{depth[best_i]:>4} (~{depth[best_i] * 0.01:.2f} m)  "
+                  f"{time.time() - t0:.0f}s", flush=True)
+        if stall >= a.ge_stall:
+            break
+
+    # backtrack the deepest entry and replay through the REAL env
+    chain = []
+    i = best_i
+    while parent[i] >= 0:
+        chain.append(acts[i])
+        i = parent[i]
+    seq = np.concatenate(chain[::-1]) if chain else np.zeros(0, np.int64)
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    for ai in seq:
+        env.step(verts[int(ai)][None], auto_reset=False)
+    p_end, _, _, _ = env.kin.tcp_fk_jac(env.q)
+    prog = float(((p_end[0] - p0) * d).sum())
+    print(f"\ngo-explore: archive {len(Q)} cells, frontier depth "
+          f"{depth[best_i]} ; deepest chain replayed through env: "
+          f"{prog:.4f} m (alive: {not bool(env.done_persistent[0])})")
+    np.savez(OUT / 'goexplore.npz', action_idx=seq, progress=prog,
+             archive_size=len(Q), frontier_depth=depth[best_i],
+             cell=CELL, k=K, batch=B)
+    print(f"wrote {OUT / 'goexplore.npz'}")
+
+
+@torch.no_grad()
 def _record_traj(env, spec1, fn):
     """Roll one episode on the single task, recording q after every step."""
     env.line_dist = SingleTaskDistribution(spec1)
@@ -728,7 +835,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', required=True,
                     choices=['select', 'select2', 'train', 'report',
-                             'ceiling', 'traj', 'reachtree'])
+                             'ceiling', 'traj', 'reachtree', 'goexplore'])
+    ap.add_argument('--ge-generations', type=int, default=400)
+    ap.add_argument('--ge-batch', type=int, default=4096)
+    ap.add_argument('--ge-k', type=int, default=15)
+    ap.add_argument('--ge-cell', type=float, default=0.04)
+    ap.add_argument('--ge-stall', type=int, default=30,
+                    help='stop after this many generations w/o new cells')
     ap.add_argument('--ent-coef', type=float, default=None,
                     help='override the config entropy coefficient')
     ap.add_argument('--novelty-beta', type=float, default=None,
@@ -769,7 +882,8 @@ def main():
     torch.manual_seed(0)
     {'select': stage_select, 'select2': stage_select2, 'train': stage_train,
      'report': stage_report, 'ceiling': stage_ceiling,
-     'traj': stage_traj, 'reachtree': stage_reachtree}[a.stage](a, dev)
+     'traj': stage_traj, 'reachtree': stage_reachtree,
+     'goexplore': stage_goexplore}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

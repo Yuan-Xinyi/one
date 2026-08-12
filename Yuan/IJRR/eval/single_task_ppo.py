@@ -160,6 +160,86 @@ def stage_select(a, dev):
           f"(term {TERM_NAMES[int(term[chosen])]}) -> {OUT / 'task.npz'}")
 
 
+@torch.no_grad()
+def stage_select2(a, dev):
+    """Pick the task with the largest HEADROOM instead of the farthest
+    myopic: rank by (pointwise kinematic bound L_hi) - (myopic progress).
+
+    Two-pass: the first call dumps all candidate tasks in eval-set format
+    and prints the line_bound command that produces the bounds; once that
+    npz exists, the second call runs the arms, ranks by gap and writes
+    task.npz exactly like stage select.
+    """
+    y, env = _env_and_yaml(a.n_tasks, dev)
+    pool = LineDistribution.load_or_build(
+        kin=env.kin, collision=env.collision, n_pool=20000,
+        n_target_noise_deg=5.0, seed=a.seed, env_cfg=env.cfg,
+        feasibility_threshold_m=0.1, verbose=False)
+    idx = torch.nonzero(pool.valid_mask, as_tuple=False).squeeze(-1)[:a.n_tasks]
+    spec = {'q0': pool.q_pool[idx], 'line_dir': pool.line_dir_pool[idx],
+            'n_target': pool.n_target_pool[idx]}
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    bound_npz = OUT / 'bound_all.npz'
+    if not bound_npz.exists():
+        p0, _, _, _ = env.kin.tcp_fk_jac(spec['q0'])
+        cs = OUT / 'tasks_cs_all.npz'
+        np.savez(cs,
+                 cs_p0=p0.cpu().numpy().astype(np.float32),
+                 cs_line_dir=spec['line_dir'].cpu().numpy().astype(np.float32),
+                 cs_n_target=spec['n_target'].cpu().numpy().astype(np.float32))
+        print(f"wrote {cs}; now produce the bounds with:\n"
+              f"  python -m Yuan.IJRR.eval.line_bound --tasks "
+              f"{cs.relative_to(REPO)} --n-tasks {a.n_tasks} --step 0.02 "
+              f"--max-len 2.0 --out {bound_npz.relative_to(REPO)}\n"
+              f"then re-run --stage select2.")
+        return
+
+    res = {}
+    for name, fn in _arms(env).items():
+        env.line_dist = ScriptedLineDistribution(
+            {k: v.clone() for k, v in spec.items()})
+        res[name] = rollout_first_episode(env, fn)
+    myo = res['myopic']['episode_progress'].cpu().numpy()
+    cl = res['classical']['episode_progress'].cpu().numpy()
+    ze = res['zero']['episode_progress'].cpu().numpy()
+    term = res['myopic']['term_reason'].cpu().numpy()
+
+    b = np.load(bound_npz, allow_pickle=True)
+    L_hi = b['L_hi'].astype(np.float64)
+    cens = b['censored'].astype(bool)
+    gap = L_hi - myo
+    order = np.argsort(-gap)
+
+    print('\ntop tasks by (bound - myopic) headroom:')
+    print(f"{'rank':>4} {'task':>5} {'myopic':>8} {'L_hi':>7} {'gap':>7} "
+          f"{'myo/L_hi':>9} {'cens':>5}  term")
+    for r in range(min(15, len(order))):
+        i = order[r]
+        print(f"{r:>4} {i:>5} {myo[i]:>8.4f} {L_hi[i]:>7.3f} {gap[i]:>7.3f} "
+              f"{myo[i] / L_hi[i]:>9.3f} {str(bool(cens[i])):>5}  "
+              f"{TERM_NAMES[int(term[i])]}")
+
+    chosen = int(order[a.task_rank])
+    np.savez(OUT / 'task.npz',
+             q0=spec['q0'][chosen].cpu().numpy(),
+             line_dir=spec['line_dir'][chosen].cpu().numpy(),
+             n_target=spec['n_target'][chosen].cpu().numpy(),
+             task_index=chosen, pool_seed=a.seed,
+             myopic_progress=float(myo[chosen]),
+             classical_progress=float(cl[chosen]),
+             zero_progress=float(ze[chosen]),
+             myopic_len=int(res['myopic']['episode_len'][chosen]),
+             myopic_term=int(term[chosen]),
+             bound_L_hi=float(L_hi[chosen]),
+             bound_censored=bool(cens[chosen]),
+             all_myopic=myo, all_classical=cl, all_zero=ze, all_term=term,
+             all_L_hi=L_hi)
+    print(f"\nchosen task {chosen}: myopic {myo[chosen]:.4f} m, bound L_hi "
+          f"{L_hi[chosen]:.3f} m (gap {gap[chosen]:.3f} m) -> "
+          f"{OUT / 'task.npz'}")
+
+
 def stage_train(a, dev):
     y, env = _env_and_yaml(a.n_envs, dev)
     task, spec1 = _load_task(dev, env.kin.dtype)
@@ -399,7 +479,10 @@ def stage_traj(a, dev):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', required=True,
-                    choices=['select', 'train', 'report', 'ceiling', 'traj'])
+                    choices=['select', 'select2', 'train', 'report',
+                             'ceiling', 'traj'])
+    ap.add_argument('--run-dir', default='single_task_ppo',
+                    help='subdirectory of Yuan/IJRR/runs for all artifacts')
     ap.add_argument('--n-tasks', type=int, default=1024)
     ap.add_argument('--seed', type=int, default=4242)
     ap.add_argument('--task-rank', type=int, default=0,
@@ -411,10 +494,13 @@ def main():
     ap.add_argument('--best-of', type=int, default=2048)
     ap.add_argument('--device', default='cuda')
     a = ap.parse_args()
+    global OUT
+    OUT = REPO / 'Yuan/IJRR/runs' / a.run_dir
     dev = torch.device(a.device)
     torch.manual_seed(0)
-    {'select': stage_select, 'train': stage_train, 'report': stage_report,
-     'ceiling': stage_ceiling, 'traj': stage_traj}[a.stage](a, dev)
+    {'select': stage_select, 'select2': stage_select2, 'train': stage_train,
+     'report': stage_report, 'ceiling': stage_ceiling,
+     'traj': stage_traj}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

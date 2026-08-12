@@ -79,6 +79,41 @@ class SingleTaskDistribution:
                 for k, v in self._spec.items()}
 
 
+class NoveltyEnv(NSRLBatchedEnv):
+    """Count-based intrinsic exploration: r += beta / sqrt(N(cell(q))).
+
+    Cells are the configuration rounded to `cell` radians, hashed into a
+    fixed table. Novel joint configurations pay a bonus that decays with
+    visitation, steering exploration toward WHERE it has not been instead
+    of merely adding noise. Only the reward changes; dynamics, termination
+    and the evaluation metric are untouched.
+    """
+
+    def __init__(self, *args, novelty_beta=0.3, novelty_cell=0.15,
+                 table_bits=22, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._nov_beta = float(novelty_beta)
+        self._nov_cell = float(novelty_cell)
+        self._nov_size = 1 << table_bits
+        self._nov_counts = torch.zeros(self._nov_size, device=self.device)
+        g = torch.Generator(device='cpu').manual_seed(12345)
+        self._nov_primes = torch.randint(
+            1, 2 ** 61, (7,), generator=g, dtype=torch.int64
+        ).to(self.device)
+
+    def _nov_idx(self, q):
+        cells = torch.round(q / self._nov_cell).to(torch.int64)
+        return ((cells * self._nov_primes).sum(-1) % self._nov_size).abs()
+
+    def step(self, actions, auto_reset=True):
+        obs, rew, term, trunc, info = super().step(actions, auto_reset)
+        idx = self._nov_idx(self.q)
+        self._nov_counts.scatter_add_(
+            0, idx, torch.ones_like(idx, dtype=self._nov_counts.dtype))
+        bonus = self._nov_beta / self._nov_counts[idx].sqrt()
+        return obs, rew + bonus, term, trunc, info
+
+
 class RestartBankDistribution(SingleTaskDistribution):
     """Same task, but a fraction of resets start from bank states (e.g. the
     reachtree corridor) instead of q0: the Kakade-Langford restart
@@ -270,7 +305,16 @@ def stage_train(a, dev):
     if a.speed_levels:
         levels = tuple(float(x) for x in a.speed_levels.split(','))
         extra = {'speed_levels': levels}
-    y, env = _env_and_yaml(a.n_envs, dev, extra)
+    y = yaml.safe_load(open(CFG))
+    if a.novelty_beta:
+        env = NoveltyEnv(EnvConfig(**{**y['env'], 'n_envs': a.n_envs,
+                                      **(extra or {})}), None, dev,
+                         novelty_beta=a.novelty_beta,
+                         novelty_cell=a.novelty_cell)
+        print(f"[train] count-based novelty bonus: beta {a.novelty_beta}, "
+              f"cell {a.novelty_cell} rad")
+    else:
+        _, env = _env_and_yaml(a.n_envs, dev, extra)
     task, spec1 = _load_task(dev, env.kin.dtype)
     if a.restart_bank:
         bank = np.load(REPO / a.restart_bank)['q']
@@ -632,6 +676,10 @@ def main():
                              'ceiling', 'traj', 'reachtree'])
     ap.add_argument('--ent-coef', type=float, default=None,
                     help='override the config entropy coefficient')
+    ap.add_argument('--novelty-beta', type=float, default=None,
+                    help='count-based intrinsic bonus weight (train only)')
+    ap.add_argument('--novelty-cell', type=float, default=0.15,
+                    help='joint-space cell size (rad) for novelty counts')
     ap.add_argument('--speed-levels', default=None,
                     help='e.g. "1.0,0.5": the policy also picks a tangential '
                          'speed each step; reward stays arc length')

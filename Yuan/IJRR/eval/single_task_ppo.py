@@ -793,6 +793,14 @@ def stage_goexplore_env(a, dev):
         order = np.argsort(dep + rng.uniform(0.0, 0.5, len(dep)))
         front = order[-2048:]
         sel[: B // 2] = rng.choice(front, size=B // 2)
+        fan = (gen % 5 == 4)
+        if fan:
+            # exhaustive 3-step fan at the very frontier: every 5th
+            # generation the whole batch enumerates all 16^3 three-step
+            # continuations of the deepest entries (random tail after) —
+            # deterministic coverage where the corridor needs a short
+            # exact sequence rather than luck
+            sel[:] = rng.choice(order[-64:], size=B)
         for i in np.unique(sel):
             visits[i] += int((sel == i).sum())
         L = np.array([len(seqs[i]) for i in sel])
@@ -801,6 +809,11 @@ def stage_goexplore_env(a, dev):
         for r in range(B):
             if L[r]:
                 A[r, :L[r]] = seqs[sel[r]]
+        if fan:
+            r_ = np.arange(B)
+            A[r_, L] = r_ % 16
+            A[r_, L + 1] = (r_ // 16) % 16
+            A[r_, L + 2] = (r_ // 256) % 16
         env.reset()
         new_before = len(seqs)
         for t in range(Lmax):

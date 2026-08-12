@@ -420,7 +420,8 @@ def stage_train(a, dev):
 
     ppo_train(ppo_cfg, env, device=dev, agent=agent,
               eval_fn=eval_fn, eval_every=a.eval_every, log_fn=log_fn,
-              ckpt_path=str(OUT / 'agent.pt'), ckpt_every_n_updates=25)
+              ckpt_path=str(OUT / 'agent.pt'), ckpt_every_n_updates=25,
+              resume_from_ckpt=a.resume_from_ckpt)
     log_file.close()
     print(f"[train] done -> {OUT / 'agent.pt'}")
 
@@ -1019,6 +1020,8 @@ def main():
     ap.add_argument('--ge-stall', type=int, default=30,
                     help='stop after this many generations w/o new cells')
     ap.add_argument('--bc-epochs', type=int, default=5000)
+    ap.add_argument('--resume-from-ckpt', default=None,
+                    help='load policy weights before PPO training')
     ap.add_argument('--ent-coef', type=float, default=None,
                     help='override the config entropy coefficient')
     ap.add_argument('--novelty-beta', type=float, default=None,

@@ -303,10 +303,103 @@ def stage_ceiling(a, dev):
           f"--step 0.01 --n-dirs 48")
 
 
+@torch.no_grad()
+def _record_traj(env, spec1, fn):
+    """Roll one episode on the single task, recording q after every step."""
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    qs = [env.q[0].clone()]
+    for _ in range(env.max_steps):
+        _, _, _, _, info = env.step(fn(env), auto_reset=False)
+        qs.append(env.q[0].clone())
+        if bool(info['episode_done'][0]):
+            return torch.stack(qs), int(info['term_reason'][0])
+    return torch.stack(qs), TERM_TRUNCATED
+
+
+@torch.no_grad()
+def stage_traj(a, dev):
+    """Joint-angle trajectories of myopic vs the trained PPO on the task."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    y, env = _env_and_yaml(1, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    model = hl.StraightModel(env)
+    model.terms = MYOPIC_TERMS
+
+    agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                        hidden_dim=y['ppo']['hidden_dim']).to(dev)
+    agent.load_state_dict(torch.load(OUT / 'agent.pt', map_location=dev))
+    agent.eval()
+
+    myo = hl.make_myopic(model)
+    trajs = {}
+    for name, fn in (('myopic', lambda e: myo(e, e.done_persistent)),
+                     ('PPO', lambda e: agent.actor_mean(e.current_obs()))):
+        q, term = _record_traj(env, spec1, fn)
+        # env.p_start/line_dir/n_target of the recording episode
+        p0 = env.p_start[0].expand(q.shape[0], 3)
+        d = env.line_dir[0].expand(q.shape[0], 3)
+        n = env.n_target[0].expand(q.shape[0], 3)
+        m = model.margins(q, p0, d, n)          # (T, 4) jl/cone/lat/coll
+        trajs[name] = (q.cpu().numpy(), m.cpu().numpy(), term)
+        print(f"{name:<7s} {q.shape[0] - 1} steps, term "
+              f"{TERM_NAMES[term]}")
+
+    dt = env.cfg.dt
+    q_mid = env.q_mid.cpu().numpy()
+    q_half = env.q_half.cpu().numpy()
+    deg = 180.0 / np.pi
+    colors = {'myopic': 'tab:blue', 'PPO': 'tab:red'}
+
+    fig, axes = plt.subplots(3, 3, figsize=(13, 9), sharex=True)
+    for j in range(7):
+        ax = axes.flat[j]
+        for name, (q, _, _) in trajs.items():
+            t = np.arange(q.shape[0]) * dt
+            ax.plot(t, q[:, j] * deg, color=colors[name], lw=1.4,
+                    label=name)
+        for s in (-1, 1):
+            ax.axhline((q_mid[j] + s * q_half[j]) * deg, color='k',
+                       lw=0.7, ls='--', alpha=0.6)
+        ax.set_title(f'joint {j + 1}', fontsize=10)
+        ax.set_ylabel('deg', fontsize=8)
+        ax.tick_params(labelsize=8)
+    for k, (mi, lab) in enumerate(((0, 'margin m_jl'),
+                                   (1, 'margin m_cone'))):
+        ax = axes.flat[7 + k]
+        for name, (q, m, _) in trajs.items():
+            t = np.arange(q.shape[0]) * dt
+            ax.plot(t, m[:, mi], color=colors[name], lw=1.4, label=name)
+        ax.axhline(0.0, color='k', lw=0.7, ls='--', alpha=0.6)
+        ax.set_title(lab, fontsize=10)
+        ax.tick_params(labelsize=8)
+    for ax in axes[-1]:
+        ax.set_xlabel('time (s)', fontsize=9)
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    steps = {k: v[0].shape[0] - 1 for k, v in trajs.items()}
+    fig.legend(handles,
+               [f'{l} ({steps[l]} steps, '
+                f'term {TERM_NAMES[trajs[l][2]]})' for l in labels],
+               loc='upper center', bbox_to_anchor=(0.5, 0.965),
+               ncol=2, fontsize=10, frameon=False)
+    fig.suptitle(f"task {int(task['task_index'])}: joint trajectories, "
+                 f"myopic vs single-task PPO", y=0.995, fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    out = OUT / 'traj_compare.png'
+    fig.savefig(out, dpi=160)
+    np.savez(OUT / 'traj_compare.npz',
+             **{f'{k}_q': v[0] for k, v in trajs.items()},
+             **{f'{k}_margins': v[1] for k, v in trajs.items()})
+    print(f'wrote {out}')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', required=True,
-                    choices=['select', 'train', 'report', 'ceiling'])
+                    choices=['select', 'train', 'report', 'ceiling', 'traj'])
     ap.add_argument('--n-tasks', type=int, default=1024)
     ap.add_argument('--seed', type=int, default=4242)
     ap.add_argument('--task-rank', type=int, default=0,
@@ -321,7 +414,7 @@ def main():
     dev = torch.device(a.device)
     torch.manual_seed(0)
     {'select': stage_select, 'train': stage_train, 'report': stage_report,
-     'ceiling': stage_ceiling}[a.stage](a, dev)
+     'ceiling': stage_ceiling, 'traj': stage_traj}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

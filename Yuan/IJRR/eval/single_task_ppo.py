@@ -678,6 +678,12 @@ def stage_goexplore(a, dev):
         vis = np.array(visits, dtype=np.float64)
         w = (dep + 1.0) ** 2 / (vis + 1.0)
         sel = rng.choice(len(w), size=B, p=w / w.sum())
+        # keep the frontier hot: half the batch comes from the deepest
+        # cells regardless of how large the archive has grown (otherwise
+        # the exploding number of shallow cells dilutes frontier sampling
+        # and the expansion freezes)
+        top = np.argsort(dep)[-256:]
+        sel[: B // 2] = rng.choice(top, size=B // 2)
         for i in np.unique(sel):
             visits[i] += int((sel == i).sum())
         q = torch.stack([Q[i] for i in sel])
@@ -875,11 +881,13 @@ def main():
     ap.add_argument('--beams', default='16x4,16x8,64x8,64x16,256x16,1024x16')
     ap.add_argument('--best-of', type=int, default=2048)
     ap.add_argument('--device', default='cuda')
+    ap.add_argument('--torch-seed', type=int, default=0,
+                    help='policy init + action sampling seed (basin lottery)')
     a = ap.parse_args()
     global OUT
     OUT = REPO / 'Yuan/IJRR/runs' / a.run_dir
     dev = torch.device(a.device)
-    torch.manual_seed(0)
+    torch.manual_seed(a.torch_seed)
     {'select': stage_select, 'select2': stage_select2, 'train': stage_train,
      'report': stage_report, 'ceiling': stage_ceiling,
      'traj': stage_traj, 'reachtree': stage_reachtree,

@@ -813,7 +813,10 @@ def stage_goexplore_env(a, dev):
                 for row, h in zip(rows, hs):
                     h = int(h)
                     c = cellcount.get(h, 0)
-                    if c < RMAX:
+                    # near the frontier keep EVERY surviving variant: at the
+                    # pinch the corridor is thinner than a cell and the few
+                    # capped representatives are usually doomed variants
+                    if c < RMAX or t + 1 >= depth[best_i] - 5:
                         cellcount[h] = c + 1
                         seqs.append(A[row, :t + 1].astype(np.int16))
                         depth.append(t + 1)

@@ -385,6 +385,8 @@ def stage_train(a, dev):
     ppo_kw = {**y['ppo'], 'total_timesteps': a.total_steps}
     if a.ent_coef is not None:
         ppo_kw['ent_coef'] = a.ent_coef
+    if a.norm_returns is not None:
+        ppo_kw['normalize_returns'] = bool(a.norm_returns)
     ppo_cfg = PPOConfig(**ppo_kw)
     if levels:
         from Yuan.IJRR.stage2_traj.vertex_agent import SpeedVertexAgent
@@ -1022,6 +1024,8 @@ def main():
     ap.add_argument('--bc-epochs', type=int, default=5000)
     ap.add_argument('--resume-from-ckpt', default=None,
                     help='load policy weights before PPO training')
+    ap.add_argument('--norm-returns', type=int, default=None,
+                    help='override PPO normalize_returns (0/1)')
     ap.add_argument('--ent-coef', type=float, default=None,
                     help='override the config entropy coefficient')
     ap.add_argument('--novelty-beta', type=float, default=None,

@@ -798,11 +798,6 @@ def stage_goexplore_env(a, dev):
         for r in range(B):
             if L[r]:
                 A[r, :L[r]] = seqs[sel[r]]
-        # frontier probes: enumerate the FIRST post-prefix action round-robin
-        # (deterministic coverage of the 16-fan at the pinch instead of 1/16
-        # luck); the tail stays random
-        half = B // 2
-        A[np.arange(half), L[:half]] = np.arange(half) % 16
         env.reset()
         new_before = len(seqs)
         for t in range(Lmax):

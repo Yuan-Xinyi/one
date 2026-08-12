@@ -292,7 +292,10 @@ def stage_train(a, dev):
                 'eval/episode_len': int(stats['episode_len'][0]),
                 'eval/term': TERM_NAMES[int(stats['term_reason'][0])]}
 
-    ppo_cfg = PPOConfig(**{**y['ppo'], 'total_timesteps': a.total_steps})
+    ppo_kw = {**y['ppo'], 'total_timesteps': a.total_steps}
+    if a.ent_coef is not None:
+        ppo_kw['ent_coef'] = a.ent_coef
+    ppo_cfg = PPOConfig(**ppo_kw)
     agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
                         hidden_dim=ppo_cfg.hidden_dim).to(dev)
     print(f"[train] single task {int(task['task_index'])}, myopic ref "
@@ -615,6 +618,8 @@ def main():
     ap.add_argument('--stage', required=True,
                     choices=['select', 'select2', 'train', 'report',
                              'ceiling', 'traj', 'reachtree'])
+    ap.add_argument('--ent-coef', type=float, default=None,
+                    help='override the config entropy coefficient')
     ap.add_argument('--restart-bank', default=None,
                     help='npz with a q array (e.g. reachtree.npz); a '
                          'fraction of training resets start from these '

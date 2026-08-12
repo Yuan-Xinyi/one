@@ -795,12 +795,11 @@ def stage_goexplore_env(a, dev):
         sel[: B // 2] = rng.choice(front, size=B // 2)
         fan = (gen % 5 == 4)
         if fan:
-            # exhaustive 3-step fan at the very frontier: every 5th
-            # generation the whole batch enumerates all 16^3 three-step
-            # continuations of the deepest entries (random tail after) —
-            # deterministic coverage where the corridor needs a short
+            # exhaustive 3-step fan of ONE frontier entry (rotating through
+            # the deepest 32): the full 16^3 = 4096 three-step fan with
+            # random tails — 100% coverage where the corridor needs a short
             # exact sequence rather than luck
-            sel[:] = rng.choice(order[-64:], size=B)
+            sel[:] = order[-1 - (gen // 5) % 32]
         for i in np.unique(sel):
             visits[i] += int((sel == i).sum())
         L = np.array([len(seqs[i]) for i in sel])

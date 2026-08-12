@@ -237,10 +237,76 @@ def stage_report(a, dev):
     print(f"\nPPO / myopic = {prog['ppo'] / prog['myopic']:.4f}")
 
 
+@torch.no_grad()
+def stage_ceiling(a, dev):
+    """How much room is above myopic on this task?
+
+    Three probes, weakest to strongest claim:
+      - exact 2-step tree + beam ladder on the margin objective (single task,
+        so the beam can be very wide): what deterministic exact-ish search
+        achieves — a lower bound on the ceiling;
+      - best-of-N stochastic rollouts of the trained PPO policy: is there a
+        better command sequence in the policy's own neighbourhood;
+      - dumps the task in eval-set format for line_bound.py, whose IK march
+        gives the kinematics-only upper bound (run separately).
+    """
+    y, env = _env_and_yaml(1, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    myo_ref = float(task['myopic_progress'])
+    print(f"task {int(task['task_index'])}: myopic ref {myo_ref:.4f} m")
+
+    model = hl.StraightModel(env)
+    model.terms = MYOPIC_TERMS
+    arms = {'mtree2': hl.make_margin_tree2(model)}
+    if a.beams:
+        for s in a.beams.split(','):
+            w, h = s.split('x')
+            arms[f'beam{s}'] = hl.make_beam(model, int(w), int(h))
+    for name, fn in arms.items():
+        env.line_dist = SingleTaskDistribution(spec1)
+        t0 = time.time()
+        stats = rollout_first_episode(
+            env, lambda e, f=fn: f(e, e.done_persistent))
+        p = float(stats['episode_progress'][0])
+        print(f"{name:<12s} progress {p:.4f} m  ratio {p / myo_ref:.4f}  "
+              f"len {int(stats['episode_len'][0]):>4}  "
+              f"term {TERM_NAMES[int(stats['term_reason'][0])]}  "
+              f"({time.time() - t0:.0f}s)", flush=True)
+
+    _, env_n = _env_and_yaml(a.best_of, dev)
+    agent = VertexAgent(obs_dim=env_n.obs_dim, act_dim=env_n.act_dim,
+                        hidden_dim=y['ppo']['hidden_dim']).to(dev)
+    agent.load_state_dict(torch.load(OUT / 'agent.pt', map_location=dev))
+    agent.eval()
+
+    def stoch(e):
+        logits = agent._logits_head(agent._actor_trunk(e.current_obs()))
+        idx = torch.distributions.Categorical(logits=logits).sample()
+        return agent.vertices[idx]
+
+    env_n.line_dist = SingleTaskDistribution(spec1)
+    stats = rollout_first_episode(env_n, stoch)
+    p = stats['episode_progress'].cpu().numpy()
+    print(f"ppo-stoch    best-of-{a.best_of}: max {p.max():.4f} m "
+          f"(ratio {p.max() / myo_ref:.4f})  "
+          f"median {np.median(p):.4f}  min {p.min():.4f}")
+
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    np.savez(OUT / 'task_cs.npz',
+             cs_p0=env.p_start[0].cpu().numpy()[None].astype(np.float32),
+             cs_line_dir=task['line_dir'][None].astype(np.float32),
+             cs_n_target=task['n_target'][None].astype(np.float32))
+    print(f"\nwrote {OUT / 'task_cs.npz'}; kinematic upper bound via:\n"
+          f"  python -m Yuan.IJRR.eval.line_bound --tasks "
+          f"{(OUT / 'task_cs.npz').relative_to(REPO)} --n-tasks 1 "
+          f"--step 0.01 --n-dirs 48")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', required=True,
-                    choices=['select', 'train', 'report'])
+                    choices=['select', 'train', 'report', 'ceiling'])
     ap.add_argument('--n-tasks', type=int, default=1024)
     ap.add_argument('--seed', type=int, default=4242)
     ap.add_argument('--task-rank', type=int, default=0,
@@ -248,12 +314,14 @@ def main():
     ap.add_argument('--n-envs', type=int, default=128)
     ap.add_argument('--total-steps', type=int, default=5_000_000)
     ap.add_argument('--eval-every', type=int, default=100_000)
+    ap.add_argument('--beams', default='16x4,16x8,64x8,64x16,256x16,1024x16')
+    ap.add_argument('--best-of', type=int, default=2048)
     ap.add_argument('--device', default='cuda')
     a = ap.parse_args()
     dev = torch.device(a.device)
     torch.manual_seed(0)
-    {'select': stage_select, 'train': stage_train,
-     'report': stage_report}[a.stage](a, dev)
+    {'select': stage_select, 'train': stage_train, 'report': stage_report,
+     'ceiling': stage_ceiling}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

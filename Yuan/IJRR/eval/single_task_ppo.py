@@ -376,11 +376,113 @@ def stage_ceiling(a, dev):
     np.savez(OUT / 'task_cs.npz',
              cs_p0=env.p_start[0].cpu().numpy()[None].astype(np.float32),
              cs_line_dir=task['line_dir'][None].astype(np.float32),
-             cs_n_target=task['n_target'][None].astype(np.float32))
+             cs_n_target=task['n_target'][None].astype(np.float32),
+             cs_q0=task['q0'][None].astype(np.float32))
     print(f"\nwrote {OUT / 'task_cs.npz'}; kinematic upper bound via:\n"
           f"  python -m Yuan.IJRR.eval.line_bound --tasks "
           f"{(OUT / 'task_cs.npz').relative_to(REPO)} --n-tasks 1 "
           f"--step 0.01 --n-dirs 48")
+
+
+@torch.no_grad()
+def stage_reachtree(a, dev):
+    """Exhaustive-ish forward search for the farthest CONTINUOUS trajectory.
+
+    From the task's q0, every kept state is expanded through all 2^m vertex
+    commands with the exact environment step; states are kept alive iff all
+    four normalized margins stay positive, deduplicated on a joint-space grid
+    and (only if still over the width cap) randomly thinned. Selection never
+    looks at the margin value, so the search cannot inherit the softmin
+    objective's blind spot. Anything it returns is a genuinely executable
+    open-loop command sequence; the deepest state is a continuous
+    lower-bound witness for the task's reachability ceiling.
+    """
+    y, env = _env_and_yaml(1, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    p0 = env.p_start[0]
+    d = env.line_dir[0]
+    n = env.n_target[0]
+
+    model = hl.StraightModel(env)          # terms=None: all four margins
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    K = verts.shape[0]
+    W = a.tree_width
+    grid = a.tree_dedupe
+
+    q = env.q[:1].clone()                  # (1, 7) the task's start
+    parents = []                           # per depth: (P,) parent index
+    actions = []                           # per depth: (P,) vertex index
+    pools = [q.cpu()]                      # per depth: kept configs
+    rng = np.random.default_rng(0)
+    t0 = time.time()
+    depth = 0
+    while q.shape[0] > 0 and depth < env.max_steps:
+        P = q.shape[0]
+        qe = q.unsqueeze(1).expand(-1, K, -1).reshape(P * K, -1)
+        ae = verts.unsqueeze(0).expand(P, -1, -1).reshape(P * K, -1)
+        qn = torch.cat([model.step(qe[i:i + 32768],
+                                   d.expand(min(32768, P * K - i), 3),
+                                   n.expand(min(32768, P * K - i), 3),
+                                   ae[i:i + 32768])
+                        for i in range(0, P * K, 32768)])
+        m = torch.cat([model.margins(qn[i:i + 32768],
+                                     p0.expand(min(32768, P * K - i), 3),
+                                     d.expand(min(32768, P * K - i), 3),
+                                     n.expand(min(32768, P * K - i), 3))
+                       for i in range(0, P * K, 32768)])
+        alive = (m.amin(dim=-1) > 0).nonzero(as_tuple=False).squeeze(-1)
+        if alive.numel() == 0:
+            break
+        qn = qn[alive]
+        par = (alive // K)
+        act = (alive % K)
+        # dedupe on a joint-space grid: cheap dispersion-keeping selection
+        key = torch.round(qn / grid).to(torch.int32)
+        _, first = np.unique(key.cpu().numpy(), axis=0, return_index=True)
+        keep = torch.as_tensor(np.sort(first), device=dev)
+        if keep.numel() > W:
+            keep = keep[torch.as_tensor(
+                np.sort(rng.choice(keep.numel(), W, replace=False)),
+                device=dev)]
+        q = qn[keep]
+        parents.append(par[keep].cpu())
+        actions.append(act[keep].cpu())
+        pools.append(q.cpu())
+        depth += 1
+        if depth % 20 == 0:
+            print(f"depth {depth:>4}  pool {q.shape[0]:>5}  "
+                  f"s ~ {depth * env.cfg.dt * env.cfg.v:.3f} m  "
+                  f"{time.time() - t0:.0f}s", flush=True)
+
+    # backtrack the deepest state with the largest actual progress
+    qf = pools[depth].to(dev)
+    pf, _, _, _ = env.kin.tcp_fk_jac(qf)
+    prog = ((pf - p0) * d).sum(-1)
+    best = int(prog.argmax())
+    traj_q = [pools[depth][best]]
+    traj_a = []
+    i = best
+    for r in range(depth - 1, -1, -1):
+        traj_a.append(int(actions[r][i]))
+        i = int(parents[r][i])
+        traj_q.append(pools[r][i])
+    traj_q = torch.stack(traj_q[::-1]).numpy()
+    traj_a = np.array(traj_a[::-1], dtype=np.int64)
+
+    myo_ref = float(task['myopic_progress'])
+    print(f"\nreachtree: died out at depth {depth} "
+          f"({depth * env.cfg.dt:.2f} s); best progress "
+          f"{float(prog[best]):.4f} m  (myopic {myo_ref:.4f}, "
+          f"ratio {float(prog[best]) / myo_ref:.2f})")
+    np.savez(OUT / 'reachtree.npz', q=traj_q, action_idx=traj_a,
+             progress=float(prog[best]), depth=depth,
+             tree_width=W, dedupe=grid)
+    print(f"wrote {OUT / 'reachtree.npz'}")
 
 
 @torch.no_grad()
@@ -480,7 +582,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', required=True,
                     choices=['select', 'select2', 'train', 'report',
-                             'ceiling', 'traj'])
+                             'ceiling', 'traj', 'reachtree'])
+    ap.add_argument('--tree-width', type=int, default=4096)
+    ap.add_argument('--tree-dedupe', type=float, default=0.03,
+                    help='joint-space grid (rad) for reachtree dedup')
     ap.add_argument('--run-dir', default='single_task_ppo',
                     help='subdirectory of Yuan/IJRR/runs for all artifacts')
     ap.add_argument('--n-tasks', type=int, default=1024)
@@ -500,7 +605,7 @@ def main():
     torch.manual_seed(0)
     {'select': stage_select, 'select2': stage_select2, 'train': stage_train,
      'report': stage_report, 'ceiling': stage_ceiling,
-     'traj': stage_traj}[a.stage](a, dev)
+     'traj': stage_traj, 'reachtree': stage_reachtree}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

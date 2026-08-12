@@ -175,6 +175,11 @@ def main():
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--chunk", type=int, default=512)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--start-q0", action="store_true",
+                    help="seed the march at s=0 with the task's own start "
+                         "configuration (requires cs_q0 in the tasks npz); "
+                         "the witness chain then grows out of the same "
+                         "posture the rollouts start from")
     ap.add_argument("--save-witness", action="store_true",
                     help="also save the feasibility-witness configuration "
                          "at every certified march point (q_witness, NaN "
@@ -228,6 +233,12 @@ def main():
     first_bad = np.full(N, -1, np.int64)
     alive = np.arange(N)
     q_prev = np.full((N, 7), np.nan, np.float32)
+    seeded = False
+    if a.start_q0:
+        if "cs_q0" not in t.files:
+            raise SystemExit("--start-q0 needs cs_q0 in the tasks npz")
+        q_prev[:] = t["cs_q0"][sel].astype(np.float32)
+        seeded = True
     witness = (np.full((N, n_steps + 1, 7), np.nan, np.float32)
                if a.save_witness else None)
     t0 = time.time()
@@ -242,7 +253,8 @@ def main():
         hint = np.repeat(q_prev[alive], M, axis=0)
         ok, q = feasible_rows(env, tree, T, pts, zs, nrf, cos_lim, tube,
                               k_nn=a.k_nn, n_try=a.n_try,
-                              q_hint=None if r == 0 else hint)
+                              q_hint=None if (r == 0 and not seeded)
+                              else hint)
         ok = ok.reshape(len(alive), M)
         q = q.reshape(len(alive), M, 7)
         any_ok = ok.any(axis=1)

@@ -574,6 +574,18 @@ def stage_reachtree(a, dev):
              progress=float(prog[best]), depth=depth,
              tree_width=W, dedupe=grid)
     print(f"wrote {OUT / 'reachtree.npz'}")
+    # RRT-style archive: a subsample of every depth's surviving pool, i.e.
+    # states covering the whole reachable frontier, not just the best route.
+    rng2 = np.random.default_rng(1)
+    bank = []
+    for pool in pools:
+        k = min(128, pool.shape[0])
+        bank.append(pool[np.sort(rng2.choice(pool.shape[0], k,
+                                             replace=False))].numpy())
+    bank = np.concatenate(bank)
+    np.savez(OUT / 'reachtree_bank.npz', q=bank)
+    print(f"wrote {OUT / 'reachtree_bank.npz'} ({bank.shape[0]} states "
+          f"across {len(pools)} depths)")
 
 
 @torch.no_grad()

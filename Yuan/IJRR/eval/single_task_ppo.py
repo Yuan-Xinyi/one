@@ -477,10 +477,22 @@ def stage_train(a, dev):
                   'coef': a.anchor_coef}
         print(f"[train] self-imitation anchor: {len(gd['act'])} pairs, "
               f"coef {a.anchor_coef}")
+    opt_value = None
+    if a.opt_value:
+        vnet = _vstar_net(env.obs_dim, dev)
+        vnet.load_state_dict(torch.load(REPO / a.opt_value,
+                                        map_location=dev))
+        vnet.eval()
+
+        @torch.no_grad()
+        def opt_value(o):
+            return vnet(o).squeeze(-1)
+        print(f"[train] V*-guided advantages from {a.opt_value}")
     ppo_train(ppo_cfg, env, device=dev, agent=agent,
               eval_fn=eval_fn, eval_every=a.eval_every, log_fn=log_fn,
               ckpt_path=str(OUT / 'agent.pt'), ckpt_every_n_updates=25,
-              resume_from_ckpt=a.resume_from_ckpt, anchor=anchor)
+              resume_from_ckpt=a.resume_from_ckpt, anchor=anchor,
+              opt_value=opt_value)
     log_file.close()
     print(f"[train] done -> {OUT / 'agent.pt'}")
 
@@ -1101,6 +1113,146 @@ def stage_fqi(a, dev):
           f"{OUT / 'fqi_qnet.pt'}")
 
 
+def _vstar_net(obs_dim, dev):
+    import torch.nn as nn
+    return nn.Sequential(nn.Linear(obs_dim, 512), nn.ReLU(),
+                         nn.Linear(512, 512), nn.ReLU(),
+                         nn.Linear(512, 1)).to(dev)
+
+
+def stage_vstarfit(a, dev):
+    """Fit Vhat*(obs) on search-probe labels (units: survivable steps)."""
+    import torch.nn as nn
+    y, env = _env_and_yaml(2, dev)
+    dat = np.load(OUT / 'vstar_labels.npz')
+    obs = torch.tensor(dat['obs'], device=dev, dtype=torch.float32)
+    lab = torch.tensor(dat['label'], device=dev, dtype=torch.float32)
+    net = _vstar_net(env.obs_dim, dev)
+    opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+    n = obs.shape[0]
+    hold = torch.arange(n, device=dev) % 5 == 0
+    for ep in range(6000):
+        idx = torch.randint(0, n, (512,), device=dev)
+        m = ~hold[idx]
+        loss = nn.functional.smooth_l1_loss(
+            net(obs[idx][m]).squeeze(-1), lab[idx][m])
+        opt.zero_grad(); loss.backward(); opt.step()
+        if ep % 1000 == 0:
+            with torch.no_grad():
+                pred = net(obs[hold]).squeeze(-1)
+                ss = 1 - ((pred - lab[hold]) ** 2).mean() / lab[hold].var()
+            print(f"  vfit {ep:>5}  loss {float(loss):.3f}  "
+                  f"holdout R2 {float(ss):.3f}", flush=True)
+    torch.save(net.state_dict(), OUT / 'vstar_net.pt')
+    print(f"wrote {OUT / 'vstar_net.pt'}")
+
+
+def stage_vguide(a, dev):
+    """16-action enumeration + Vhat_search-guided policy improvement
+    (user-specified design).
+
+    States come from on-policy rollouts from q0 ONLY (no BC, no expert
+    action labels, no resets). At every visited state the model enumerates
+    all 16 vertex successors; Qhat(s,a_i) = alive_i * (1 + gamma *
+    Vhat_search(s'_i)); the actor maximizes J = E_s[sum_a pi(a|s) Qhat] —
+    exact expectation over the 16 actions, so no action-sampling problem.
+    The question: does swapping Q^pi for approximate optimal-continuation
+    information alone let the policy cross the wall from q0?
+    """
+    import torch.nn as nn
+    y, env = _env_and_yaml(a.n_envs, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    env.line_dist = SingleTaskDistribution(spec1)
+    model = hl.StraightModel(env)
+    B, NS = a.n_envs, 32
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    d = env.line_dir  # set after reset; refreshed below
+    # featurizer env: computes the same reset-style obs the labels used
+    featN = B * NS * 16
+    fenv = NSRLBatchedEnv(EnvConfig(**{**y['env'], 'n_envs': featN}),
+                          None, dev)
+    _, eval_env = _env_and_yaml(2, dev)
+
+    vnet = _vstar_net(env.obs_dim, dev)
+    vnet.load_state_dict(torch.load(REPO / a.opt_value, map_location=dev))
+    vnet.eval()
+    agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                        hidden_dim=y['ppo']['hidden_dim']).to(dev)
+    opt = torch.optim.Adam(agent.parameters(), lr=3e-4)
+
+    env.reset()
+    dvec = env.line_dir[0].clone()
+    nvec = env.n_target[0].clone()
+    p0 = env.p_start[0].clone()
+    log = open(OUT / 'vguide.log', 'w')
+    for upd in range(a.vguide_updates):
+        obs_l, q_l = [], []
+        with torch.no_grad():
+            for t in range(NS):
+                o = env.current_obs()
+                obs_l.append(o.clone())
+                q_l.append(env.q.clone())
+                logits = agent._logits_head(agent._actor_trunk(o))
+                ai = torch.distributions.Categorical(logits=logits).sample()
+                env.step(verts[ai])
+        OBS = torch.cat(obs_l)                       # (B*NS, obs)
+        QS = torch.cat(q_l)                          # (B*NS, 7)
+        M = QS.shape[0]
+        with torch.no_grad():
+            qe = QS.unsqueeze(1).expand(-1, 16, -1).reshape(M * 16, -1)
+            ae = verts.unsqueeze(0).expand(M, -1, -1).reshape(M * 16, -1)
+            CH = 32768
+            qn = torch.cat([model.step(qe[i:i+CH],
+                                       dvec.expand(min(CH, M*16-i), 3),
+                                       nvec.expand(min(CH, M*16-i), 3),
+                                       ae[i:i+CH])
+                            for i in range(0, M*16, CH)])
+            mg = torch.cat([model.margins(qn[i:i+CH],
+                                          p0.expand(min(CH, M*16-i), 3),
+                                          dvec.expand(min(CH, M*16-i), 3),
+                                          nvec.expand(min(CH, M*16-i), 3))
+                            for i in range(0, M*16, CH)])
+            alive = (mg.amin(-1) > 0).float()
+            # bulk reset trick: featurize all successors exactly the way
+            # the Vhat_search labels were generated (reset-style obs)
+            fenv.line_dist = ScriptedLineDistribution(
+                {'q0': qn, 'line_dir': dvec[None].expand(M*16, 3).clone(),
+                 'n_target': nvec[None].expand(M*16, 3).clone()})
+            fenv.reset()
+            v_next = vnet(fenv.current_obs()).squeeze(-1)
+            qhat = alive * (1.0 + 0.99 * v_next)
+            qhat = qhat.reshape(M, 16)
+            qhat = (qhat - qhat.mean(-1, keepdim=True)) / 40.0
+        for ep in range(3):
+            logits = agent._logits_head(agent._actor_trunk(OBS))
+            logp = torch.log_softmax(logits, -1)
+            probs = logp.exp()
+            ent = -(probs * logp).sum(-1).mean()
+            loss = -(probs * qhat).sum(-1).mean() - a.ent_coef2 * ent
+            opt.zero_grad(); loss.backward(); opt.step()
+        if upd % 20 == 0:
+            eval_env.line_dist = SingleTaskDistribution(spec1)
+            eval_env.reset()
+            with torch.no_grad():
+                for t in range(eval_env.max_steps):
+                    eval_env.step(agent.actor_mean(eval_env.current_obs()),
+                                  auto_reset=False)
+                    if bool(eval_env.done_persistent.all()):
+                        break
+            p, _, _, _ = eval_env.kin.tcp_fk_jac(eval_env.q)
+            prog = float(((p[0] - eval_env.p_start[0])
+                          * eval_env.line_dir[0]).sum())
+            msg = (f"vguide upd {upd:>4}  q0-eval {prog:.4f} m  "
+                   f"ent {float(ent):.2f}")
+            print(msg, flush=True)
+            log.write(msg + '\n'); log.flush()
+            torch.save(agent.state_dict(), OUT / 'agent_vguide.pt')
+    log.close()
+
+
 @torch.no_grad()
 def _record_traj(env, spec1, fn):
     """Roll one episode on the single task, recording q after every step."""
@@ -1199,7 +1351,14 @@ def main():
     ap.add_argument('--stage', required=True,
                     choices=['select', 'select2', 'train', 'report',
                              'ceiling', 'traj', 'reachtree', 'goexplore',
-                             'goexplore_env', 'selfimitate', 'fqi'])
+                             'goexplore_env', 'selfimitate', 'fqi',
+                             'vstarfit', 'vguide'])
+    ap.add_argument('--vguide-updates', type=int, default=1500)
+    ap.add_argument('--ent-coef2', type=float, default=0.01,
+                    help='entropy bonus in the vguide objective')
+    ap.add_argument('--opt-value', default=None,
+                    help='vstar_net.pt: actor advantages become '
+                         'r + gamma*Vhat*(s\') - Vhat*(s)')
     ap.add_argument('--fqi-data', type=int, default=400_000)
     ap.add_argument('--fqi-iters', type=int, default=20_000)
     ap.add_argument('--ge-generations', type=int, default=400)
@@ -1274,7 +1433,8 @@ def main():
      'report': stage_report, 'ceiling': stage_ceiling,
      'traj': stage_traj, 'reachtree': stage_reachtree,
      'goexplore': stage_goexplore, 'goexplore_env': stage_goexplore_env,
-     'selfimitate': stage_selfimitate, 'fqi': stage_fqi}[a.stage](a, dev)
+     'selfimitate': stage_selfimitate, 'fqi': stage_fqi,
+     'vstarfit': stage_vstarfit, 'vguide': stage_vguide}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

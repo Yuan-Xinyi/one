@@ -251,7 +251,8 @@ def train(cfg: PPOConfig, env, device: torch.device,
           agent: Agent | None = None,
           optimizer: torch.optim.Optimizer | None = None,
           reward_scaler: RewardScaler | None = None,
-          anchor: dict | None = None):
+          anchor: dict | None = None,
+          opt_value=None):
     """Train PPO on `env`.
 
     `env` must expose: `n_envs`, `obs_dim`, `act_dim`, `device`, `reset()`,
@@ -433,6 +434,21 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 lastgaelam = delta + cfg.gamma * cfg.gae_lambda * episode_continues * lastgaelam
                 advantages[t] = lastgaelam
             returns = advantages + values_buf
+            if opt_value is not None:
+                # V*-guided policy improvement: the actor's advantage is
+                # A*(s,a) = r + gamma*Vhat*(s') - Vhat*(s), the OPTIMAL-
+                # continuation semantics. This sidesteps the potential-
+                # shaping invariance (A_Phi^pi == A^pi): we do not shape the
+                # reward and re-derive A^pi, we replace A^pi outright. The
+                # critic still trains on GAE returns; terminal_obs_buf holds
+                # the true post-step observation at every step.
+                v_now = opt_value(obs_buf.reshape(-1, obs_dim)).reshape(
+                    cfg.n_steps, n_envs)
+                v_nxt = opt_value(terminal_obs_buf.reshape(-1, obs_dim)
+                                  ).reshape(cfg.n_steps, n_envs)
+                advantages = (rewards_buf
+                              + cfg.gamma * (1.0 - terminated_buf) * v_nxt
+                              - v_now)
 
         # Flatten
         b_obs = obs_buf.reshape(-1, obs_dim)

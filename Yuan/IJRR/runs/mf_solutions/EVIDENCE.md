@@ -55,3 +55,13 @@ arc0.40: PPO把a*排16/16; Q_PPO(s,a*)=0.433 vs Q_PPO(s,aS)=0.413 (adv≈0.02, �
          Q_BC(s,a*)=1.263 (3x); Q_BC(s,aS)=0.413 (一步错专家也救不回)
 结论: 动作价值属于(动作,续接)联合体; PG是固定续接的局部算子, 其改进方向不含此解;
 需要coordinated policy jump = 把V*信息注入advantage (势函数塑形/搜索值targets)
+
+## 附3: V̂_search-guided improvement (vguide, 用户设计) — 三个V̂变体
+机制: 状态来自q0 on-policy rollout; 每个状态模型枚举16后继;
+J = E_s[Σ_a π(a|s)·Q̂(s,a)], Q̂=alive·(1+γV̂(s')); 无BC/专家标签/reset
+- v1 (探针40步标签, R²=0.87): 0.33-0.49震荡(峰0.49) — Q̂在易区饱和拉平, 无梯度
+- v2 (拟合价值迭代去饱和, max值165): 自信地死于0.302 — max备份过估计气泡
+- v3 (孪生clipped VI, max值124): 同样0.302 — clip压泡不足以支撑全程贪心
+诊断: V̂的**局部排序精度**(audit中gate/safe全对)≠**全程贪心一致性**;
+贪心沿途放大最坏误差, 与锚定/BC只需局部纠错本质不同。
+下一步(未跑): value-DAgger循环 — 用贪心策略自己的访问状态做探针重标注迭代

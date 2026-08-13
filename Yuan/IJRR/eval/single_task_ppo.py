@@ -2151,6 +2151,328 @@ def stage_exit_multi(a, dev):
     log.close()
 
 
+def stage_pool(a, dev):
+    """Cross-task iterative search-and-distill under a wall-clock budget.
+
+    ONE shared policy over a pool of tasks. Each round: take a fresh chunk of
+    training tasks, run a POOLED tree search (all chunk tasks expanded in a
+    single batch, per-task dedupe and width cap), replay the best sequence of
+    each task in the real env, keep the best demo per task, and BC-train the
+    shared policy on the aggregate. From round 1 on, thinning is guided by
+    the shared policy — so search on a task the policy has never seen tests
+    whether the prior transfers ACROSS tasks.
+
+    Reported every --pool-eval-every rounds, on tasks never trained on and
+    with NO search at deployment: policy progress relative to the classical
+    law and to the one-step margin law, both measured in this protocol.
+    """
+    import torch.nn as nn
+    y, env1 = _env_and_yaml(1, dev)
+    model = hl.StraightModel(env1)
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env1.act_dim, indexing='ij'),
+                 -1).reshape(-1, env1.act_dim), dtype=torch.float32,
+        device=dev)
+    dtype = env1.kin.dtype
+    OUT.mkdir(parents=True, exist_ok=True)
+    log = open(OUT / 'pool.log', 'a')
+
+    def say(msg):
+        print(msg, flush=True)
+        log.write(msg + '\n'); log.flush()
+
+    # ---------------- task pool ----------------
+    pool = LineDistribution.load_or_build(
+        kin=env1.kin, collision=env1.collision, n_pool=20000,
+        n_target_noise_deg=5.0, seed=a.seed, env_cfg=env1.cfg,
+        feasibility_threshold_m=0.1, verbose=False)
+    valid = torch.nonzero(pool.valid_mask, as_tuple=False).squeeze(-1)
+    n_need = a.pool_train + a.pool_eval + a.pool_probe
+    perm = torch.randperm(valid.numel(),
+                          generator=torch.Generator().manual_seed(7))
+    sel = valid[perm[:n_need]]
+    Q0 = pool.q_pool[sel].to(dev)
+    DIR = pool.line_dir_pool[sel].to(dev)
+    NTG = pool.n_target_pool[sel].to(dev)
+    P0 = env1.kin.tcp_fk_jac(Q0)[0]
+    tr_ids = np.arange(a.pool_train)
+    ev_ids = np.arange(a.pool_train, a.pool_train + a.pool_eval)
+    pb_ids = np.arange(a.pool_train + a.pool_eval, n_need)
+    say(f"[pool] {a.pool_train} train / {a.pool_eval} eval / "
+        f"{a.pool_probe} probe tasks (pool seed {a.seed})")
+
+    def spec_of(ids):
+        ii = torch.as_tensor(ids, device=dev)
+        return {'q0': Q0[ii].clone(), 'line_dir': DIR[ii].clone(),
+                'n_target': NTG[ii].clone()}
+
+    # ---------------- reference arms on every selected task -------------
+    ref_path = OUT / 'pool_refs.npz'
+    if ref_path.exists():
+        rf = np.load(ref_path)
+        REF_CL, REF_MY = rf['classical'], rf['myopic']
+        say("[pool] loaded cached reference arms")
+    else:
+        _, env_ref = _env_and_yaml(n_need, dev)
+        refs = {}
+        for name, fn in _arms(env_ref).items():
+            if name == 'zero':
+                continue
+            env_ref.line_dist = ScriptedLineDistribution(
+                {k: v.clone() for k, v in spec_of(np.arange(n_need)).items()})
+            st = rollout_first_episode(env_ref, fn)
+            refs[name] = st['episode_progress'].cpu().numpy()
+        REF_CL, REF_MY = refs['classical'], refs['myopic']
+        np.savez(ref_path, classical=REF_CL, myopic=REF_MY)
+        del env_ref
+        say(f"[pool] reference arms: classical mean {REF_CL.mean():.3f} m, "
+            f"myopic mean {REF_MY.mean():.3f} m, "
+            f"myopic/classical {(REF_MY / np.maximum(REF_CL, 1e-6)).mean():.3f}")
+
+    # ---------------- shared policy ----------------
+    agent = VertexAgent(obs_dim=env1.obs_dim, act_dim=env1.act_dim,
+                        hidden_dim=y['ppo']['hidden_dim']).to(dev)
+    if a.pool_resume:
+        agent.load_state_dict(torch.load(REPO / a.pool_resume,
+                                         map_location=dev))
+        say(f"[pool] resumed policy from {a.pool_resume}")
+    opt = torch.optim.Adam(agent.parameters(), lr=a.pool_lr)
+
+    # ---------------- reusable featurizer env ----------------
+    CAP = a.pool_chunk * max(int(x) for x in a.pool_widths.split(','))
+    fenv = NSRLBatchedEnv(EnvConfig(**{**y['env'], 'n_envs': CAP}), None, dev)
+
+    @torch.no_grad()
+    def featurize(q, d, n, aprev):
+        m = q.shape[0]
+        pad = CAP - m
+        qq = torch.cat([q, q[:1].expand(pad, 7)]) if pad else q
+        dd = torch.cat([d, d[:1].expand(pad, 3)]) if pad else d
+        nn_ = torch.cat([n, n[:1].expand(pad, 3)]) if pad else n
+        fenv.line_dist = ScriptedLineDistribution(
+            {'q0': qq, 'line_dir': dd, 'n_target': nn_})
+        fenv.reset()
+        o = fenv.current_obs()[:m].clone()
+        o[:, -4:] = aprev
+        return o
+
+    # ---------------- pooled tree search ----------------
+    @torch.no_grad()
+    def pooled_search(ids, W, guided):
+        """Search all `ids` tasks in one batch. Returns {task: (prog, acts)}."""
+        ii = torch.as_tensor(ids, device=dev)
+        q = Q0[ii].clone()
+        tid = torch.arange(len(ids), device=dev)
+        score = torch.zeros(len(ids), device=dev, dtype=dtype)
+        aprev = torch.zeros(len(ids), env1.act_dim, device=dev, dtype=dtype)
+        d_task, n_task, p0_task = DIR[ii], NTG[ii], P0[ii]
+        pools_q, pools_t, parents, actions = [q.cpu()], [tid.cpu()], [], []
+        best = {int(t): (-1.0, 0, 0) for t in range(len(ids))}
+        prog0 = ((env1.kin.tcp_fk_jac(q)[0] - p0_task)
+                 * d_task).sum(-1)
+        for t in range(len(ids)):
+            best[t] = (float(prog0[t]), 0, t)
+        depth = 0
+        while q.shape[0] > 0 and depth < env1.max_steps:
+            P = q.shape[0]
+            if guided:
+                obs = featurize(q, d_task[tid], n_task[tid], aprev)
+                logp = torch.log_softmax(
+                    agent._logits_head(agent._actor_trunk(obs.float())),
+                    -1).to(dtype)
+            else:
+                logp = torch.zeros(P, 16, device=dev, dtype=dtype)
+            qe = q.repeat_interleave(16, 0)
+            te = tid.repeat_interleave(16)
+            ae = verts.unsqueeze(0).expand(P, -1, -1).reshape(P * 16, -1)
+            CH = 32768
+            qn = torch.cat([model.step(qe[i:i + CH], d_task[te[i:i + CH]],
+                                       n_task[te[i:i + CH]], ae[i:i + CH])
+                            for i in range(0, P * 16, CH)])
+            mg = torch.cat([model.margins(qn[i:i + CH], p0_task[te[i:i + CH]],
+                                          d_task[te[i:i + CH]],
+                                          n_task[te[i:i + CH]])
+                            for i in range(0, P * 16, CH)])
+            alive = (mg.amin(-1) > 0).nonzero(as_tuple=False).squeeze(-1)
+            if alive.numel() == 0:
+                break
+            child = (score[:, None] + logp).reshape(-1)[alive]
+            qn = qn[alive]
+            par = (alive // 16).cpu()
+            act = (alive % 16)
+            te = te[alive]
+            # per-task dedupe on the joint grid
+            key = np.concatenate(
+                [te.cpu().numpy()[:, None],
+                 torch.round(qn / a.tree_dedupe).to(torch.int32).cpu().numpy()],
+                axis=1)
+            _, first = np.unique(key, axis=0, return_index=True)
+            keep = torch.as_tensor(np.sort(first), device=dev)
+            qn, te, act, child = qn[keep], te[keep], act[keep], child[keep]
+            par = par[keep.cpu()]
+            # per-task width cap: task-major, best score first
+            if guided:
+                rank = child + a.exit_gumbel * (-torch.log(-torch.log(
+                    torch.rand(child.shape[0], device=dev, dtype=dtype))))
+            else:
+                rank = torch.rand(child.shape[0], device=dev, dtype=dtype)
+            order = torch.argsort(te.to(dtype) * 1e6 - rank)
+            te_s = te[order]
+            ar = torch.arange(te_s.shape[0], device=dev)
+            bnd = torch.nn.functional.pad(
+                (te_s[1:] != te_s[:-1]).long(), (1, 0), value=1)
+            starts = torch.cummax(bnd * ar, 0).values
+            sel_o = order[(ar - starts) < W]
+            sel_c = sel_o.cpu()
+            q, tid, score = qn[sel_o], te[sel_o], child[sel_o]
+            aprev = verts[act[sel_o]].to(dtype)
+            parents.append(par[sel_c])
+            actions.append(act[sel_o].cpu())
+            pools_q.append(q.cpu()); pools_t.append(tid.cpu())
+            depth += 1
+            pf = env1.kin.tcp_fk_jac(q)[0]
+            pr = ((pf - p0_task[tid]) * d_task[tid]).sum(-1)
+            prc, tc = pr.cpu().numpy(), tid.cpu().numpy()
+            for t in np.unique(tc):
+                loc = np.nonzero(tc == t)[0]
+                j = loc[int(prc[loc].argmax())]
+                if prc[j] > best[int(t)][0]:
+                    best[int(t)] = (float(prc[j]), depth, int(j))
+        out = {}
+        for t, (pr_, dp, idx) in best.items():
+            seq = []
+            i = idx
+            for r in range(dp - 1, -1, -1):
+                seq.append(int(actions[r][i]))
+                i = int(parents[r][i])
+            out[int(ids[t])] = (pr_, np.array(seq[::-1], dtype=np.int64))
+        return out
+
+    # ---------------- real-env replay of an action sequence ------------
+    _, env_rp = _env_and_yaml(1, dev)
+
+    @torch.no_grad()
+    def replay(task_i, seq):
+        env_rp.line_dist = ScriptedLineDistribution(spec_of([task_i]))
+        env_rp.reset()
+        obs_l, act_l, rew_l = [], [], []
+        for t in range(len(seq)):
+            obs_l.append(env_rp.current_obs()[0].clone())
+            act_l.append(int(seq[t]))
+            _, r, _, _, info = env_rp.step(verts[seq[t]][None],
+                                           auto_reset=False)
+            rew_l.append(float(r[0]))
+            if bool(info['episode_done'][0]):
+                break
+        n_ = len(rew_l)
+        ret = np.zeros(n_, dtype=np.float32)
+        acc = 0.0
+        for t in range(n_ - 1, -1, -1):
+            acc = rew_l[t] + 0.99 * acc
+            ret[t] = acc
+        pf = env1.kin.tcp_fk_jac(env_rp.q)[0]
+        prog = float(((pf[0] - env_rp.p_start[0])
+                      * env_rp.line_dir[0]).sum())
+        return (torch.stack(obs_l[:n_]), act_l[:n_], ret, prog)
+
+    # ---------------- held-out policy evaluation (no search) ----------
+    _, env_ev = _env_and_yaml(len(ev_ids), dev)
+
+    @torch.no_grad()
+    def eval_heldout():
+        env_ev.line_dist = ScriptedLineDistribution(spec_of(ev_ids))
+        st = rollout_first_episode(
+            env_ev, lambda e: agent.actor_mean(e.current_obs()))
+        return st['episode_progress'].cpu().numpy()
+
+    # ---------------- training loop ----------------
+    demos = {}
+    OBS = ACT = RET = None
+    t_start = time.time()
+    budget = a.pool_hours * 3600.0
+    widths = [int(x) for x in a.pool_widths.split(',')]
+    rnd = 0
+    order_tr = np.random.default_rng(0).permutation(tr_ids)
+    ptr = 0
+    probe_base = None
+    while time.time() - t_start < budget:
+        W = widths[min(rnd, len(widths) - 1)]
+        if ptr + a.pool_chunk > len(order_tr):
+            order_tr = np.random.default_rng(rnd).permutation(tr_ids)
+            ptr = 0
+        chunk = order_tr[ptr:ptr + a.pool_chunk]
+        ptr += a.pool_chunk
+        t0 = time.time()
+        found = pooled_search(chunk, W, guided=(rnd > 0))
+        t_srch = time.time() - t0
+        n_new, n_imp = 0, 0
+        for ti, (pr_, seq) in found.items():
+            if len(seq) == 0:
+                continue
+            o, ac, rt, prog = replay(ti, seq)
+            if ti not in demos:
+                n_new += 1
+            elif prog <= demos[ti][3] + 1e-4:
+                continue
+            else:
+                n_imp += 1
+            demos[ti] = (o, ac, rt, prog)
+        if demos:
+            OBS = torch.cat([d[0] for d in demos.values()]).float()
+            ACT = torch.tensor([x for d in demos.values() for x in d[1]],
+                               device=dev, dtype=torch.long)
+            RET = torch.tensor(np.concatenate([d[2] for d in demos.values()]),
+                               device=dev, dtype=torch.float32)
+        t1 = time.time()
+        M = OBS.shape[0]
+        for _ in range(a.pool_bc_steps):
+            idx = torch.randint(0, M, (min(4096, M),), device=dev)
+            logits = agent._logits_head(agent._actor_trunk(OBS[idx]))
+            v = agent.critic(OBS[idx]).squeeze(-1)
+            loss = (nn.functional.cross_entropy(logits, ACT[idx])
+                    + 0.5 * nn.functional.mse_loss(v, RET[idx]))
+            opt.zero_grad(); loss.backward(); opt.step()
+        t_bc = time.time() - t1
+        srch_m = float(np.mean([v[0] for v in found.values()]))
+        ratio_s = float(np.mean([found[t][0] / max(REF_MY[t], 1e-6)
+                                 for t in found]))
+        say(f"[pool] r{rnd:>4} W{W:>5} {len(chunk)} tasks  search {srch_m:.3f} m "
+            f"(x{ratio_s:.2f} myopic)  demos {len(demos)} (+{n_new}/^{n_imp})  "
+            f"buf {M}  {t_srch:.0f}s search {t_bc:.0f}s bc  "
+            f"elapsed {(time.time() - t_start) / 3600:.2f} h")
+
+        if rnd % a.pool_eval_every == 0:
+            pe = eval_heldout()
+            rc = float(np.mean(pe / np.maximum(REF_CL[ev_ids], 1e-6)))
+            rm = float(np.mean(pe / np.maximum(REF_MY[ev_ids], 1e-6)))
+            mc = float(np.mean(REF_MY[ev_ids]
+                               / np.maximum(REF_CL[ev_ids], 1e-6)))
+            # probe: does the prior help search on NEVER-TRAINED tasks?
+            if probe_base is None:
+                pb = pooled_search(pb_ids, a.pool_probe_w, guided=False)
+                probe_base = float(np.mean([v[0] for v in pb.values()]))
+            pg = pooled_search(pb_ids, a.pool_probe_w, guided=True)
+            probe_g = float(np.mean([v[0] for v in pg.values()]))
+            say(f"[pool] EVAL r{rnd}: held-out policy (no search) "
+                f"x{rc:.3f} classical / x{rm:.3f} myopic  "
+                f"[myopic itself x{mc:.3f} classical]  | probe search W"
+                f"{a.pool_probe_w}: unguided {probe_base:.3f} -> guided "
+                f"{probe_g:.3f} m")
+            torch.save(agent.state_dict(), OUT / 'agent_pool.pt')
+            np.savez(OUT / 'pool_state.npz',
+                     eval_progress=pe, ev_ids=ev_ids,
+                     ref_cl=REF_CL, ref_my=REF_MY,
+                     demo_tasks=np.array(sorted(demos.keys())),
+                     demo_progress=np.array([demos[k][3]
+                                             for k in sorted(demos)]),
+                     round=rnd, hours=(time.time() - t_start) / 3600)
+        rnd += 1
+    torch.save(agent.state_dict(), OUT / 'agent_pool.pt')
+    say(f"[pool] budget spent: {rnd} rounds, {len(demos)} tasks with demos, "
+        f"{(time.time() - t_start) / 3600:.2f} h")
+    log.close()
+
+
 def stage_vstariter(a, dev):
     """Fitted value iteration to DE-SATURATE Vhat_search: on a fixed ~20k
     state set (bank + GE archive + fresh policy rollouts), precompute all 16
@@ -2363,7 +2685,18 @@ def main():
                              'reachtree_bundle', 'goexplore',
                              'goexplore_env', 'selfimitate', 'fqi',
                              'vstarfit', 'vguide', 'vstariter', 'vdagger',
-                             'vmask', 'exit', 'exit_multi'])
+                             'vmask', 'exit', 'exit_multi', 'pool'])
+    ap.add_argument('--pool-train', type=int, default=512)
+    ap.add_argument('--pool-eval', type=int, default=128)
+    ap.add_argument('--pool-probe', type=int, default=24)
+    ap.add_argument('--pool-probe-w', type=int, default=64)
+    ap.add_argument('--pool-chunk', type=int, default=16)
+    ap.add_argument('--pool-widths', default='512,384,256,192,128,96,64')
+    ap.add_argument('--pool-bc-steps', type=int, default=400)
+    ap.add_argument('--pool-lr', type=float, default=3e-4)
+    ap.add_argument('--pool-hours', type=float, default=10.0)
+    ap.add_argument('--pool-eval-every', type=int, default=10)
+    ap.add_argument('--pool-resume', default=None)
     ap.add_argument('--emx-ranks', default='0,3,10,30,50,100,200,300,700,1000',
                     help='gap-sorted ranks of tasks for exit_multi')
     ap.add_argument('--exit-widths', default='16384,4096,1024,256,64')
@@ -2471,7 +2804,7 @@ def main():
      'vstarfit': stage_vstarfit, 'vguide': stage_vguide,
      'vstariter': stage_vstariter, 'vdagger': stage_vdagger,
      'vmask': stage_vmask, 'exit': stage_exit,
-     'exit_multi': stage_exit_multi}[a.stage](a, dev)
+     'exit_multi': stage_exit_multi, 'pool': stage_pool}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

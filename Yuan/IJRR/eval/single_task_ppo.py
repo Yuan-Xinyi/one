@@ -2264,10 +2264,12 @@ def stage_pool(a, dev):
 
     # ---------------- pooled tree search ----------------
     @torch.no_grad()
-    def pooled_search(ids, W, guided):
-        """Search all `ids` tasks in one batch. Returns {task: (prog, acts)}."""
+    def pooled_search(ids, W, guided, starts=None):
+        """Search all `ids` entries in one batch (ids may repeat a task when
+        searching from several of its states). Returns a list of
+        (progress, action_seq) in the order of `ids`."""
         ii = torch.as_tensor(ids, device=dev)
-        q = Q0[ii].clone()
+        q = Q0[ii].clone() if starts is None else starts.clone()
         tid = torch.arange(len(ids), device=dev)
         score = torch.zeros(len(ids), device=dev, dtype=dtype)
         aprev = torch.zeros(len(ids), env1.act_dim, device=dev, dtype=dtype)
@@ -2348,14 +2350,15 @@ def stage_pool(a, dev):
                 j = loc[int(prc[loc].argmax())]
                 if prc[j] > best[int(t)][0]:
                     best[int(t)] = (float(prc[j]), depth, int(j))
-        out = {}
-        for t, (pr_, dp, idx) in best.items():
+        out = []
+        for t in range(len(ids)):
+            pr_, dp, idx = best[t]
             seq = []
             i = idx
             for r in range(dp - 1, -1, -1):
                 seq.append(int(actions[r][i]))
                 i = int(parents[r][i])
-            out[int(ids[t])] = (pr_, np.array(seq[::-1], dtype=np.int64))
+            out.append((pr_, np.array(seq[::-1], dtype=np.int64)))
         return out
 
     # ---------------- real-env replay of an action sequence ------------
@@ -2436,6 +2439,46 @@ def stage_pool(a, dev):
                                 ret, float(prog[k]))
         return out
 
+    # ---------------- DAgger: expert labels on policy-visited states ---
+    @torch.no_grad()
+    def dagger_collect(ids64, use_search):
+        """Roll the current policy on `ids64` tasks; at every visited state
+        record the one-step margin law's action as the label (covariate-shift
+        correction). Optionally upgrade a subset of labels to the first action
+        of a search continuation started from that very state."""
+        grp = list(ids64) + [ids64[0]] * (MB - len(ids64))
+        env_my.line_dist = ScriptedLineDistribution(spec_of(grp))
+        env_my.reset()
+        loc = torch.arange(MB, device=dev)
+        O, A, Q, T = [], [], [], []
+        for t in range(env_my.max_steps):
+            alive = ~env_my.done_persistent
+            if not bool(alive.any()):
+                break
+            o = env_my.current_obs()
+            lab = ((myo_fn(env_my, env_my.done_persistent) > 0).float()
+                   * POW).sum(-1).long()
+            O.append(o[alive].clone()); A.append(lab[alive].clone())
+            Q.append(env_my.q[alive].clone()); T.append(loc[alive].clone())
+            logits = agent._logits_head(agent._actor_trunk(o))
+            ai = torch.distributions.Categorical(logits=logits).sample()
+            env_my.step(verts[ai], auto_reset=False)
+        if not O:
+            return None, None, 0
+        O = torch.cat(O); A = torch.cat(A)
+        Q = torch.cat(Q); T = torch.cat(T)
+        n_up = 0
+        if use_search and O.shape[0] > 0:
+            k = min(a.pool_dagger_search_k, O.shape[0])
+            pick = torch.randperm(O.shape[0], device=dev)[:k]
+            tids = [int(grp[int(x)]) for x in T[pick].cpu()]
+            res = pooled_search(tids, a.pool_dagger_w, True, starts=Q[pick])
+            for j, (_, seq) in enumerate(res):
+                if len(seq) > 0:
+                    A[pick[j]] = int(seq[0])
+                    n_up += 1
+        return O.float(), A, n_up
+
     # ---------------- held-out policy evaluation (no search) ----------
     _, env_ev = _env_and_yaml(len(ev_ids), dev)
 
@@ -2449,6 +2492,7 @@ def stage_pool(a, dev):
     # ---------------- training loop ----------------
     demos = {}
     OBS = ACT = RET = None
+    DOBS = DACT = None               # DAgger buffer (obs, expert action)
     owner = {}                       # task -> 'myopic' | 'search'
     t_start = time.time()
     budget = a.pool_hours * 3600.0
@@ -2475,7 +2519,8 @@ def stage_pool(a, dev):
         ptr += a.pool_chunk
         t0 = time.time()
         try:
-            found = pooled_search(chunk, W, guided=(rnd > 0))
+            found = dict(zip([int(c) for c in chunk],
+                             pooled_search(chunk, W, guided=(rnd > 0))))
         except RuntimeError as e:
             say(f"[pool] r{rnd} search failed, skipping chunk: {e}")
             torch.cuda.empty_cache()
@@ -2502,13 +2547,34 @@ def stage_pool(a, dev):
             RET = torch.tensor(np.concatenate([d[2] for d in demos.values()]),
                                device=dev, dtype=torch.float32)
         t1 = time.time()
+        n_up = 0
+        if a.pool_dagger_tasks > 0:
+            dg_ids = list(np.random.default_rng(rnd).choice(
+                tr_ids, min(MB, a.pool_dagger_tasks), replace=False))
+            do, da, n_up = dagger_collect(
+                dg_ids, use_search=(a.pool_dagger_search
+                                    and rnd % a.pool_dagger_search_every == 0))
+            if do is not None:
+                DOBS = do if DOBS is None else torch.cat([DOBS, do])
+                DACT = da if DACT is None else torch.cat([DACT, da])
+                if DOBS.shape[0] > a.pool_dagger_cap:
+                    DOBS = DOBS[-a.pool_dagger_cap:]
+                    DACT = DACT[-a.pool_dagger_cap:]
+        t_dg = time.time() - t1
+        t1 = time.time()
         M = OBS.shape[0]
+        MD = 0 if DOBS is None else DOBS.shape[0]
         for _ in range(a.pool_bc_steps):
             idx = torch.randint(0, M, (min(4096, M),), device=dev)
             logits = agent._logits_head(agent._actor_trunk(OBS[idx]))
             v = agent.critic(OBS[idx]).squeeze(-1)
             loss = (nn.functional.cross_entropy(logits, ACT[idx])
                     + 0.5 * nn.functional.mse_loss(v, RET[idx]))
+            if MD > 0:
+                di = torch.randint(0, MD, (min(4096, MD),), device=dev)
+                dl = agent._logits_head(agent._actor_trunk(DOBS[di]))
+                loss = loss + a.pool_dagger_coef * nn.functional.cross_entropy(
+                    dl, DACT[di])
             opt.zero_grad(); loss.backward(); opt.step()
         t_bc = time.time() - t1
         srch_m = float(np.mean([v[0] for v in found.values()]))
@@ -2520,7 +2586,8 @@ def stage_pool(a, dev):
         say(f"[pool] r{rnd:>4} W{W:>5} {len(chunk)} tasks  search {srch_m:.3f} m "
             f"(x{ratio_s:.2f} myopic)  demos {len(demos)} (+{n_new}/^{n_imp}) "
             f"search-owned {n_srch_owned}  demo/myopic x{demo_ratio:.3f}  "
-            f"buf {M}  {t_srch:.0f}s search {t_bc:.0f}s bc  "
+            f"buf {M}+{MD}d(^{n_up})  {t_srch:.0f}s search {t_dg:.0f}s dag "
+            f"{t_bc:.0f}s bc  "
             f"elapsed {(time.time() - t_start) / 3600:.2f} h")
 
         if rnd % a.pool_eval_every == 0:
@@ -2532,9 +2599,9 @@ def stage_pool(a, dev):
             # probe: does the prior help search on NEVER-TRAINED tasks?
             if probe_base is None:
                 pb = pooled_search(pb_ids, a.pool_probe_w, guided=False)
-                probe_base = float(np.mean([v[0] for v in pb.values()]))
+                probe_base = float(np.mean([v[0] for v in pb]))
             pg = pooled_search(pb_ids, a.pool_probe_w, guided=True)
-            probe_g = float(np.mean([v[0] for v in pg.values()]))
+            probe_g = float(np.mean([v[0] for v in pg]))
             say(f"[pool] EVAL r{rnd}: held-out policy (no search) "
                 f"x{rc:.3f} classical / x{rm:.3f} myopic  "
                 f"[myopic itself x{mc:.3f} classical]  | probe search W"
@@ -2779,6 +2846,13 @@ def main():
     ap.add_argument('--pool-hours', type=float, default=10.0)
     ap.add_argument('--pool-eval-every', type=int, default=10)
     ap.add_argument('--pool-resume', default=None)
+    ap.add_argument('--pool-dagger-tasks', type=int, default=64)
+    ap.add_argument('--pool-dagger-cap', type=int, default=600_000)
+    ap.add_argument('--pool-dagger-coef', type=float, default=1.0)
+    ap.add_argument('--pool-dagger-search', type=int, default=1)
+    ap.add_argument('--pool-dagger-search-k', type=int, default=96)
+    ap.add_argument('--pool-dagger-search-every', type=int, default=4)
+    ap.add_argument('--pool-dagger-w', type=int, default=96)
     ap.add_argument('--pool-seed-myopic', type=int, default=1,
                     help='seed every train task demo with the one-step '
                          'margin law; search must strictly beat it')

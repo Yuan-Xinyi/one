@@ -2521,18 +2521,24 @@ def stage_pool(a, dev):
             f"x{np.mean(pe / np.maximum(my, 1e-6)):.3f} margin law")
         say(f"[pool-eval] margin law itself: "
             f"x{np.mean(my / np.maximum(cl, 1e-6)):.3f} classical")
+        rows = []
         for W in [int(x) for x in a.pool_eval_widths.split(',')]:
             for guided, sm in ((True, 'logp'), (True, 'value'),
                                (False, 'logp')):
                 t0 = time.time()
                 res = pooled_search(list(ev_ids), W, guided, score_mode=sm)
                 pr = np.array([v[0] for v in res])
+                rows.append((W, int(guided), sm,
+                             float(np.mean(pr / np.maximum(cl, 1e-6))),
+                             float(np.mean(pr / np.maximum(my, 1e-6))),
+                             float(np.median(pr / np.maximum(my, 1e-6)))))
                 tag = (f'guided ({sm:<5})' if guided else 'unguided     ')
                 say(f"[pool-eval] search W{W:>4} {tag}: "
                     f"x{np.mean(pr / np.maximum(cl, 1e-6)):.3f} classical / "
                     f"x{np.mean(pr / np.maximum(my, 1e-6)):.3f} margin law  "
                     f"({time.time() - t0:.0f}s for {len(ev_ids)} tasks)")
-        np.savez(OUT / 'pool_eval.npz', policy=pe, classical=cl, myopic=my)
+        np.savez(OUT / 'pool_eval.npz', policy=pe, classical=cl, myopic=my,
+                 rows=np.array(rows, dtype=object))
         log.close()
         return
 

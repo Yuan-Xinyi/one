@@ -69,8 +69,12 @@ class VertexAgent(nn.Module):
         return self.critic(x).squeeze(-1)
 
     def get_action_and_value(self, x: torch.Tensor,
-                             action: torch.Tensor | None = None):
-        dist = Categorical(logits=self._logits_head(self._actor_trunk(x)))
+                             action: torch.Tensor | None = None,
+                             mask: torch.Tensor | None = None):
+        logits = self._logits_head(self._actor_trunk(x))
+        if mask is not None:
+            logits = logits.masked_fill(~mask, -1e9)
+        dist = Categorical(logits=logits)
         idx = dist.sample() if action is None else action.squeeze(-1).long()
         return (idx.unsqueeze(-1).float(), dist.log_prob(idx), dist.entropy(),
                 self.critic(x).squeeze(-1), None)

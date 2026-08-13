@@ -252,7 +252,8 @@ def train(cfg: PPOConfig, env, device: torch.device,
           optimizer: torch.optim.Optimizer | None = None,
           reward_scaler: RewardScaler | None = None,
           anchor: dict | None = None,
-          opt_value=None):
+          opt_value=None,
+          mask_fn=None):
     """Train PPO on `env`.
 
     `env` must expose: `n_envs`, `obs_dim`, `act_dim`, `device`, `reset()`,
@@ -304,6 +305,12 @@ def train(cfg: PPOConfig, env, device: torch.device,
     truncated_buf = torch.zeros((cfg.n_steps, n_envs), device=device)
     values_buf = torch.zeros((cfg.n_steps, n_envs), device=device)
     terminal_obs_buf = torch.zeros((cfg.n_steps, n_envs, obs_dim), device=device)
+    # action masking (mask_fn): sampled AND update-side distributions must be
+    # masked identically, so masks are stored alongside the transitions
+    masks_buf = None
+    if mask_fn is not None:
+        masks_buf = torch.ones((cfg.n_steps, n_envs, agent.n_actions),
+                               dtype=torch.bool, device=device)
 
     if cfg.normalize_returns and reward_scaler is None:
         reward_scaler = RewardScaler(n_envs, cfg.gamma, device)
@@ -357,7 +364,14 @@ def train(cfg: PPOConfig, env, device: torch.device,
             global_step += n_envs
             obs_buf[step] = next_obs
             with torch.no_grad():
-                action, logprob, _, value, log_std = agent.get_action_and_value(next_obs)
+                if mask_fn is not None:
+                    cur_mask = mask_fn()
+                    masks_buf[step] = cur_mask
+                    action, logprob, _, value, log_std = \
+                        agent.get_action_and_value(next_obs, mask=cur_mask)
+                else:
+                    action, logprob, _, value, log_std = \
+                        agent.get_action_and_value(next_obs)
                 rollout_sigma_sum += float(
                     log_std.exp().mean().item() if log_std is not None else 0.0)
                 rollout_sigma_clamp_sum += float(
@@ -457,6 +471,8 @@ def train(cfg: PPOConfig, env, device: torch.device,
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values_buf.reshape(-1)
+        b_masks = (masks_buf.reshape(-1, agent.n_actions)
+                   if masks_buf is not None else None)
 
 
         b_inds = np.arange(batch_size)
@@ -468,7 +484,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 end = start + minibatch_size
                 mb_inds = b_inds[start:end]
                 _, newlogprob, entropy, newvalue, _ = agent.get_action_and_value(
-                    b_obs[mb_inds], b_actions[mb_inds])
+                    b_obs[mb_inds], b_actions[mb_inds],
+                    **({'mask': b_masks[mb_inds]} if b_masks is not None
+                       else {}))
                 logratio = newlogprob - b_logprobs[mb_inds]
                 # Truncated IS ratio (V-trace style): guide-action transitions
                 # sit in the far Gaussian tail where small (mu, sigma) shifts
@@ -545,7 +563,8 @@ def train(cfg: PPOConfig, env, device: torch.device,
             # completed epoch update.
             with torch.no_grad():
                 _, epoch_logprob, _, _, _ = agent.get_action_and_value(
-                    b_obs, b_actions)
+                    b_obs, b_actions,
+                    **({'mask': b_masks} if b_masks is not None else {}))
                 epoch_logratio = (
                     epoch_logprob - b_logprobs).clamp(-20.0, 20.0)
                 approx_kl_value = float((

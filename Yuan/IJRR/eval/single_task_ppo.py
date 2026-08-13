@@ -588,6 +588,105 @@ def stage_ceiling(a, dev):
           f"--step 0.01 --n-dirs 48")
 
 
+def stage_vmask(a, dev):
+    """Method 1: vanilla PPO (environment reward, GAE, no BC, no expert
+    labels) but with DOOMED ACTIONS MASKED at rollout time: all 16 vertex
+    successors are enumerated with the exact model, scored by
+    Qhat = alive * (1 + gamma * Vhat_search(s')), and actions with
+    Qhat < mask_alpha * max_a Qhat are removed from the categorical before
+    sampling (and identically in the update). Tests whether policy-gradient
+    credit assignment succeeds once exploration is restricted to the
+    non-doomed set.
+    """
+    y, env = _env_and_yaml(a.n_envs, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    env.line_dist = SingleTaskDistribution(spec1)
+    myopic_ref = float(task['myopic_progress'])
+    model = hl.StraightModel(env)
+    B = a.n_envs
+    verts16 = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    env.reset()
+    dvec = env.line_dir[0].clone(); nvec = env.n_target[0].clone()
+    p0 = env.p_start[0].clone()
+
+    vnet = _vstar_net(env.obs_dim, dev)
+    vnet.load_state_dict(torch.load(REPO / a.mask_value, map_location=dev))
+    vnet.eval()
+    fenv = NSRLBatchedEnv(EnvConfig(**{**y['env'], 'n_envs': B * 16}),
+                          None, dev)
+    d_all = dvec[None].expand(B * 16, 3).clone()
+    n_all = nvec[None].expand(B * 16, 3).clone()
+
+    @torch.no_grad()
+    def mask_fn():
+        qs = env.q
+        qe = qs.unsqueeze(1).expand(-1, 16, -1).reshape(B * 16, -1)
+        ae = verts16.unsqueeze(0).expand(B, -1, -1).reshape(B * 16, -1)
+        qn = model.step(qe, d_all, n_all, ae)
+        mg = model.margins(qn, p0.expand(B * 16, 3), d_all, n_all)
+        alive = (mg.amin(-1) > 0).float().reshape(B, 16)
+        fenv.line_dist = ScriptedLineDistribution(
+            {'q0': qn, 'line_dir': d_all, 'n_target': n_all})
+        fenv.reset()
+        v_next = vnet(fenv.current_obs()).squeeze(-1).reshape(B, 16)
+        qhat = alive * (1.0 + 0.99 * v_next.clamp_min(0.0))
+        keep = qhat >= a.mask_alpha * qhat.amax(-1, keepdim=True)
+        dead_row = alive.sum(-1) == 0
+        keep[dead_row] = True                  # let the env terminate them
+        return keep
+
+    _, eval_env = _env_and_yaml(2, dev)
+
+    def eval_fn(agent):
+        @torch.no_grad()
+        def fn(e):
+            return agent.actor_mean(e.current_obs()).clamp(-1.0, 1.0)
+        eval_env.line_dist = SingleTaskDistribution(spec1)
+        stats = rollout_first_episode(eval_env, fn)
+        p = float(stats['episode_progress'][0])
+        return {'eval/progress_m': p,
+                'eval/ratio_to_myopic': p / myopic_ref,
+                'eval/episode_len': int(stats['episode_len'][0]),
+                'eval/term': TERM_NAMES[int(stats['term_reason'][0])]}
+
+    ppo_kw = {**y['ppo'], 'total_timesteps': a.total_steps}
+    if a.ent_coef is not None:
+        ppo_kw['ent_coef'] = a.ent_coef
+    ppo_cfg = PPOConfig(**ppo_kw)
+    agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                        hidden_dim=ppo_cfg.hidden_dim).to(dev)
+    print(f"[vmask] doomed-action-masked PPO: alpha {a.mask_alpha}, "
+          f"Vhat {a.mask_value}, {a.total_steps} steps on {B} envs",
+          flush=True)
+    OUT.mkdir(parents=True, exist_ok=True)
+    log_file = open(OUT / 'train.log', 'w')
+    t0 = time.time()
+
+    def log_fn(d):
+        log_file.write(repr({'wall_s': time.time() - t0, **d}) + '\n')
+        log_file.flush()
+        if 'update' in d and d['update'] % 10 == 0:
+            print(f"upd {d['update']:>5}  step {d['global_step']:>9}  "
+                  f"ep_prog {d.get('episode/progress_mean_m', 0):.4f} m  "
+                  f"ep_len {d.get('episode/length_mean', 0):6.1f}  "
+                  f"entropy {d.get('train/entropy', 0):.2f}", flush=True)
+        elif 'eval_at_step' in d:
+            print(f"  eval @ {d['eval_at_step']:>9}  "
+                  f"progress {d.get('eval/progress_m', 0):.4f} m  "
+                  f"ratio-to-myopic {d.get('eval/ratio_to_myopic', 0):.4f}  "
+                  f"len {d.get('eval/episode_len', 0)}  "
+                  f"term {d.get('eval/term')}", flush=True)
+
+    ppo_train(ppo_cfg, env, device=dev, agent=agent,
+              eval_fn=eval_fn, eval_every=a.eval_every, log_fn=log_fn,
+              ckpt_path=str(OUT / 'agent.pt'), ckpt_every_n_updates=25,
+              mask_fn=mask_fn)
+    print(f"[vmask] done -> {OUT / 'agent.pt'}")
+
+
 @torch.no_grad()
 def stage_reachtree(a, dev):
     """Exhaustive-ish forward search for the farthest CONTINUOUS trajectory.
@@ -1372,6 +1471,270 @@ def stage_vguide(a, dev):
     log.close()
 
 
+def stage_vdagger(a, dev):
+    """Method 2: value-DAgger. Fix vguide's value quality by (a) grounding
+    Vhat_search on tree-descendant-depth labels (no 40-step probe cap, no
+    max-backup bubbles: every label is the depth of a certified-executable
+    continuation inside the exhaustive search tree) and (b) DAgger rounds
+    that probe-relabel exactly the states the greedy-wrt-Vhat policy visits.
+
+    Output: vstar_net_vd.pt + vdagger.log. Success criterion: greedy-wrt-
+    Vhat rollout from q0 crosses the 0.73 wall.
+    """
+    import torch.nn as nn
+    y, env = _env_and_yaml(a.vd_tube, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    dvec = env.line_dir[0].clone(); nvec = env.n_target[0].clone()
+    p0 = env.p_start[0].clone()
+    model = hl.StraightModel(env)
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    log = open(OUT / 'vdagger.log', 'w')
+
+    def say(msg):
+        print(msg, flush=True)
+        log.write(msg + '\n'); log.flush()
+
+    # ---- (a) search-tree rerun with descendant-depth labels ----
+    q = env.q[:1].clone()
+    parents, pools, any_alive = [], [q.cpu()], []
+    rng = np.random.default_rng(0)
+    t0 = time.time()
+    depth = 0
+    while q.shape[0] > 0 and depth < env.max_steps:
+        P = q.shape[0]
+        qe = q.unsqueeze(1).expand(-1, 16, -1).reshape(P * 16, -1)
+        ae = verts.unsqueeze(0).expand(P, -1, -1).reshape(P * 16, -1)
+        CH = 32768
+        qn = torch.cat([model.step(qe[i:i + CH],
+                                   dvec.expand(min(CH, P * 16 - i), 3),
+                                   nvec.expand(min(CH, P * 16 - i), 3),
+                                   ae[i:i + CH])
+                        for i in range(0, P * 16, CH)])
+        m = torch.cat([model.margins(qn[i:i + CH],
+                                     p0.expand(min(CH, P * 16 - i), 3),
+                                     dvec.expand(min(CH, P * 16 - i), 3),
+                                     nvec.expand(min(CH, P * 16 - i), 3))
+                       for i in range(0, P * 16, CH)])
+        alive_b = (m.amin(dim=-1) > 0)
+        any_alive.append(alive_b.reshape(P, 16).any(-1).cpu().numpy())
+        alive = alive_b.nonzero(as_tuple=False).squeeze(-1)
+        if alive.numel() == 0:
+            break
+        qn = qn[alive]
+        par = (alive // 16)
+        key = torch.round(qn / a.tree_dedupe).to(torch.int32)
+        _, first = np.unique(key.cpu().numpy(), axis=0, return_index=True)
+        keep = torch.as_tensor(np.sort(first), device=dev)
+        if keep.numel() > a.tree_width:
+            keep = keep[torch.as_tensor(
+                np.sort(rng.choice(keep.numel(), a.tree_width,
+                                   replace=False)), device=dev)]
+        q = qn[keep]
+        parents.append(par[keep].cpu().numpy())
+        pools.append(q.cpu())
+        depth += 1
+    say(f"[vdagger] tree rebuilt: depth {depth}  ({time.time() - t0:.0f}s)")
+
+    # backward pass: remaining survivable steps within the tree (used only
+    # to find the backbone for proposal weighting; labels come from probes —
+    # rem is a tree artifact, not a consistent function of the state)
+    rem = [np.zeros(p.shape[0], dtype=np.int64) for p in pools]
+    for r in range(depth - 1, -1, -1):
+        np.maximum.at(rem[r], parents[r], rem[r + 1] + 1)
+
+    # state PROPOSALS: per-depth uniform sample + the deep backbone in full
+    S_l = []
+    per_depth = max(50, a.vd_states // max(depth, 1))
+    rng2 = np.random.default_rng(1)
+    for r in range(depth + 1):
+        P = pools[r].shape[0]
+        bb = np.nonzero(rem[r] >= max(depth - r - 10, 5))[0]   # backbone
+        k = min(P, per_depth)
+        idx = np.union1d(bb, rng2.choice(P, k, replace=False))
+        S_l.append(pools[r][idx])
+    S = torch.cat(S_l).to(dev)
+    say(f"[vdagger] state proposals: {S.shape[0]}")
+
+    # ---- featurizer (reset-style obs, same as the vguide runtime) ----
+    def featurize(qbatch):
+        outs = []
+        FB = 65536
+        for i in range(0, qbatch.shape[0], FB):
+            chunk = qbatch[i:i + FB]
+            fenv = NSRLBatchedEnv(EnvConfig(**{**y['env'],
+                                  'n_envs': chunk.shape[0]}), None, dev)
+            fenv.line_dist = ScriptedLineDistribution(
+                {'q0': chunk,
+                 'line_dir': dvec[None].expand(chunk.shape[0], 3).clone(),
+                 'n_target': nvec[None].expand(chunk.shape[0], 3).clone()})
+            fenv.reset()
+            outs.append(fenv.current_obs().clone())
+            del fenv
+        return torch.cat(outs)
+
+    # ---- batched probe labeler: local re-search from K states at once ----
+    @torch.no_grad()
+    def probe_batch(states, H, W=256, grid=0.02, K=64):
+        out = torch.zeros(states.shape[0], dtype=torch.float32, device=dev)
+        for base in range(0, states.shape[0], K):
+            chunk = states[base:base + K]
+            kk = chunk.shape[0]
+            m0 = model.margins(chunk, p0.expand(kk, 3),
+                               dvec.expand(kk, 3), nvec.expand(kk, 3))
+            alive0 = (m0.amin(-1) > 0)
+            qq = chunk[alive0]
+            sid = alive0.nonzero(as_tuple=False).squeeze(-1)
+            for dpt in range(H):
+                if qq.shape[0] == 0:
+                    break
+                N = qq.shape[0]
+                qe = qq.unsqueeze(1).expand(-1, 16, -1).reshape(N * 16, -1)
+                ae = verts.unsqueeze(0).expand(N, -1, -1).reshape(N * 16, -1)
+                se = sid.repeat_interleave(16)
+                CH = 32768
+                qn = torch.cat([model.step(qe[i:i + CH],
+                                           dvec.expand(min(CH, N*16-i), 3),
+                                           nvec.expand(min(CH, N*16-i), 3),
+                                           ae[i:i + CH])
+                                for i in range(0, N * 16, CH)])
+                m = torch.cat([model.margins(qn[i:i + CH],
+                                             p0.expand(min(CH, N*16-i), 3),
+                                             dvec.expand(min(CH, N*16-i), 3),
+                                             nvec.expand(min(CH, N*16-i), 3))
+                               for i in range(0, N * 16, CH)])
+                ok = (m.amin(-1) > 0)
+                # states whose sid vanishes here survived exactly dpt steps
+                pre = torch.unique(sid)
+                post = torch.unique(se[ok])
+                gone = pre[~torch.isin(pre, post)]
+                out[base + gone] = dpt
+                qn, se = qn[ok], se[ok]
+                # per-sid dedupe + width cap
+                key = np.concatenate(
+                    [se.cpu().numpy()[:, None],
+                     torch.round(qn / grid).to(torch.int32).cpu().numpy()],
+                    axis=1)
+                _, first = np.unique(key, axis=0, return_index=True)
+                keep = torch.as_tensor(np.sort(first), device=dev)
+                qn, se = qn[keep], se[keep]
+                r = torch.rand(qn.shape[0], device=dev)
+                order = torch.argsort(se.float() * 2.0 + r)   # sid-major
+                se_s = se[order]
+                idx_arange = torch.arange(se_s.shape[0], device=dev)
+                bnd = torch.nn.functional.pad(
+                    (se_s[1:] != se_s[:-1]).long(), (1, 0), value=1)
+                starts = torch.cummax(bnd * idx_arange, 0).values
+                sel = order[(idx_arange - starts) < W]
+                qq, sid = qn[sel], se[sel]
+            if qq.shape[0] > 0:
+                out[base + torch.unique(sid)] = H
+        return out
+
+    probe_h = a.vd_probe_h if a.vd_probe_h > 0 else min(
+        env.max_steps, 200)
+    OBS = featurize(S)
+    say(f"[vdagger] features ready; probing proposal labels (H={probe_h})")
+    t1 = time.time()
+    LAB = probe_batch(S, H=probe_h)
+    say(f"[vdagger] probe labels: mean {float(LAB.mean()):.1f} "
+        f"max {float(LAB.max()):.0f} zeros "
+        f"{float((LAB == 0).float().mean()):.2f}  "
+        f"({time.time() - t1:.0f}s)")
+
+    vnet = _vstar_net(env.obs_dim, dev)
+    opt = torch.optim.Adam(vnet.parameters(), lr=1e-3)
+
+    def refit(steps):
+        n = OBS.shape[0]
+        hold = torch.arange(n, device=dev) % 10 == 0
+        for ep in range(steps):
+            idx = torch.randint(0, n, (1024,), device=dev)
+            msk = ~hold[idx]
+            loss = nn.functional.smooth_l1_loss(
+                vnet(OBS[idx][msk]).squeeze(-1), LAB[idx][msk])
+            opt.zero_grad(); loss.backward(); opt.step()
+        with torch.no_grad():
+            pred = vnet(OBS[hold]).squeeze(-1)
+            r2 = 1 - ((pred - LAB[hold]) ** 2).mean() / LAB[hold].var()
+        return float(r2)
+
+    # ---- greedy-wrt-Vhat rollout (B tube envs, env 0 pure greedy) ----
+    @torch.no_grad()
+    def greedy_tube(eps):
+        env.line_dist = SingleTaskDistribution(spec1)
+        env.reset()
+        B = env.n_envs
+        visited = []
+        for t in range(env.max_steps):
+            qs = env.q.clone()
+            live = ~env.done_persistent
+            if not bool(live.any()):
+                break
+            visited.append(qs[live])
+            qe = qs.unsqueeze(1).expand(-1, 16, -1).reshape(B * 16, -1)
+            ae = verts.unsqueeze(0).expand(B, -1, -1).reshape(B * 16, -1)
+            qn = model.step(qe, dvec.expand(B * 16, 3),
+                            nvec.expand(B * 16, 3), ae)
+            mg = model.margins(qn, p0.expand(B * 16, 3),
+                               dvec.expand(B * 16, 3),
+                               nvec.expand(B * 16, 3))
+            alive = (mg.amin(-1) > 0).float().reshape(B, 16)
+            v_next = vnet(featurize(qn)).squeeze(-1).reshape(B, 16)
+            qhat = alive * (1.0 + 0.99 * v_next.clamp_min(0.0))
+            ai = qhat.argmax(-1)
+            if eps > 0:                    # tube: eps-greedy among alive
+                rnd = torch.randint(0, 16, (B,), device=dev)
+                flip = ((torch.rand(B, device=dev) < eps)
+                        & (alive.gather(1, rnd[:, None]).squeeze(-1) > 0))
+                flip[0] = False            # env 0 stays pure greedy
+                ai = torch.where(flip, rnd, ai)
+            env.step(verts[ai], auto_reset=False)
+        pf, _, _, _ = env.kin.tcp_fk_jac(env.q)
+        prog = ((pf - env.p_start) * env.line_dir).sum(-1)
+        return (float(prog[0]), float(prog.max()),
+                torch.cat(visited) if visited else env.q[:0])
+
+    r2 = refit(a.vd_fit_steps)
+    prog0, progmax0, _ = greedy_tube(0.0)
+    say(f"[vdagger] round 0 (proposal probes only): holdout R2 {r2:.3f}  "
+        f"greedy-from-q0 {prog0:.4f} m")
+
+    best = prog0
+    for rnd_i in range(1, a.vd_rounds + 1):
+        # collect the tube the greedy policy actually visits
+        _, _, vis = greedy_tube(a.vd_eps)
+        key = torch.round(vis / 0.02).to(torch.int32)
+        _, first = np.unique(key.cpu().numpy(), axis=0, return_index=True)
+        vis = vis[torch.as_tensor(np.sort(first), device=dev)]
+        if vis.shape[0] > a.vd_probe_budget:
+            vis = vis[torch.randperm(vis.shape[0],
+                                     device=dev)[:a.vd_probe_budget]]
+        t1 = time.time()
+        labs = probe_batch(vis, H=probe_h)
+        say(f"[vdagger] round {rnd_i}: probed {vis.shape[0]} visited states "
+            f"(mean {float(labs.mean()):.1f}, {time.time() - t1:.0f}s)")
+        OBS = torch.cat([OBS, featurize(vis)])
+        LAB = torch.cat([LAB, labs])
+        r2 = refit(a.vd_fit_steps // 2)
+        prog, progmax, _ = greedy_tube(0.0)
+        say(f"[vdagger] round {rnd_i}: R2 {r2:.3f}  greedy-from-q0 "
+            f"{prog:.4f} m  (tube max {progmax:.4f})")
+        torch.save(vnet.state_dict(), OUT / 'vstar_net_vd.pt')
+        if prog > best:
+            best = prog
+    torch.save(vnet.state_dict(), OUT / 'vstar_net_vd.pt')
+    np.savez(OUT / 'vdagger_labels.npz', obs=OBS.cpu().numpy(),
+             label=LAB.cpu().numpy())
+    say(f"[vdagger] done: best greedy-from-q0 {best:.4f} m "
+        f"-> {OUT / 'vstar_net_vd.pt'}")
+    log.close()
+
+
 def stage_vstariter(a, dev):
     """Fitted value iteration to DE-SATURATE Vhat_search: on a fixed ~20k
     state set (bank + GE archive + fresh policy rollouts), precompute all 16
@@ -1583,7 +1946,21 @@ def main():
                              'ceiling', 'traj', 'reachtree',
                              'reachtree_bundle', 'goexplore',
                              'goexplore_env', 'selfimitate', 'fqi',
-                             'vstarfit', 'vguide', 'vstariter'])
+                             'vstarfit', 'vguide', 'vstariter', 'vdagger',
+                             'vmask'])
+    ap.add_argument('--mask-value', default=None,
+                    help='Vhat net for doomed-action masking (vmask stage)')
+    ap.add_argument('--mask-alpha', type=float, default=0.7)
+    ap.add_argument('--vd-rounds', type=int, default=4)
+    ap.add_argument('--vd-tube', type=int, default=64,
+                    help='n_envs of the eps-greedy collection tube')
+    ap.add_argument('--vd-eps', type=float, default=0.1)
+    ap.add_argument('--vd-states', type=int, default=50_000,
+                    help='tree-label state budget')
+    ap.add_argument('--vd-fit-steps', type=int, default=25_000)
+    ap.add_argument('--vd-probe-budget', type=int, default=600,
+                    help='max probe labels per DAgger round')
+    ap.add_argument('--vd-probe-h', type=int, default=70)
     ap.add_argument('--bundle-min', type=float, default=0.70,
                     help='keep leaf trajectories with progress above this')
     ap.add_argument('--bundle-max-save', type=int, default=4000)
@@ -1671,7 +2048,8 @@ def main():
      'goexplore': stage_goexplore, 'goexplore_env': stage_goexplore_env,
      'selfimitate': stage_selfimitate, 'fqi': stage_fqi,
      'vstarfit': stage_vstarfit, 'vguide': stage_vguide,
-     'vstariter': stage_vstariter}[a.stage](a, dev)
+     'vstariter': stage_vstariter, 'vdagger': stage_vdagger,
+     'vmask': stage_vmask}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

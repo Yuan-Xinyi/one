@@ -89,3 +89,14 @@ tau放宽扫描: 0.95/0.90→0.36, 0.90/0.85→0.27, 0.85/0.80→0.18, 0.80/0.75
 而1.06分支要求更深的挤压(j4→-170°); variant B的触发信号"任一关节贴近限位→classical"
 与长分支的必要条件**恰好反相关** — 它把"贴限位骑行"当危险信号, 而这正是过墙的代价
 数据 hybrid_variantB.npz, 图 hybrid_variantB.png, 脚本 hybrid_variantB_task27.py
+
+## 附7: margin触发的myopic救援 (告急项接管) — task 27
+规则: min归一化margin < tau_e 时由myopic接管(滞回tau_x交还RL); 三种救援者×5档阈值全扫:
+- targeted(只看argmin项): 最好0.4811 (cone死) — 单项贪心一接管就掉进softmin盲区
+- deployed(jl+cone): 最好0.6210 (collision死!) — 救援者不看的margin成为新死因
+- all4(四项softmin): 最好0.6701 (jl死) — 全部低于纯PPO 0.7007; 阈值越保守越差
+根本原因(数据): 纯PPO自己的min-margin轨迹 p50=0.039, p10=0.007 —
+在这条走廊上"margin快破"不是异常事件而是**常态工况**, 从s≈0.3起一路贴零骑行;
+当前margin标量里不含"5步后是否有活路"的信息(即Q^pi/Q*不可见性的又一投影),
+触发器无法区分"贴墙骑行"和"真死亡前兆", 而任何一步式救援者一接管就偏离获胜细丝
+数据/图/脚本: margin_rescue.png, margin_rescue.py

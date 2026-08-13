@@ -2375,6 +2375,57 @@ def stage_pool(a, dev):
                       * env_rp.line_dir[0]).sum())
         return (torch.stack(obs_l[:n_]), act_l[:n_], ret, prog)
 
+    # ---------------- myopic demo seeding (the analytic expert) -------
+    MB = 64
+    _, env_my = _env_and_yaml(MB, dev)
+    model_my = hl.StraightModel(env_my)
+    model_my.terms = MYOPIC_TERMS
+    myo_fn = hl.make_myopic(model_my)
+    POW = torch.tensor([8.0, 4.0, 2.0, 1.0], device=dev)
+
+    @torch.no_grad()
+    def myopic_demos(ids):
+        """Record the one-step margin law as vertex-index demos."""
+        out = {}
+        for base in range(0, len(ids), MB):
+            grp = list(ids[base:base + MB])
+            pad = MB - len(grp)
+            grp_p = grp + [grp[0]] * pad
+            env_my.line_dist = ScriptedLineDistribution(spec_of(grp_p))
+            env_my.reset()
+            O, A, R, AL = [], [], [], []
+            for t in range(env_my.max_steps):
+                alive = ~env_my.done_persistent
+                if not bool(alive.any()):
+                    break
+                O.append(env_my.current_obs().clone())
+                av = myo_fn(env_my, env_my.done_persistent)
+                A.append(((av > 0).float() * POW).sum(-1).long())
+                _, r, _, _, _ = env_my.step(av, auto_reset=False)
+                R.append(r.clone())
+                AL.append(alive.clone())
+            if not O:
+                continue
+            O = torch.stack(O); A = torch.stack(A)
+            R = torch.stack(R); AL = torch.stack(AL)
+            pf = env_my.kin.tcp_fk_jac(env_my.q)[0]
+            prog = ((pf - env_my.p_start) * env_my.line_dir).sum(-1)
+            for k, ti in enumerate(grp):
+                m = AL[:, k]
+                n_ = int(m.sum())
+                if n_ == 0:
+                    continue
+                rw = R[m, k].cpu().numpy()
+                ret = np.zeros(n_, dtype=np.float32)
+                acc = 0.0
+                for t in range(n_ - 1, -1, -1):
+                    acc = float(rw[t]) + 0.99 * acc
+                    ret[t] = acc
+                out[int(ti)] = (O[m, k].clone(),
+                                [int(x) for x in A[m, k].cpu().numpy()],
+                                ret, float(prog[k]))
+        return out
+
     # ---------------- held-out policy evaluation (no search) ----------
     _, env_ev = _env_and_yaml(len(ev_ids), dev)
 
@@ -2388,6 +2439,7 @@ def stage_pool(a, dev):
     # ---------------- training loop ----------------
     demos = {}
     OBS = ACT = RET = None
+    owner = {}                       # task -> 'myopic' | 'search'
     t_start = time.time()
     budget = a.pool_hours * 3600.0
     widths = [int(x) for x in a.pool_widths.split(',')]
@@ -2395,6 +2447,15 @@ def stage_pool(a, dev):
     order_tr = np.random.default_rng(0).permutation(tr_ids)
     ptr = 0
     probe_base = None
+    if a.pool_seed_myopic:
+        t0 = time.time()
+        seeded = myopic_demos(tr_ids)
+        for k, v in seeded.items():
+            demos[k] = v
+            owner[k] = 'myopic'
+        say(f"[pool] seeded {len(seeded)} train tasks with the one-step "
+            f"margin law ({time.time() - t0:.0f}s); mean demo progress "
+            f"{np.mean([v[3] for v in seeded.values()]):.3f} m")
     while time.time() - t_start < budget:
         W = widths[min(rnd, len(widths) - 1)]
         if ptr + a.pool_chunk > len(order_tr):
@@ -2417,6 +2478,7 @@ def stage_pool(a, dev):
             else:
                 n_imp += 1
             demos[ti] = (o, ac, rt, prog)
+            owner[ti] = 'search'
         if demos:
             OBS = torch.cat([d[0] for d in demos.values()]).float()
             ACT = torch.tensor([x for d in demos.values() for x in d[1]],
@@ -2436,8 +2498,12 @@ def stage_pool(a, dev):
         srch_m = float(np.mean([v[0] for v in found.values()]))
         ratio_s = float(np.mean([found[t][0] / max(REF_MY[t], 1e-6)
                                  for t in found]))
+        n_srch_owned = sum(1 for v in owner.values() if v == 'search')
+        demo_ratio = float(np.mean([demos[k][3] / max(REF_MY[k], 1e-6)
+                                    for k in demos]))
         say(f"[pool] r{rnd:>4} W{W:>5} {len(chunk)} tasks  search {srch_m:.3f} m "
-            f"(x{ratio_s:.2f} myopic)  demos {len(demos)} (+{n_new}/^{n_imp})  "
+            f"(x{ratio_s:.2f} myopic)  demos {len(demos)} (+{n_new}/^{n_imp}) "
+            f"search-owned {n_srch_owned}  demo/myopic x{demo_ratio:.3f}  "
             f"buf {M}  {t_srch:.0f}s search {t_bc:.0f}s bc  "
             f"elapsed {(time.time() - t_start) / 3600:.2f} h")
 
@@ -2697,6 +2763,9 @@ def main():
     ap.add_argument('--pool-hours', type=float, default=10.0)
     ap.add_argument('--pool-eval-every', type=int, default=10)
     ap.add_argument('--pool-resume', default=None)
+    ap.add_argument('--pool-seed-myopic', type=int, default=1,
+                    help='seed every train task demo with the one-step '
+                         'margin law; search must strictly beat it')
     ap.add_argument('--emx-ranks', default='0,3,10,30,50,100,200,300,700,1000',
                     help='gap-sorted ranks of tasks for exit_multi')
     ap.add_argument('--exit-widths', default='16384,4096,1024,256,64')

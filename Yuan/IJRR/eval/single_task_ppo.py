@@ -1924,6 +1924,233 @@ def stage_exit(a, dev):
     log.close()
 
 
+def stage_exit_multi(a, dev):
+    """Generalization test for iterative search-and-distill: a stratified
+    batch of tasks (by headroom gap L_hi - myopic), each run through
+    (a) an UNGUIDED width sweep, (b) the policy-guided iteration of
+    stage_exit, (c) the amortization ladder with the final policy.
+    The question: does the policy prior let narrower search reach or beat
+    wider unguided search beyond task 27?
+    """
+    import torch.nn as nn
+    y, env = _env_and_yaml(1, dev)
+    task, spec_sel = _load_task(dev, env.kin.dtype)
+    model = hl.StraightModel(env)
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    log = open(OUT / 'exit_multi.log', 'w')
+
+    def say(msg):
+        print(msg, flush=True)
+        log.write(msg + '\n'); log.flush()
+
+    # rebuild the standard pool (same recipe as select/select2)
+    pool = LineDistribution.load_or_build(
+        kin=env.kin, collision=env.collision, n_pool=20000,
+        n_target_noise_deg=5.0, seed=int(task['pool_seed']),
+        env_cfg=env.cfg, feasibility_threshold_m=0.1, verbose=False)
+    pidx = torch.nonzero(pool.valid_mask, as_tuple=False).squeeze(-1)[:1024]
+    myo_all = task['all_myopic']
+    lhi_all = task['all_L_hi']
+    gap = lhi_all - myo_all
+    order = np.argsort(-gap)
+    ranks = [int(x) for x in a.emx_ranks.split(',')]
+    tasks = [int(order[r]) for r in ranks]
+    say(f"[exit_multi] tasks {tasks} (gap ranks {ranks})")
+
+    widths = [int(x) for x in a.exit_widths.split(',')]
+    ladder_ws = [256, 64, 16, 4, 1]
+    results = {}
+
+    for ti in tasks:
+        q0_t = pool.q_pool[pidx[ti]].to(dev)
+        dvec = pool.line_dir_pool[pidx[ti]].to(dev)
+        nvec = pool.n_target_pool[pidx[ti]].to(dev)
+        p0 = env.kin.tcp_fk_jac(q0_t[None])[0][0]
+        spec1 = {'q0': q0_t[None], 'line_dir': dvec[None],
+                 'n_target': nvec[None]}
+
+        def featurize(qbatch, aprev):
+            outs = []
+            FB = 65536
+            for i in range(0, qbatch.shape[0], FB):
+                chunk = qbatch[i:i + FB]
+                fenv = NSRLBatchedEnv(EnvConfig(**{**y['env'],
+                                      'n_envs': chunk.shape[0]}), None, dev)
+                fenv.line_dist = ScriptedLineDistribution(
+                    {'q0': chunk,
+                     'line_dir': dvec[None].expand(chunk.shape[0],
+                                                   3).clone(),
+                     'n_target': nvec[None].expand(chunk.shape[0],
+                                                   3).clone()})
+                fenv.reset()
+                o = fenv.current_obs().clone()
+                del fenv
+                outs.append(o)
+            obs = torch.cat(outs)
+            obs[:, -4:] = aprev
+            return obs
+
+        agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                            hidden_dim=y['ppo']['hidden_dim']).to(dev)
+
+        @torch.no_grad()
+        def prior_search(W, gumbel):
+            qq = q0_t[None].clone()
+            score = torch.zeros(1, device=dev)
+            aprev = torch.zeros(1, env.act_dim, device=dev)
+            parents, actions, pools_l = [], [], [qq.cpu()]
+            depth = 0
+            while qq.shape[0] > 0 and depth < env.max_steps:
+                P = qq.shape[0]
+                if gumbel is not None:
+                    obs = featurize(qq, aprev)
+                    logp = torch.log_softmax(
+                        agent._logits_head(
+                            agent._actor_trunk(obs.float())), -1)
+                else:
+                    logp = torch.zeros(P, 16, device=dev)
+                qe = qq.unsqueeze(1).expand(-1, 16, -1).reshape(P * 16, -1)
+                ae = verts.unsqueeze(0).expand(P, -1, -1).reshape(P * 16, -1)
+                CH = 32768
+                qn = torch.cat([model.step(qe[i:i + CH],
+                                           dvec.expand(min(CH, P*16-i), 3),
+                                           nvec.expand(min(CH, P*16-i), 3),
+                                           ae[i:i + CH])
+                                for i in range(0, P * 16, CH)])
+                m = torch.cat([model.margins(qn[i:i + CH],
+                                             p0.expand(min(CH, P*16-i), 3),
+                                             dvec.expand(min(CH, P*16-i), 3),
+                                             nvec.expand(min(CH, P*16-i),
+                                                         3))
+                               for i in range(0, P * 16, CH)])
+                alive = (m.amin(-1) > 0).nonzero(
+                    as_tuple=False).squeeze(-1)
+                if alive.numel() == 0:
+                    break
+                child_score = (score[:, None] + logp.to(score.dtype)
+                               ).reshape(-1)[alive]
+                qn = qn[alive]
+                par = alive // 16
+                act = alive % 16
+                key = torch.round(qn / a.tree_dedupe).to(torch.int32)
+                _, first = np.unique(key.cpu().numpy(), axis=0,
+                                     return_index=True)
+                keep = torch.as_tensor(np.sort(first), device=dev)
+                if keep.numel() > W:
+                    if gumbel is None:
+                        keep = keep[torch.randperm(keep.numel(),
+                                                   device=dev)[:W]]
+                    else:
+                        noisy = child_score[keep] + gumbel * (
+                            -torch.log(-torch.log(
+                                torch.rand(keep.numel(), device=dev,
+                                           dtype=score.dtype))))
+                        keep = keep[noisy.topk(W).indices]
+                qq = qn[keep]
+                score = child_score[keep]
+                aprev = verts[act[keep]].to(env.kin.dtype)
+                parents.append(par[keep].cpu())
+                actions.append(act[keep].cpu())
+                pools_l.append(qq.cpu())
+                depth += 1
+            qf = pools_l[depth].to(dev)
+            pf, _, _, _ = env.kin.tcp_fk_jac(qf)
+            prog = ((pf - p0) * dvec).sum(-1)
+            best = int(prog.argmax())
+            traj_a = []
+            i = best
+            for r in range(depth - 1, -1, -1):
+                traj_a.append(int(actions[r][i]))
+                i = int(parents[r][i])
+            return float(prog.max()), np.array(traj_a[::-1],
+                                               dtype=np.int64)
+
+        @torch.no_grad()
+        def replay(traj_a):
+            env.line_dist = SingleTaskDistribution(spec1)
+            env.reset()
+            obs_l, act_l, rew_l = [], [], []
+            for t in range(len(traj_a)):
+                obs_l.append(env.current_obs()[0].clone())
+                act_l.append(int(traj_a[t]))
+                _, r, _, _, info = env.step(verts[traj_a[t]][None],
+                                            auto_reset=False)
+                rew_l.append(float(r[0]))
+                if bool(info['episode_done'][0]):
+                    break
+            ret = np.zeros(len(rew_l), dtype=np.float32)
+            acc = 0.0
+            for t in range(len(rew_l) - 1, -1, -1):
+                acc = rew_l[t] + 0.99 * acc
+                ret[t] = acc
+            n = len(ret)
+            return (torch.stack(obs_l[:n]), act_l[:n], ret)
+
+        @torch.no_grad()
+        def eval_policy():
+            env.line_dist = SingleTaskDistribution(spec1)
+            env.reset()
+            for t in range(env.max_steps):
+                env.step(agent.actor_mean(env.current_obs()),
+                         auto_reset=False)
+                if bool(env.done_persistent.all()):
+                    break
+            pf, _, _, _ = env.kin.tcp_fk_jac(env.q)
+            return float(((pf[0] - env.p_start[0])
+                          * env.line_dir[0]).sum())
+
+        t0 = time.time()
+        unguided = {}
+        for W in widths:
+            sp, _ = prior_search(W, None)
+            unguided[W] = sp
+        say(f"[exit_multi] task {ti}: unguided " +
+            " ".join(f"W{W}={unguided[W]:.3f}" for W in widths))
+
+        rounds = []
+        DOBS, DACT, DRET = [], [], []
+        for rnd_i, W in enumerate(widths):
+            sp, traj_a = prior_search(
+                W, None if rnd_i == 0 else a.exit_gumbel)
+            obs_r, act_r, ret_r = replay(traj_a)
+            DOBS.append(obs_r); DACT.extend(act_r)
+            DRET.append(torch.tensor(ret_r, device=dev))
+            OBS = torch.cat(DOBS).float()
+            ACT = torch.tensor(DACT, device=dev, dtype=torch.long)
+            RET = torch.cat(DRET).float()
+            opt = torch.optim.Adam(agent.parameters(), lr=3e-4)
+            for ep in range(a.exit_bc_epochs):
+                logits = agent._logits_head(agent._actor_trunk(OBS))
+                v = agent.critic(OBS).squeeze(-1)
+                loss = (nn.functional.cross_entropy(logits, ACT)
+                        + 0.5 * nn.functional.mse_loss(v, RET))
+                opt.zero_grad(); loss.backward(); opt.step()
+            pp = eval_policy()
+            rounds.append((W, sp, pp))
+            say(f"[exit_multi] task {ti}: round {rnd_i} W {W:>6} "
+                f"search {sp:.4f} policy {pp:.4f}")
+        ladder = {}
+        for W in ladder_ws:
+            sp, _ = prior_search(W, a.exit_gumbel)
+            ladder[W] = sp
+        say(f"[exit_multi] task {ti}: ladder " +
+            " ".join(f"W{W}={ladder[W]:.3f}" for W in ladder_ws) +
+            f"  myopic {myo_all[ti]:.3f} L_hi {lhi_all[ti]:.3f} "
+            f"({time.time() - t0:.0f}s)")
+        results[ti] = {'unguided': unguided, 'rounds': rounds,
+                       'ladder': ladder, 'myopic': float(myo_all[ti]),
+                       'L_hi': float(lhi_all[ti])}
+        np.savez(OUT / 'exit_multi.npz',
+                 results=np.array([results], dtype=object),
+                 widths=np.array(widths), ladder_ws=np.array(ladder_ws),
+                 tasks=np.array(tasks))
+    say("[exit_multi] done")
+    log.close()
+
+
 def stage_vstariter(a, dev):
     """Fitted value iteration to DE-SATURATE Vhat_search: on a fixed ~20k
     state set (bank + GE archive + fresh policy rollouts), precompute all 16
@@ -2136,7 +2363,9 @@ def main():
                              'reachtree_bundle', 'goexplore',
                              'goexplore_env', 'selfimitate', 'fqi',
                              'vstarfit', 'vguide', 'vstariter', 'vdagger',
-                             'vmask', 'exit'])
+                             'vmask', 'exit', 'exit_multi'])
+    ap.add_argument('--emx-ranks', default='0,3,10,30,50,100,200,300,700,1000',
+                    help='gap-sorted ranks of tasks for exit_multi')
     ap.add_argument('--exit-widths', default='16384,4096,1024,256,64')
     ap.add_argument('--exit-bc-epochs', type=int, default=4000)
     ap.add_argument('--exit-gumbel', type=float, default=0.3)
@@ -2241,7 +2470,8 @@ def main():
      'selfimitate': stage_selfimitate, 'fqi': stage_fqi,
      'vstarfit': stage_vstarfit, 'vguide': stage_vguide,
      'vstariter': stage_vstariter, 'vdagger': stage_vdagger,
-     'vmask': stage_vmask, 'exit': stage_exit}[a.stage](a, dev)
+     'vmask': stage_vmask, 'exit': stage_exit,
+     'exit_multi': stage_exit_multi}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

@@ -2263,8 +2263,19 @@ def stage_pool(a, dev):
         return o
 
     # ---------------- pooled tree search ----------------
+    def cap_per_task(te, rank, W):
+        """Indices keeping the top-W entries of each task by `rank`."""
+        o1 = torch.argsort(rank, descending=True)
+        order = o1[torch.argsort(te[o1], stable=True)]
+        te_s = te[order]
+        ar = torch.arange(te_s.shape[0], device=dev)
+        bnd = torch.nn.functional.pad(
+            (te_s[1:] != te_s[:-1]).long(), (1, 0), value=1)
+        starts_ = torch.cummax(bnd * ar, 0).values
+        return order[(ar - starts_) < W]
+
     @torch.no_grad()
-    def pooled_search(ids, W, guided, starts=None):
+    def pooled_search(ids, W, guided, starts=None, score_mode='logp'):
         """Search all `ids` entries in one batch (ids may repeat a task when
         searching from several of its states). Returns a list of
         (progress, action_seq) in the order of `ids`."""
@@ -2324,17 +2335,17 @@ def stage_pool(a, dev):
                     torch.rand(child.shape[0], device=dev, dtype=dtype))))
             else:
                 rank = torch.rand(child.shape[0], device=dev, dtype=dtype)
-            # lexicographic (task, rank desc): a float composite key loses
-            # the rank at task-index magnitude and splits a task into
-            # several runs, which breaks the per-task width cap
-            o1 = torch.argsort(rank, descending=True)
-            order = o1[torch.argsort(te[o1], stable=True)]
-            te_s = te[order]
-            ar = torch.arange(te_s.shape[0], device=dev)
-            bnd = torch.nn.functional.pad(
-                (te_s[1:] != te_s[:-1]).long(), (1, 0), value=1)
-            starts = torch.cummax(bnd * ar, 0).values
-            sel_o = order[(ar - starts) < W]
+            if score_mode == 'value' and guided:
+                # the network ranks STATES (learnable) instead of scoring
+                # ACTIONS (not learnable across tasks): cheap policy prefilter,
+                # then the critic's remaining-return estimate decides
+                pre = cap_per_task(te, rank, max(4 * W, 8))
+                qn, te, act, child = qn[pre], te[pre], act[pre], child[pre]
+                par = par[pre.cpu()]
+                vobs = featurize(qn, d_task[te], n_task[te],
+                                 verts[act].to(dtype))
+                rank = agent.critic(vobs.float()).squeeze(-1).to(dtype)
+            sel_o = cap_per_task(te, rank, W)
             sel_c = sel_o.cpu()
             q, tid, score = qn[sel_o], te[sel_o], child[sel_o]
             aprev = verts[act[sel_o]].to(dtype)
@@ -2488,6 +2499,33 @@ def stage_pool(a, dev):
         st = rollout_first_episode(
             env_ev, lambda e: agent.actor_mean(e.current_obs()))
         return st['episode_progress'].cpu().numpy()
+
+    # ---------------- evaluation-only battery ----------------
+    if a.pool_eval_only:
+        agent.load_state_dict(torch.load(REPO / a.pool_eval_only,
+                                         map_location=dev))
+        agent.eval()
+        pe = eval_heldout()
+        cl, my = REF_CL[ev_ids], REF_MY[ev_ids]
+        say(f"[pool-eval] policy alone (no search): "
+            f"x{np.mean(pe / np.maximum(cl, 1e-6)):.3f} classical / "
+            f"x{np.mean(pe / np.maximum(my, 1e-6)):.3f} margin law")
+        say(f"[pool-eval] margin law itself: "
+            f"x{np.mean(my / np.maximum(cl, 1e-6)):.3f} classical")
+        for W in [int(x) for x in a.pool_eval_widths.split(',')]:
+            for guided, sm in ((True, 'logp'), (True, 'value'),
+                               (False, 'logp')):
+                t0 = time.time()
+                res = pooled_search(list(ev_ids), W, guided, score_mode=sm)
+                pr = np.array([v[0] for v in res])
+                tag = (f'guided ({sm:<5})' if guided else 'unguided     ')
+                say(f"[pool-eval] search W{W:>4} {tag}: "
+                    f"x{np.mean(pr / np.maximum(cl, 1e-6)):.3f} classical / "
+                    f"x{np.mean(pr / np.maximum(my, 1e-6)):.3f} margin law  "
+                    f"({time.time() - t0:.0f}s for {len(ev_ids)} tasks)")
+        np.savez(OUT / 'pool_eval.npz', policy=pe, classical=cl, myopic=my)
+        log.close()
+        return
 
     # ---------------- training loop ----------------
     demos = {}
@@ -2846,6 +2884,9 @@ def main():
     ap.add_argument('--pool-hours', type=float, default=10.0)
     ap.add_argument('--pool-eval-every', type=int, default=10)
     ap.add_argument('--pool-resume', default=None)
+    ap.add_argument('--pool-eval-only', default=None,
+                    help='checkpoint: run the held-out battery and exit')
+    ap.add_argument('--pool-eval-widths', default='4,16,64')
     ap.add_argument('--pool-dagger-tasks', type=int, default=64)
     ap.add_argument('--pool-dagger-cap', type=int, default=600_000)
     ap.add_argument('--pool-dagger-coef', type=float, default=1.0)

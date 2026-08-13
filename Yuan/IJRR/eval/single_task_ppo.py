@@ -420,10 +420,20 @@ def stage_train(a, dev):
                   f"len {d.get('eval/episode_len', 0)}  "
                   f"term {d.get('eval/term')}", flush=True)
 
+    anchor = None
+    if a.anchor_data:
+        gd = np.load(REPO / a.anchor_data)
+        anchor = {'obs': torch.tensor(gd['obs'], device=dev,
+                                      dtype=torch.float32),
+                  'act': torch.tensor(gd['act'], device=dev,
+                                      dtype=torch.long),
+                  'coef': a.anchor_coef}
+        print(f"[train] self-imitation anchor: {len(gd['act'])} pairs, "
+              f"coef {a.anchor_coef}")
     ppo_train(ppo_cfg, env, device=dev, agent=agent,
               eval_fn=eval_fn, eval_every=a.eval_every, log_fn=log_fn,
               ckpt_path=str(OUT / 'agent.pt'), ckpt_every_n_updates=25,
-              resume_from_ckpt=a.resume_from_ckpt)
+              resume_from_ckpt=a.resume_from_ckpt, anchor=anchor)
     log_file.close()
     print(f"[train] done -> {OUT / 'agent.pt'}")
 
@@ -912,8 +922,10 @@ def stage_selfimitate(a, dev):
     discounted returns so a later PPO fine-tune can resume stably."""
     y, env = _env_and_yaml(2, dev)
     task, spec1 = _load_task(dev, env.kin.dtype)
-    ge = np.load(OUT / 'goexplore_env.npz')
+    src = a.imitate_from or str(OUT / 'goexplore_env.npz')
+    ge = np.load(REPO / src if not Path(src).is_absolute() else src)
     seq = ge['action_idx']
+    print(f"[selfimitate] expert sequence from {src}: {len(seq)} steps")
     verts = torch.tensor(
         np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
                  -1).reshape(-1, env.act_dim), dtype=torch.float32,
@@ -938,6 +950,8 @@ def stage_selfimitate(a, dev):
     ret_t = torch.tensor(ret, device=dev, dtype=torch.float32)
     print(f"[selfimitate] episode: {len(seq)} steps, replayed reward "
           f"{sum(rew_l):.1f}")
+    np.savez(OUT / 'golden_dataset.npz', obs=obs.cpu().numpy(),
+             act=np.array(act_l), ret=ret)
 
     agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
                         hidden_dim=y['ppo']['hidden_dim']).to(dev)
@@ -1081,6 +1095,11 @@ def main():
                     help='bias frontier probes toward high joint-7 (one bit '
                          'of oracle knowledge about the viable edge)')
     ap.add_argument('--bc-epochs', type=int, default=5000)
+    ap.add_argument('--imitate-from', default=None,
+                    help='npz with action_idx to imitate (selfimitate)')
+    ap.add_argument('--anchor-data', default=None,
+                    help='golden_dataset.npz for the self-imitation anchor')
+    ap.add_argument('--anchor-coef', type=float, default=1.0)
     ap.add_argument('--resume-from-ckpt', default=None,
                     help='load policy weights before PPO training')
     ap.add_argument('--norm-returns', type=int, default=None,

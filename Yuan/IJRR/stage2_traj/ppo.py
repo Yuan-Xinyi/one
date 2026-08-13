@@ -250,7 +250,8 @@ def train(cfg: PPOConfig, env, device: torch.device,
           resume_from_ckpt: str | None = None,
           agent: Agent | None = None,
           optimizer: torch.optim.Optimizer | None = None,
-          reward_scaler: RewardScaler | None = None):
+          reward_scaler: RewardScaler | None = None,
+          anchor: dict | None = None):
     """Train PPO on `env`.
 
     `env` must expose: `n_envs`, `obs_dim`, `act_dim`, `device`, `reset()`,
@@ -499,6 +500,16 @@ def train(cfg: PPOConfig, env, device: torch.device,
                     loss = pg_loss - cfg.ent_coef * ent_loss + cfg.vf_coef * v_loss
                 if kl_prior is not None:
                     loss = loss + cfg.kl_prior_coef * kl_prior
+                if anchor is not None and update > cfg.actor_warmup_updates:
+                    # self-imitation anchor: keep the policy pinned to the
+                    # golden dataset while PPO refines around it (a bare
+                    # fine-tune of a needle-thin imitated policy
+                    # self-destructs: sampled deviations die, advantages
+                    # then dismantle the memorized corridor)
+                    a_logits = agent._logits_head(
+                        agent._actor_trunk(anchor['obs']))
+                    loss = loss + anchor['coef'] * nn.functional.cross_entropy(
+                        a_logits, anchor['act'])
 
 
 

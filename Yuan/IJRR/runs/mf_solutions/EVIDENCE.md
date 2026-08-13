@@ -65,3 +65,9 @@ J = E_s[Σ_a π(a|s)·Q̂(s,a)], Q̂=alive·(1+γV̂(s')); 无BC/专家标签/re
 诊断: V̂的**局部排序精度**(audit中gate/safe全对)≠**全程贪心一致性**;
 贪心沿途放大最坏误差, 与锚定/BC只需局部纠错本质不同。
 下一步(未跑): value-DAgger循环 — 用贪心策略自己的访问状态做探针重标注迭代
+
+## 附4: 经典nullspace接管task 27
+classical 0.1698 m/17步/cone (与myopic逐位一致的死点); sgnclassical 0.0991 m/10步/cone。
+关节图: classical把j4定在-50°不动, 而所有>0.7m的存活轨迹都要求j4深潜到-170°;
+局部梯度律连PPO的0.73都到不了, 更谈不上1.06分支。
+数据 classical_task27.npz, 图 classical_vs_bundle.png, 脚本 classical_task27.py

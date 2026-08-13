@@ -702,6 +702,23 @@ def stage_goexplore(a, dev):
         new_before = len(Q)
         for k in range(K):
             a_idx = torch.randint(0, 16, (B,), device=dev)
+            if a.ge_drift_j7 > 0:
+                # ACTION-level directional push: for a fraction of the
+                # biased half-batch, take the vertex that raises joint 7
+                # fastest — extends the fan itself instead of merely
+                # re-sampling its existing edge
+                nd = B // 2
+                qe16 = q[:nd].unsqueeze(1).expand(-1, 16, -1).reshape(-1, 7)
+                ae16 = verts.unsqueeze(0).expand(nd, -1, -1).reshape(-1, 4)
+                qn16 = torch.cat(
+                    [model.step(qe16[i:i + 32768],
+                                d.expand(min(32768, nd * 16 - i), 3),
+                                n.expand(min(32768, nd * 16 - i), 3),
+                                ae16[i:i + 32768])
+                     for i in range(0, nd * 16, 32768)]).reshape(nd, 16, 7)
+                best_a = qn16[:, :, 6].argmax(-1)
+                use = torch.rand(nd, device=dev) < a.ge_drift_j7
+                a_idx[:nd] = torch.where(use, best_a, a_idx[:nd])
             a_hist[:, k] = a_idx.cpu().numpy()
             qn = model.step(q, d.expand(B, 3), n.expand(B, 3), verts[a_idx])
             m = model.margins(qn, p0.expand(B, 3), d.expand(B, 3),
@@ -1056,6 +1073,10 @@ def main():
     ap.add_argument('--ge-cell', type=float, default=0.04)
     ap.add_argument('--ge-stall', type=int, default=30,
                     help='stop after this many generations w/o new cells')
+    ap.add_argument('--ge-drift-j7', type=float, default=0.0,
+                    help='probability per probe step of taking the vertex '
+                         'that raises joint 7 fastest (action-level fan '
+                         'extension toward the winning filament)')
     ap.add_argument('--ge-bias-j7', action='store_true',
                     help='bias frontier probes toward high joint-7 (one bit '
                          'of oracle knowledge about the viable edge)')

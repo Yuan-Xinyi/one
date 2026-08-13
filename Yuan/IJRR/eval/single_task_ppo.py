@@ -2213,16 +2213,25 @@ def stage_pool(a, dev):
         REF_CL, REF_MY = rf['classical'], rf['myopic']
         say("[pool] loaded cached reference arms")
     else:
-        _, env_ref = _env_and_yaml(n_need, dev)
-        refs = {}
-        for name, fn in _arms(env_ref).items():
-            if name == 'zero':
-                continue
-            env_ref.line_dist = ScriptedLineDistribution(
-                {k: v.clone() for k, v in spec_of(np.arange(n_need)).items()})
-            st = rollout_first_episode(env_ref, fn)
-            refs[name] = st['episode_progress'].cpu().numpy()
-        REF_CL, REF_MY = refs['classical'], refs['myopic']
+        # chunked: a single batch of >~8k envs overruns the batched
+        # eigvalsh workspace in the damped pseudo-inverse
+        RB = 2048
+        _, env_ref = _env_and_yaml(RB, dev)
+        arms_ref = _arms(env_ref)
+        refs = {'classical': [], 'myopic': []}
+        for base in range(0, n_need, RB):
+            ids_r = np.arange(base, min(base + RB, n_need))
+            pad = RB - len(ids_r)
+            ids_p = np.concatenate([ids_r, np.full(pad, ids_r[0])]) \
+                if pad else ids_r
+            for name in ('classical', 'myopic'):
+                env_ref.line_dist = ScriptedLineDistribution(
+                    {k: v.clone() for k, v in spec_of(ids_p).items()})
+                st = rollout_first_episode(env_ref, arms_ref[name])
+                refs[name].append(
+                    st['episode_progress'].cpu().numpy()[:len(ids_r)])
+        REF_CL = np.concatenate(refs['classical'])
+        REF_MY = np.concatenate(refs['myopic'])
         np.savez(ref_path, classical=REF_CL, myopic=REF_MY)
         del env_ref
         say(f"[pool] reference arms: classical mean {REF_CL.mean():.3f} m, "

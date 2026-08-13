@@ -71,3 +71,12 @@ classical 0.1698 m/17步/cone (与myopic逐位一致的死点); sgnclassical 0.0
 关节图: classical把j4定在-50°不动, 而所有>0.7m的存活轨迹都要求j4深潜到-170°;
 局部梯度律连PPO的0.73都到不了, 更谈不上1.06分支。
 数据 classical_task27.npz, 图 classical_vs_bundle.png, 脚本 classical_task27.py
+
+## 附5: ISRR式混合 — 经典nullspace从RL轨迹上接管 (全切换点扫描)
+PPO确定性策略走到第k步交给classical续走, k=0..70全扫:
+- 每个切换点都死于cone; classical能续的步数随k单调缩短 17→2步
+  (RL轨迹越走越贴约束边界, 局部律的余地越来越小)
+- 最优混合: k=69 (s=0.69, RL死前一步) 终点0.7109, 比纯PPO 0.7007只多+0.0102 (≈1步)
+- 没有任何切换点能进入长分支: 进分支需要几十步前的j4/j2大重排,
+  s≈0.69时RL已在注定封死的扇形下缘, 局部律无法回头
+数据 hybrid_takeover.npz, 图 hybrid_takeover.png, 脚本 hybrid_takeover.py

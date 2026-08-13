@@ -704,6 +704,125 @@ def stage_reachtree(a, dev):
 
 
 @torch.no_grad()
+def stage_reachtree_bundle(a, dev):
+    """stage_reachtree rerun (same seed/params) that backtracks EVERY leaf
+    trajectory whose final progress exceeds --bundle-min, not just the best.
+
+    A leaf is a pool state with no surviving child in the next depth's pool
+    (dedupe/thinning victims count as leaves: their prefix is still a genuine
+    executable sequence with that progress). All kept trajectories are saved
+    concatenated with per-trajectory lengths in reachtree_bundle.npz.
+    """
+    y, env = _env_and_yaml(1, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    p0 = env.p_start[0]
+    d = env.line_dir[0]
+    n = env.n_target[0]
+
+    model = hl.StraightModel(env)
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    K = verts.shape[0]
+    W = a.tree_width
+    grid = a.tree_dedupe
+
+    q = env.q[:1].clone()
+    parents, actions, pools = [], [], [q.cpu()]
+    rng = np.random.default_rng(0)
+    t0 = time.time()
+    depth = 0
+    while q.shape[0] > 0 and depth < env.max_steps:
+        P = q.shape[0]
+        qe = q.unsqueeze(1).expand(-1, K, -1).reshape(P * K, -1)
+        ae = verts.unsqueeze(0).expand(P, -1, -1).reshape(P * K, -1)
+        qn = torch.cat([model.step(qe[i:i + 32768],
+                                   d.expand(min(32768, P * K - i), 3),
+                                   n.expand(min(32768, P * K - i), 3),
+                                   ae[i:i + 32768])
+                        for i in range(0, P * K, 32768)])
+        m = torch.cat([model.margins(qn[i:i + 32768],
+                                     p0.expand(min(32768, P * K - i), 3),
+                                     d.expand(min(32768, P * K - i), 3),
+                                     n.expand(min(32768, P * K - i), 3))
+                       for i in range(0, P * K, 32768)])
+        alive = (m.amin(dim=-1) > 0).nonzero(as_tuple=False).squeeze(-1)
+        if alive.numel() == 0:
+            break
+        qn = qn[alive]
+        par = (alive // K)
+        act = (alive % K)
+        key = torch.round(qn / grid).to(torch.int32)
+        _, first = np.unique(key.cpu().numpy(), axis=0, return_index=True)
+        keep = torch.as_tensor(np.sort(first), device=dev)
+        if keep.numel() > W:
+            keep = keep[torch.as_tensor(
+                np.sort(rng.choice(keep.numel(), W, replace=False)),
+                device=dev)]
+        q = qn[keep]
+        parents.append(par[keep].cpu())
+        actions.append(act[keep].cpu())
+        pools.append(q.cpu())
+        depth += 1
+        if depth % 20 == 0:
+            print(f"depth {depth:>4}  pool {q.shape[0]:>5}  "
+                  f"{time.time() - t0:.0f}s", flush=True)
+
+    # collect leaves per depth, keep those with progress > bundle_min
+    trajs, progs, depths_kept = [], [], []
+    n_leaves_total = 0
+    for r in range(len(pools)):
+        P = pools[r].shape[0]
+        has_child = np.zeros(P, dtype=bool)
+        if r < len(parents):
+            has_child[np.unique(parents[r].numpy())] = True
+        leaf = np.nonzero(~has_child)[0]
+        if leaf.size == 0:
+            continue
+        n_leaves_total += leaf.size
+        pf, _, _, _ = env.kin.tcp_fk_jac(pools[r][leaf].to(dev))
+        pr = ((pf - p0) * d).sum(-1).cpu().numpy()
+        sel = np.nonzero(pr > a.bundle_min)[0]
+        if sel.size == 0:
+            continue
+        idx = leaf[sel]
+        traj = np.empty((idx.size, r + 1, 7), dtype=np.float32)
+        traj[:, r] = pools[r].numpy()[idx]
+        cur = idx
+        for rr in range(r - 1, -1, -1):
+            cur = parents[rr].numpy()[cur]
+            traj[:, rr] = pools[rr].numpy()[cur]
+        trajs.extend(traj)
+        progs.extend(pr[sel].tolist())
+        depths_kept.extend([r] * idx.size)
+    progs = np.asarray(progs)
+    depths_kept = np.asarray(depths_kept, dtype=np.int64)
+    print(f"\nsearch died at depth {depth}; {n_leaves_total} leaves total, "
+          f"{len(trajs)} with progress > {a.bundle_min:.2f} m "
+          f"(max {progs.max() if len(trajs) else 0:.4f})")
+
+    if len(trajs) > a.bundle_max_save:      # stratified thin, keep argmax
+        order = np.argsort(progs)
+        pick = order[np.unique(np.linspace(0, len(order) - 1,
+                                           a.bundle_max_save).astype(int))]
+        pick = np.union1d(pick, [int(progs.argmax())])
+        trajs = [trajs[i] for i in pick]
+        depths_kept = depths_kept[pick]
+        progs = progs[pick]
+        print(f"thinned to {len(trajs)} for saving (stratified by progress)")
+
+    flat = np.concatenate([t.reshape(-1, 7) for t in trajs])
+    lens = np.array([t.shape[0] for t in trajs], dtype=np.int64)
+    np.savez(OUT / 'reachtree_bundle.npz', q_flat=flat, lens=lens,
+             progress=progs, depth=depths_kept,
+             n_leaves_total=n_leaves_total, bundle_min=a.bundle_min)
+    print(f"wrote {OUT / 'reachtree_bundle.npz'} ({len(trajs)} trajectories)")
+
+
+@torch.no_grad()
 def stage_goexplore(a, dev):
     """Combination-lock paradigm, oracle-free: E3/Go-Explore phase 1.
 
@@ -1461,9 +1580,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--stage', required=True,
                     choices=['select', 'select2', 'train', 'report',
-                             'ceiling', 'traj', 'reachtree', 'goexplore',
+                             'ceiling', 'traj', 'reachtree',
+                             'reachtree_bundle', 'goexplore',
                              'goexplore_env', 'selfimitate', 'fqi',
                              'vstarfit', 'vguide', 'vstariter'])
+    ap.add_argument('--bundle-min', type=float, default=0.70,
+                    help='keep leaf trajectories with progress above this')
+    ap.add_argument('--bundle-max-save', type=int, default=4000)
     ap.add_argument('--vi-sweeps', type=int, default=140)
     ap.add_argument('--vguide-updates', type=int, default=1500)
     ap.add_argument('--ent-coef2', type=float, default=0.01,
@@ -1544,6 +1667,7 @@ def main():
     {'select': stage_select, 'select2': stage_select2, 'train': stage_train,
      'report': stage_report, 'ceiling': stage_ceiling,
      'traj': stage_traj, 'reachtree': stage_reachtree,
+     'reachtree_bundle': stage_reachtree_bundle,
      'goexplore': stage_goexplore, 'goexplore_env': stage_goexplore_env,
      'selfimitate': stage_selfimitate, 'fqi': stage_fqi,
      'vstarfit': stage_vstarfit, 'vguide': stage_vguide,

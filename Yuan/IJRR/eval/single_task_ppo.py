@@ -146,6 +146,40 @@ class NoveltyEnv(NSRLBatchedEnv):
         return obs, rew + bonus, term, trunc, info
 
 
+class RNDEnv(NSRLBatchedEnv):
+    """Method-5 evidence run: optimism-in-the-face-of-uncertainty proxy via
+    Random Network Distillation — intrinsic bonus = prediction error of a
+    trainable net against a frozen random target, i.e. epistemic novelty in
+    feature space rather than visit counts."""
+
+    def __init__(self, *args, rnd_beta=0.5, **kwargs):
+        super().__init__(*args, **kwargs)
+        import torch.nn as nn
+
+        def mk():
+            return nn.Sequential(nn.Linear(self.obs_dim, 256), nn.ReLU(),
+                                 nn.Linear(256, 64)).to(self.device)
+        self._rnd_tgt = mk()
+        for p in self._rnd_tgt.parameters():
+            p.requires_grad_(False)
+        self._rnd_prd = mk()
+        self._rnd_opt = torch.optim.Adam(self._rnd_prd.parameters(), lr=1e-4)
+        self._rnd_beta = float(rnd_beta)
+        self._rnd_var = 1.0
+
+    def step(self, actions, auto_reset=True):
+        obs, rew, term, trunc, info = super().step(actions, auto_reset)
+        with torch.enable_grad():
+            err = ((self._rnd_prd(obs) - self._rnd_tgt(obs)) ** 2).mean(-1)
+            self._rnd_opt.zero_grad()
+            err.mean().backward()
+            self._rnd_opt.step()
+        e = err.detach()
+        self._rnd_var = 0.99 * self._rnd_var + 0.01 * float(e.mean())
+        bonus = self._rnd_beta * e / (self._rnd_var + 1e-8)
+        return obs, rew + bonus.clamp(0, 2.0), term, trunc, info
+
+
 class RestartBankDistribution(SingleTaskDistribution):
     """Same task, but a fraction of resets start from bank states (e.g. the
     reachtree corridor) instead of q0: the Kakade-Langford restart
@@ -338,7 +372,12 @@ def stage_train(a, dev):
         levels = tuple(float(x) for x in a.speed_levels.split(','))
         extra = {'speed_levels': levels}
     y = yaml.safe_load(open(CFG))
-    if a.novelty_beta:
+    if a.rnd_beta:
+        env = RNDEnv(EnvConfig(**{**y['env'], 'n_envs': a.n_envs,
+                                  **(extra or {})}), None, dev,
+                     rnd_beta=a.rnd_beta)
+        print(f"[train] RND intrinsic bonus: beta {a.rnd_beta}")
+    elif a.novelty_beta:
         env = NoveltyEnv(EnvConfig(**{**y['env'], 'n_envs': a.n_envs,
                                       **(extra or {})}), None, dev,
                          novelty_beta=a.novelty_beta,
@@ -1188,6 +1227,8 @@ def main():
                     help='override PPO normalize_returns (0/1)')
     ap.add_argument('--ent-coef', type=float, default=None,
                     help='override the config entropy coefficient')
+    ap.add_argument('--rnd-beta', type=float, default=None,
+                    help='RND intrinsic bonus weight (method-5 OFU proxy)')
     ap.add_argument('--novelty-beta', type=float, default=None,
                     help='count-based intrinsic bonus weight (train only)')
     ap.add_argument('--novelty-cell', type=float, default=0.15,

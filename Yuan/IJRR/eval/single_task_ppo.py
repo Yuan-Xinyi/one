@@ -686,6 +686,13 @@ def stage_goexplore(a, dev):
         # the exploding number of shallow cells dilutes frontier sampling
         # and the expansion freezes)
         top = np.argsort(dep)[-256:]
+        if a.ge_bias_j7:
+            # ONE BIT of oracle knowledge: among the deepest ~2048 ties,
+            # prefer high-j7 entries (the viable edge). Tests whether the
+            # bottleneck is exploration effort or directional information.
+            cand = np.argsort(dep + rng.uniform(0, 0.5, len(dep)))[-2048:]
+            j7 = np.array([float(Q[i][6]) for i in cand])
+            top = cand[np.argsort(j7)[-256:]]
         sel[: B // 2] = rng.choice(top, size=B // 2)
         for i in np.unique(sel):
             visits[i] += int((sel == i).sum())
@@ -1049,6 +1056,9 @@ def main():
     ap.add_argument('--ge-cell', type=float, default=0.04)
     ap.add_argument('--ge-stall', type=int, default=30,
                     help='stop after this many generations w/o new cells')
+    ap.add_argument('--ge-bias-j7', action='store_true',
+                    help='bias frontier probes toward high joint-7 (one bit '
+                         'of oracle knowledge about the viable edge)')
     ap.add_argument('--bc-epochs', type=int, default=5000)
     ap.add_argument('--resume-from-ckpt', default=None,
                     help='load policy weights before PPO training')

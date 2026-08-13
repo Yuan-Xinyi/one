@@ -80,3 +80,12 @@ PPO确定性策略走到第k步交给classical续走, k=0..70全扫:
 - 没有任何切换点能进入长分支: 进分支需要几十步前的j4/j2大重排,
   s≈0.69时RL已在注定封死的扇形下缘, 局部律无法回头
 数据 hybrid_takeover.npz, 图 hybrid_takeover.png, 脚本 hybrid_takeover.py
+
+## 附6: 精确的ISRR variant B切换 (max|q_norm|滞回, 双向可多切) — task 27
+附5是"单次移交上界"; 本节照搬system_eval/rollout_controllers.py的真实规则:
+tau 0.98/0.94: 0.4811 m (48步, 1次切换, cone) — **比纯PPO 0.7007更差**
+tau放宽扫描: 0.95/0.90→0.36, 0.90/0.85→0.27, 0.85/0.80→0.18, 0.80/0.75→0.17(=classical)
+机制: PPO局部最优在s≈0.44起就要求max|q_norm|≥0.98(j6贴限位骑行到0.70),
+而1.06分支要求更深的挤压(j4→-170°); variant B的触发信号"任一关节贴近限位→classical"
+与长分支的必要条件**恰好反相关** — 它把"贴限位骑行"当危险信号, 而这正是过墙的代价
+数据 hybrid_variantB.npz, 图 hybrid_variantB.png, 脚本 hybrid_variantB_task27.py

@@ -1253,6 +1253,106 @@ def stage_vguide(a, dev):
     log.close()
 
 
+def stage_vstariter(a, dev):
+    """Fitted value iteration to DE-SATURATE Vhat_search: on a fixed ~20k
+    state set (bank + GE archive + fresh policy rollouts), precompute all 16
+    model successors and their reset-style features once, then iterate
+    Vhat <- max_a alive_a * (1 + gamma * Vhat(s'_a)) with a refit per sweep.
+    Each sweep extends the effective horizon by ~1 step beyond the 40-step
+    probe base; ~120 sweeps reach the full task depth."""
+    import torch.nn as nn
+    y, env = _env_and_yaml(128, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    model = hl.StraightModel(env)
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+    env.line_dist = SingleTaskDistribution(spec1)
+    env.reset()
+    dvec = env.line_dir[0].clone(); nvec = env.n_target[0].clone()
+    p0 = env.p_start[0].clone()
+
+    # ---- fixed state set ----
+    Ss = []
+    rb = np.load(OUT / 'reachtree_bank.npz')
+    Ss.append(torch.tensor(rb['q'], device=dev, dtype=env.kin.dtype))
+    ga = np.load(OUT / 'goexplore_archive.npz')
+    gi = np.random.default_rng(0).choice(len(ga['q']), 6000, replace=False)
+    Ss.append(torch.tensor(ga['q'][gi], device=dev, dtype=env.kin.dtype))
+    agent = VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                        hidden_dim=y['ppo']['hidden_dim']).to(dev)
+    agent.load_state_dict(torch.load(OUT / 'agent.pt', map_location=dev))
+    agent.eval()
+    with torch.no_grad():
+        for t in range(70):
+            logits = agent._logits_head(agent._actor_trunk(env.current_obs()))
+            ai = torch.distributions.Categorical(logits=logits).sample()
+            env.step(agent.vertices[ai])
+            if t % 3 == 0:
+                Ss.append(env.q.clone())
+    S = torch.cat(Ss)
+    S = S[torch.randperm(S.shape[0], device=dev)[:20000]]
+    M = S.shape[0]
+    print(f"[vstariter] state set {M}")
+
+    # ---- precompute successors + features + own features ----
+    with torch.no_grad():
+        qe = S.unsqueeze(1).expand(-1, 16, -1).reshape(M * 16, -1)
+        ae = verts.unsqueeze(0).expand(M, -1, -1).reshape(M * 16, -1)
+        CH = 32768
+        qn = torch.cat([model.step(qe[i:i+CH],
+                                   dvec.expand(min(CH, M*16-i), 3),
+                                   nvec.expand(min(CH, M*16-i), 3),
+                                   ae[i:i+CH])
+                        for i in range(0, M*16, CH)])
+        mg = torch.cat([model.margins(qn[i:i+CH],
+                                      p0.expand(min(CH, M*16-i), 3),
+                                      dvec.expand(min(CH, M*16-i), 3),
+                                      nvec.expand(min(CH, M*16-i), 3))
+                       for i in range(0, M*16, CH)])
+        alive = (mg.amin(-1) > 0).float().reshape(M, 16)
+
+        def featurize(qbatch):
+            outs = []
+            FB = 65536
+            for i in range(0, qbatch.shape[0], FB):
+                chunk = qbatch[i:i+FB]
+                fenv = NSRLBatchedEnv(EnvConfig(**{**y['env'],
+                                      'n_envs': chunk.shape[0]}), None, dev)
+                fenv.line_dist = ScriptedLineDistribution(
+                    {'q0': chunk,
+                     'line_dir': dvec[None].expand(chunk.shape[0], 3).clone(),
+                     'n_target': nvec[None].expand(chunk.shape[0], 3).clone()})
+                fenv.reset()
+                outs.append(fenv.current_obs().clone())
+                del fenv
+            return torch.cat(outs)
+        F_next = featurize(qn)                      # (M*16, obs)
+        F_own = featurize(S)                        # (M, obs)
+    print("[vstariter] features ready")
+
+    vnet = _vstar_net(env.obs_dim, dev)
+    vnet.load_state_dict(torch.load(REPO / a.opt_value, map_location=dev))
+    opt = torch.optim.Adam(vnet.parameters(), lr=5e-4)
+    for sweep in range(a.vi_sweeps):
+        with torch.no_grad():
+            vn = torch.cat([vnet(F_next[i:i+65536]).squeeze(-1)
+                            for i in range(0, M*16, 65536)]).reshape(M, 16)
+            target = (alive * (1.0 + 0.99 * vn)).max(-1).values
+        for ep in range(60):
+            idx = torch.randint(0, M, (1024,), device=dev)
+            loss = torch.nn.functional.smooth_l1_loss(
+                vnet(F_own[idx]).squeeze(-1), target[idx])
+            opt.zero_grad(); loss.backward(); opt.step()
+        if sweep % 20 == 0:
+            print(f"  vi sweep {sweep:>4}  target mean {float(target.mean()):.1f} "
+                  f"max {float(target.max()):.1f}  loss {float(loss):.3f}",
+                  flush=True)
+    torch.save(vnet.state_dict(), OUT / 'vstar_net_vi.pt')
+    print(f"wrote {OUT / 'vstar_net_vi.pt'}")
+
+
 @torch.no_grad()
 def _record_traj(env, spec1, fn):
     """Roll one episode on the single task, recording q after every step."""
@@ -1352,7 +1452,8 @@ def main():
                     choices=['select', 'select2', 'train', 'report',
                              'ceiling', 'traj', 'reachtree', 'goexplore',
                              'goexplore_env', 'selfimitate', 'fqi',
-                             'vstarfit', 'vguide'])
+                             'vstarfit', 'vguide', 'vstariter'])
+    ap.add_argument('--vi-sweeps', type=int, default=140)
     ap.add_argument('--vguide-updates', type=int, default=1500)
     ap.add_argument('--ent-coef2', type=float, default=0.01,
                     help='entropy bonus in the vguide objective')
@@ -1434,7 +1535,8 @@ def main():
      'traj': stage_traj, 'reachtree': stage_reachtree,
      'goexplore': stage_goexplore, 'goexplore_env': stage_goexplore_env,
      'selfimitate': stage_selfimitate, 'fqi': stage_fqi,
-     'vstarfit': stage_vstarfit, 'vguide': stage_vguide}[a.stage](a, dev)
+     'vstarfit': stage_vstarfit, 'vguide': stage_vguide,
+     'vstariter': stage_vstariter}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

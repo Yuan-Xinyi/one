@@ -1547,8 +1547,11 @@ def stage_vdagger(a, dev):
     for r in range(depth - 1, -1, -1):
         np.maximum.at(rem[r], parents[r], rem[r + 1] + 1)
 
-    # state PROPOSALS: per-depth uniform sample + the deep backbone in full
-    S_l = []
+    # state PROPOSALS: per-depth uniform sample + the deep backbone in full.
+    # Each proposal carries its tree label rem (exact along the backbone,
+    # biased low elsewhere); the final label is max(tree, probe) — both are
+    # lower bounds of V*, and only the tree sees the filament from afar.
+    S_l, treelab_l = [], []
     per_depth = max(50, a.vd_states // max(depth, 1))
     rng2 = np.random.default_rng(1)
     for r in range(depth + 1):
@@ -1557,8 +1560,12 @@ def stage_vdagger(a, dev):
         k = min(P, per_depth)
         idx = np.union1d(bb, rng2.choice(P, k, replace=False))
         S_l.append(pools[r][idx])
+        treelab_l.append(rem[r][idx])
     S = torch.cat(S_l).to(dev)
-    say(f"[vdagger] state proposals: {S.shape[0]}")
+    TREELAB = torch.tensor(np.concatenate(treelab_l), device=dev,
+                           dtype=torch.float32)
+    say(f"[vdagger] state proposals: {S.shape[0]}  "
+        f"(backbone labels max {float(TREELAB.max()):.0f})")
 
     # ---- featurizer (reset-style obs, same as the vguide runtime) ----
     def featurize(qbatch):
@@ -1640,8 +1647,8 @@ def stage_vdagger(a, dev):
     OBS = featurize(S)
     say(f"[vdagger] features ready; probing proposal labels (H={probe_h})")
     t1 = time.time()
-    LAB = probe_batch(S, H=probe_h)
-    say(f"[vdagger] probe labels: mean {float(LAB.mean()):.1f} "
+    LAB = torch.maximum(probe_batch(S, H=probe_h), TREELAB)
+    say(f"[vdagger] labels (max of probe, tree): mean {float(LAB.mean()):.1f} "
         f"max {float(LAB.max()):.0f} zeros "
         f"{float((LAB == 0).float().mean()):.2f}  "
         f"({time.time() - t1:.0f}s)")

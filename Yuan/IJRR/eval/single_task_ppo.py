@@ -1332,24 +1332,35 @@ def stage_vstariter(a, dev):
         F_own = featurize(S)                        # (M, obs)
     print("[vstariter] features ready")
 
-    vnet = _vstar_net(env.obs_dim, dev)
-    vnet.load_state_dict(torch.load(REPO / a.opt_value, map_location=dev))
-    opt = torch.optim.Adam(vnet.parameters(), lr=5e-4)
+    # twin networks + clipped (min) targets: plain max-backup VI on a fitted
+    # net inflates optimistic bubbles that a greedy policy then chases into
+    # walls (vguide v2 died confidently at 0.30)
+    nets, opts = [], []
+    for k in range(2):
+        vk = _vstar_net(env.obs_dim, dev)
+        vk.load_state_dict(torch.load(REPO / a.opt_value, map_location=dev))
+        nets.append(vk)
+        opts.append(torch.optim.Adam(vk.parameters(), lr=5e-4))
     for sweep in range(a.vi_sweeps):
         with torch.no_grad():
-            vn = torch.cat([vnet(F_next[i:i+65536]).squeeze(-1)
-                            for i in range(0, M*16, 65536)]).reshape(M, 16)
+            vmins = []
+            for i in range(0, M*16, 65536):
+                v1 = nets[0](F_next[i:i+65536]).squeeze(-1)
+                v2 = nets[1](F_next[i:i+65536]).squeeze(-1)
+                vmins.append(torch.minimum(v1, v2))
+            vn = torch.cat(vmins).reshape(M, 16)
             target = (alive * (1.0 + 0.99 * vn)).max(-1).values
-        for ep in range(60):
-            idx = torch.randint(0, M, (1024,), device=dev)
-            loss = torch.nn.functional.smooth_l1_loss(
-                vnet(F_own[idx]).squeeze(-1), target[idx])
-            opt.zero_grad(); loss.backward(); opt.step()
+        for k in range(2):
+            for ep in range(60):
+                idx = torch.randint(0, M, (1024,), device=dev)
+                loss = torch.nn.functional.smooth_l1_loss(
+                    nets[k](F_own[idx]).squeeze(-1), target[idx])
+                opts[k].zero_grad(); loss.backward(); opts[k].step()
         if sweep % 20 == 0:
             print(f"  vi sweep {sweep:>4}  target mean {float(target.mean()):.1f} "
                   f"max {float(target.max()):.1f}  loss {float(loss):.3f}",
                   flush=True)
-    torch.save(vnet.state_dict(), OUT / 'vstar_net_vi.pt')
+    torch.save(nets[0].state_dict(), OUT / 'vstar_net_vi.pt')
     print(f"wrote {OUT / 'vstar_net_vi.pt'}")
 
 

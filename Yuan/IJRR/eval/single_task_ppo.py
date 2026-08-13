@@ -745,6 +745,22 @@ def stage_goexplore(a, dev):
              archive_size=len(Q), frontier_depth=depth[best_i],
              cell=CELL, k=K, batch=B)
     print(f"wrote {OUT / 'goexplore.npz'}")
+    # dump a depth-stratified sample of the archive itself (the EXPLORED
+    # region) for visualization against the optimal corridor
+    dep_arr = np.array(depth)
+    rng3 = np.random.default_rng(3)
+    keep_idx = []
+    for dv in range(dep_arr.max() + 1):
+        ids = np.nonzero(dep_arr == dv)[0]
+        if len(ids):
+            keep_idx.append(rng3.choice(ids, min(256, len(ids)),
+                                        replace=False))
+    keep_idx = np.concatenate(keep_idx)
+    np.savez(OUT / 'goexplore_archive.npz',
+             q=torch.stack([Q[i] for i in keep_idx]).cpu().numpy(),
+             depth=dep_arr[keep_idx])
+    print(f"wrote {OUT / 'goexplore_archive.npz'} "
+          f"({len(keep_idx)} states)")
 
 
 @torch.no_grad()

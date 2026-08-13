@@ -2244,15 +2244,21 @@ def stage_pool(a, dev):
 
     @torch.no_grad()
     def featurize(q, d, n, aprev):
-        m = q.shape[0]
-        pad = CAP - m
-        qq = torch.cat([q, q[:1].expand(pad, 7)]) if pad else q
-        dd = torch.cat([d, d[:1].expand(pad, 3)]) if pad else d
-        nn_ = torch.cat([n, n[:1].expand(pad, 3)]) if pad else n
-        fenv.line_dist = ScriptedLineDistribution(
-            {'q0': qq, 'line_dir': dd, 'n_target': nn_})
-        fenv.reset()
-        o = fenv.current_obs()[:m].clone()
+        outs = []
+        for i in range(0, q.shape[0], CAP):
+            qs, ds = q[i:i + CAP], d[i:i + CAP]
+            ns = n[i:i + CAP]
+            m = qs.shape[0]
+            pad = CAP - m
+            if pad > 0:
+                qs = torch.cat([qs, qs[:1].expand(pad, 7)])
+                ds = torch.cat([ds, ds[:1].expand(pad, 3)])
+                ns = torch.cat([ns, ns[:1].expand(pad, 3)])
+            fenv.line_dist = ScriptedLineDistribution(
+                {'q0': qs, 'line_dir': ds, 'n_target': ns})
+            fenv.reset()
+            outs.append(fenv.current_obs()[:m].clone())
+        o = torch.cat(outs)
         o[:, -4:] = aprev
         return o
 
@@ -2316,7 +2322,11 @@ def stage_pool(a, dev):
                     torch.rand(child.shape[0], device=dev, dtype=dtype))))
             else:
                 rank = torch.rand(child.shape[0], device=dev, dtype=dtype)
-            order = torch.argsort(te.to(dtype) * 1e6 - rank)
+            # lexicographic (task, rank desc): a float composite key loses
+            # the rank at task-index magnitude and splits a task into
+            # several runs, which breaks the per-task width cap
+            o1 = torch.argsort(rank, descending=True)
+            order = o1[torch.argsort(te[o1], stable=True)]
             te_s = te[order]
             ar = torch.arange(te_s.shape[0], device=dev)
             bnd = torch.nn.functional.pad(
@@ -2464,7 +2474,13 @@ def stage_pool(a, dev):
         chunk = order_tr[ptr:ptr + a.pool_chunk]
         ptr += a.pool_chunk
         t0 = time.time()
-        found = pooled_search(chunk, W, guided=(rnd > 0))
+        try:
+            found = pooled_search(chunk, W, guided=(rnd > 0))
+        except RuntimeError as e:
+            say(f"[pool] r{rnd} search failed, skipping chunk: {e}")
+            torch.cuda.empty_cache()
+            rnd += 1
+            continue
         t_srch = time.time() - t0
         n_new, n_imp = 0, 0
         for ti, (pr_, seq) in found.items():

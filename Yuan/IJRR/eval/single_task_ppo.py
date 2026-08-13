@@ -351,7 +351,15 @@ def stage_train(a, dev):
     if a.restart_bank:
         bk = np.load(REPO / a.restart_bank)
         q_bank = torch.tensor(bk['q'], device=dev, dtype=env.kin.dtype)
-        if a.restart_curriculum:
+        if a.restart_window:
+            lo, hi = (int(x) for x in a.restart_window.split(','))
+            m = (bk['depth'] >= lo) & (bk['depth'] <= hi)
+            q_bank = q_bank[torch.tensor(m, device=dev)]
+            env.line_dist = RestartBankDistribution(spec1, q_bank,
+                                                    a.restart_frac)
+            print(f"[train] fixed-window bank [{lo},{hi}]: "
+                  f"{q_bank.shape[0]} states, frac {a.restart_frac}")
+        elif a.restart_curriculum:
             depths = torch.tensor(bk['depth'], device=dev)
             env.line_dist = CurriculumBankDistribution(
                 spec1, q_bank, depths, a.restart_frac,
@@ -982,6 +990,78 @@ def stage_selfimitate(a, dev):
           f"-> {OUT / 'agent_bc.pt'}")
 
 
+def stage_fqi(a, dev):
+    """Method 3 evidence run: offline fitted Q-iteration with the Bellman
+    OPTIMALITY backup (max over actions) on data collected from archive
+    restarts with random behavior. Tests whether max-semantics value
+    propagation alone (no policy-gradient, no imitation) can rank the
+    filament correctly and act on it from q0."""
+    import torch.nn as nn
+    y, env = _env_and_yaml(128, dev)
+    task, spec1 = _load_task(dev, env.kin.dtype)
+    bk = np.load(REPO / a.restart_bank)
+    q_bank = torch.tensor(bk['q'], device=dev, dtype=env.kin.dtype)
+    env.line_dist = RestartBankDistribution(spec1, q_bank, 0.7)
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * env.act_dim, indexing='ij'),
+                 -1).reshape(-1, env.act_dim), dtype=torch.float32,
+        device=dev)
+
+    N_STEPS = a.fqi_data // 128
+    obs_b, act_b, rew_b, nxt_b, dn_b = [], [], [], [], []
+    env.reset()
+    with torch.no_grad():
+        o = env.current_obs()
+        for t in range(N_STEPS):
+            a_idx = torch.randint(0, 16, (128,), device=dev)
+            o2, r, term, trunc, info = env.step(verts[a_idx])
+            done = (term | trunc)
+            nxt = torch.where(done.unsqueeze(-1), info['terminal_obs'], o2)
+            obs_b.append(o.clone()); act_b.append(a_idx.clone())
+            rew_b.append(r.clone()); nxt_b.append(nxt.clone())
+            dn_b.append(done.clone())
+            o = o2
+    OBS = torch.cat(obs_b); ACT = torch.cat(act_b); REW = torch.cat(rew_b)
+    NXT = torch.cat(nxt_b); DN = torch.cat(dn_b).float()
+    print(f"[fqi] dataset {OBS.shape[0]} transitions, "
+          f"mean r {float(REW.mean()):.3f}, done frac {float(DN.mean()):.3f}")
+
+    def mknet():
+        return nn.Sequential(
+            nn.Linear(env.obs_dim, 512), nn.ReLU(),
+            nn.Linear(512, 512), nn.ReLU(),
+            nn.Linear(512, 512), nn.ReLU(), nn.Linear(512, 16)).to(dev)
+    qnet, tgt = mknet(), mknet()
+    tgt.load_state_dict(qnet.state_dict())
+    opt = torch.optim.Adam(qnet.parameters(), lr=3e-4)
+    M = OBS.shape[0]
+    for it in range(a.fqi_iters):
+        idx = torch.randint(0, M, (4096,), device=dev)
+        with torch.no_grad():
+            target = REW[idx] + 0.99 * (1 - DN[idx]) * tgt(NXT[idx]).max(-1).values
+        qsa = qnet(OBS[idx]).gather(1, ACT[idx][:, None]).squeeze(-1)
+        loss = nn.functional.smooth_l1_loss(qsa, target)
+        opt.zero_grad(); loss.backward(); opt.step()
+        if it % 500 == 0:
+            tgt.load_state_dict(qnet.state_dict())
+            print(f"  fqi {it:>6}  loss {float(loss):.4f}", flush=True)
+
+    _, env1 = _env_and_yaml(2, dev)
+    env1.line_dist = SingleTaskDistribution(spec1)
+    env1.reset()
+    with torch.no_grad():
+        for t in range(env1.max_steps):
+            a_idx = qnet(env1.current_obs()).argmax(-1)
+            env1.step(verts[a_idx], auto_reset=False)
+            if bool(env1.done_persistent.all()):
+                break
+    p, _, _, _ = env1.kin.tcp_fk_jac(env1.q)
+    prog = float(((p[0] - env1.p_start[0]) * env1.line_dir[0]).sum())
+    torch.save(qnet.state_dict(), OUT / 'fqi_qnet.pt')
+    print(f"[fqi] greedy policy from q0: {prog:.4f} m -> "
+          f"{OUT / 'fqi_qnet.pt'}")
+
+
 @torch.no_grad()
 def _record_traj(env, spec1, fn):
     """Roll one episode on the single task, recording q after every step."""
@@ -1080,7 +1160,9 @@ def main():
     ap.add_argument('--stage', required=True,
                     choices=['select', 'select2', 'train', 'report',
                              'ceiling', 'traj', 'reachtree', 'goexplore',
-                             'goexplore_env', 'selfimitate'])
+                             'goexplore_env', 'selfimitate', 'fqi'])
+    ap.add_argument('--fqi-data', type=int, default=400_000)
+    ap.add_argument('--fqi-iters', type=int, default=20_000)
     ap.add_argument('--ge-generations', type=int, default=400)
     ap.add_argument('--ge-batch', type=int, default=4096)
     ap.add_argument('--ge-k', type=int, default=15)
@@ -1118,6 +1200,9 @@ def main():
                          'fraction of training resets start from these '
                          'states instead of q0')
     ap.add_argument('--restart-frac', type=float, default=0.5)
+    ap.add_argument('--restart-window', default=None,
+                    help='"lo,hi": fixed depth window into the restart bank '
+                         '(competence-gated curriculum driver sets this)')
     ap.add_argument('--restart-curriculum', type=int, default=0,
                     help='>0: reverse-order curriculum — bank resets start '
                          'deepest-only and the window slides to the full '
@@ -1148,7 +1233,7 @@ def main():
      'report': stage_report, 'ceiling': stage_ceiling,
      'traj': stage_traj, 'reachtree': stage_reachtree,
      'goexplore': stage_goexplore, 'goexplore_env': stage_goexplore_env,
-     'selfimitate': stage_selfimitate}[a.stage](a, dev)
+     'selfimitate': stage_selfimitate, 'fqi': stage_fqi}[a.stage](a, dev)
 
 
 if __name__ == '__main__':

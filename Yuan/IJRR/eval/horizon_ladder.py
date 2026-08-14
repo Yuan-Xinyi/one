@@ -390,6 +390,70 @@ def make_vlook(model, env, agent, chunk=32768):
     return fn
 
 
+def make_vbeam(model, env, agent, width, H, chunk=32768):
+    """Multi-step version of make_vlook: a beam over vertex sequences kept
+    alive by the exact model and pruned by the learned value, returning the
+    first action of the best surviving leaf. H=1, width=1 reduces to vlook.
+
+    Tests whether horizon buys anything on the LEARNED scalar — on the
+    handcrafted margin it does not (the exact two-step tree is worth +0.003).
+    """
+    m = model.act_dim
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * m, indexing='ij'),
+                 -1).reshape(-1, m), dtype=torch.float32,
+        device=model.q_mid.device)
+    K = verts.shape[0]
+
+    def _value(e, q, d, n, a):
+        return torch.cat([agent.critic(
+            _obs_of(e, q[i:i + chunk], d[i:i + chunk], n[i:i + chunk],
+                    a[i:i + chunk])).squeeze(-1)
+            for i in range(0, q.shape[0], chunk)])
+
+    @torch.no_grad()
+    def fn(e, done):
+        B = e.n_envs
+        dev_ = e.q.device
+        q = e.q.unsqueeze(1)                       # (B, W, dof)
+        first = torch.zeros((B, 1), dtype=torch.long, device=dev_)
+        val = torch.zeros((B, 1), device=dev_)
+        for h in range(H):
+            Wc = q.shape[1]
+            qe = q.unsqueeze(2).expand(-1, -1, K, -1).reshape(B * Wc * K, -1)
+            ae = verts.view(1, 1, K, m).expand(B, Wc, -1, -1).reshape(-1, m)
+            de = e.line_dir.view(B, 1, 1, -1).expand(
+                -1, Wc, K, -1).reshape(-1, 3)
+            ne = e.n_target.view(B, 1, 1, -1).expand(
+                -1, Wc, K, -1).reshape(-1, 3)
+            pe = e.p_start.view(B, 1, 1, -1).expand(
+                -1, Wc, K, -1).reshape(-1, 3)
+            qn = torch.cat([model.step(qe[i:i + chunk], de[i:i + chunk],
+                                       ne[i:i + chunk], ae[i:i + chunk])
+                            for i in range(0, qe.shape[0], chunk)])
+            mg = torch.cat([model.margins(qn[i:i + chunk], pe[i:i + chunk],
+                                          de[i:i + chunk], ne[i:i + chunk])
+                            for i in range(0, qe.shape[0], chunk)])
+            alive = (mg.amin(-1) > 0)
+            v = _value(e, qn, de, ne, ae)
+            v = torch.where(alive, v, torch.full_like(v, -1e9))
+            v = v.reshape(B, Wc * K)
+            fn_new = (torch.arange(K, device=dev_).view(1, 1, K)
+                      .expand(B, Wc, -1) if h == 0
+                      else first.unsqueeze(-1).expand(-1, -1, K))
+            fn_new = fn_new.reshape(B, Wc * K)
+            qn = qn.reshape(B, Wc * K, -1)
+            Wk = min(width, Wc * K)
+            top = v.topk(Wk, dim=-1).indices
+            val = torch.gather(v, 1, top)
+            first = torch.gather(fn_new, 1, top)
+            q = torch.gather(qn, 1, top.unsqueeze(-1).expand(
+                -1, -1, qn.shape[-1]))
+        best = val.argmax(dim=1)
+        return verts[first[torch.arange(B, device=dev_), best]]
+    return fn
+
+
 def make_hybrid(env, agent, classical, tau_enter, tau_exit):
     """The deployed RL/classical switching law (variant B): hand over to the
     classical controller once any joint passes tau_enter of its range, hand
@@ -494,9 +558,47 @@ def make_cem(model, H, pop=64, iters=3, elite=8, objective='progress'):
     return fn
 
 
+def _value_agent(a, env, dev):
+    """The network whose critic scores successors for the vlook/vbeam arms.
+
+    Default: the deployed policy checkpoint of this robot. --vlook-ckpt
+    swaps in another agent directory (training-recipe ablation), 'random'
+    an untrained network (floor), and --vlook-value a standalone value MLP
+    fitted outside PPO (does the gain need PPO, or only a good value?).
+    """
+    import torch.nn as nn
+    if a.vlook_value:
+        net = nn.Sequential(nn.Linear(env.obs_dim, 512), nn.ReLU(),
+                            nn.Linear(512, 512), nn.ReLU(),
+                            nn.Linear(512, 512), nn.ReLU(),
+                            nn.Linear(512, 1)).to(dev)
+        net.load_state_dict(torch.load(REPO / a.vlook_value,
+                                       map_location=dev))
+        net.eval()
+
+        class _W:
+            critic = net
+        print(f'[vlook] standalone value net {a.vlook_value}')
+        return _W()
+    if a.vlook_ckpt == 'random':
+        from Yuan.IJRR.stage2_traj.vertex_agent import VertexAgent
+        print('[vlook] UNTRAINED critic (floor control)')
+        return VertexAgent(obs_dim=env.obs_dim, act_dim=env.act_dim,
+                           hidden_dim=512).to(dev).eval()
+    ck = REPO / (a.vlook_ckpt or ROBOTS[a.robot][1])
+    if a.vlook_ckpt:
+        print(f'[vlook] critic from {a.vlook_ckpt}')
+    return _agent(ck, env.obs_dim, dev, act_dim=env.act_dim)
+
+
 @torch.no_grad()
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--vlook-ckpt', default=None,
+                    help="agent dir whose critic scores successors, or "
+                         "'random' for an untrained floor")
+    ap.add_argument('--vlook-value', default=None,
+                    help='standalone value MLP state dict (non-PPO ablation)')
     ap.add_argument('--arms', default='zero,classical,myopic,vertex')
     ap.add_argument('--n-tasks', type=int, default=1024)
     ap.add_argument('--seed', type=int, default=4242)
@@ -591,8 +693,11 @@ def main():
             ag = _agent(REPO / CKPT, env.obs_dim, dev, act_dim=env.act_dim)
             arms[name] = lambda e, dn, g_=ag: g_.actor_mean(e.current_obs())
         elif name == 'vlook':
-            ag = _agent(REPO / CKPT, env.obs_dim, dev, act_dim=env.act_dim)
-            arms[name] = make_vlook(model, env, ag)
+            arms[name] = make_vlook(model, env, _value_agent(a, env, dev))
+        elif name.startswith('vbeam'):
+            w_, h_ = name[5:].split('x')
+            arms[name] = make_vbeam(model, env, _value_agent(a, env, dev),
+                                    int(w_), int(h_))
         elif name.startswith('hybrid'):
             ag = _agent(REPO / CKPT, env.obs_dim, dev, act_dim=env.act_dim)
             te, tx = ((float(x) for x in name[6:].split('_'))

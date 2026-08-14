@@ -152,8 +152,13 @@ def make_myopic(model):
         n = env.n_target.unsqueeze(1).expand(-1, K, -1).reshape(N * K, 3)
         p0 = env.p_start.unsqueeze(1).expand(-1, K, -1).reshape(N * K, 3)
         a = verts.unsqueeze(0).expand(N, -1, -1).reshape(N * K, -1)
-        qn = model.step(q, d, n, a)
-        M = model.softmin_margin(qn, p0, d, n).reshape(N, K)
+        CH = 32768                     # batched-eigvalsh limit
+        qn = torch.cat([model.step(q[i:i + CH], d[i:i + CH], n[i:i + CH],
+                                   a[i:i + CH])
+                        for i in range(0, N * K, CH)])
+        M = torch.cat([model.softmin_margin(qn[i:i + CH], p0[i:i + CH],
+                                            d[i:i + CH], n[i:i + CH])
+                       for i in range(0, N * K, CH)]).reshape(N, K)
         return verts[M.argmax(dim=-1)]
     return fn
 

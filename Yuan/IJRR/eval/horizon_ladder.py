@@ -325,6 +325,92 @@ def make_beam(model, width, H, chunk=32768):
     return fn
 
 
+def _obs_of(env, q, d, n, a_prev):
+    """The environment's observation, built analytically for arbitrary states.
+
+    Mirrors NSRLBatchedEnv._compute_obs for the straight-ray configs (no
+    curvature / ray-error / prior-logit channels); verified against
+    env.current_obs() at startup whenever the vlook arm is used.
+    """
+    p_tcp, R, _, _ = env.kin.tcp_fk_jac(q)
+    z_tool = R[:, :, 2]
+    q_norm = (q - env.q_mid) / env.q_half
+    cos_angle = (z_tool * n).sum(-1, keepdim=True)
+    return torch.cat([q_norm, q_norm * q_norm, d, z_tool, n, cos_angle,
+                      torch.linalg.cross(z_tool, n, dim=-1), a_prev], -1)
+
+
+def make_vlook(model, env, agent, chunk=32768):
+    """One-step lookahead ranked by the LEARNED VALUE: enumerate all 2^m
+    vertex commands with the exact model, drop the ones whose successor
+    violates a constraint, and take the survivor the critic scores highest.
+
+    Same model budget as the myopic margin law (2^m successor evaluations
+    per command); the only difference is that the successor is scored by the
+    policy's value head instead of a handcrafted margin potential.
+    """
+    m = model.act_dim
+    verts = torch.tensor(
+        np.stack(np.meshgrid(*[[-1.0, 1.0]] * m, indexing='ij'),
+                 -1).reshape(-1, m), dtype=torch.float32,
+        device=model.q_mid.device)
+    K = verts.shape[0]
+
+    checked = []
+
+    @torch.no_grad()
+    def fn(e, done):
+        if not checked:          # the analytic obs must equal the env's
+            err = float((e.current_obs()
+                         - _obs_of(e, e.q, e.line_dir, e.n_target,
+                                   e.a_prev)).abs().max())
+            print(f'[vlook] analytic-obs check: max |dobs| = {err:.2e}',
+                  flush=True)
+            assert err < 1e-4, 'analytic observation does not match the env'
+            checked.append(True)
+        B = e.n_envs
+        qe = e.q.repeat_interleave(K, 0)
+        ae = verts.unsqueeze(0).expand(B, -1, -1).reshape(B * K, m)
+        de = e.line_dir.repeat_interleave(K, 0)
+        ne = e.n_target.repeat_interleave(K, 0)
+        pe = e.p_start.repeat_interleave(K, 0)
+        qn = torch.cat([model.step(qe[i:i + chunk], de[i:i + chunk],
+                                   ne[i:i + chunk], ae[i:i + chunk])
+                        for i in range(0, B * K, chunk)])
+        mg = torch.cat([model.margins(qn[i:i + chunk], pe[i:i + chunk],
+                                      de[i:i + chunk], ne[i:i + chunk])
+                        for i in range(0, B * K, chunk)])
+        alive = (mg.amin(-1) > 0).reshape(B, K)
+        v = torch.cat([agent.critic(
+            _obs_of(e, qn[i:i + chunk], de[i:i + chunk], ne[i:i + chunk],
+                    ae[i:i + chunk])).squeeze(-1)
+            for i in range(0, B * K, chunk)]).reshape(B, K)
+        v = torch.where(alive, v, torch.full_like(v, -1e9))
+        return verts[v.argmax(-1)]
+    return fn
+
+
+def make_hybrid(env, agent, classical, tau_enter, tau_exit):
+    """The deployed RL/classical switching law (variant B): hand over to the
+    classical controller once any joint passes tau_enter of its range, hand
+    back below tau_exit."""
+    base = cn_action_fn(classical)
+    state = {}
+
+    @torch.no_grad()
+    def fn(e, done):
+        qn = ((e.q - e.q_mid) / e.q_half).abs().max(dim=-1).values
+        using_rl = state.get('using_rl')
+        if using_rl is None or using_rl.shape[0] != qn.shape[0]:
+            using_rl = qn < tau_enter
+        stay = torch.where(using_rl, qn < tau_enter, qn < tau_exit)
+        state['using_rl'] = stay
+        return torch.where(stay.unsqueeze(-1),
+                           agent.actor_mean(e.current_obs()).clamp(-1.0, 1.0),
+                           base(e))
+    return fn
+
+
 def make_learnedW(env):
     """a = sgn(B^T grad W_theta(q, c)): the learned value field consumed
     exactly like the handcrafted margin field in make_sgngrad. The gradient
@@ -504,6 +590,14 @@ def main():
         elif name == 'vertex':
             ag = _agent(REPO / CKPT, env.obs_dim, dev, act_dim=env.act_dim)
             arms[name] = lambda e, dn, g_=ag: g_.actor_mean(e.current_obs())
+        elif name == 'vlook':
+            ag = _agent(REPO / CKPT, env.obs_dim, dev, act_dim=env.act_dim)
+            arms[name] = make_vlook(model, env, ag)
+        elif name.startswith('hybrid'):
+            ag = _agent(REPO / CKPT, env.obs_dim, dev, act_dim=env.act_dim)
+            te, tx = ((float(x) for x in name[6:].split('_'))
+                      if '_' in name[6:] else (0.98, 0.94))
+            arms[name] = make_hybrid(env, ag, classical, te, tx)
         else:
             raise ValueError(name)
 

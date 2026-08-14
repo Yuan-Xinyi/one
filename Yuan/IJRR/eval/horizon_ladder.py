@@ -594,6 +594,10 @@ def _value_agent(a, env, dev):
 @torch.no_grad()
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--cfg-override', default=None,
+                    help='env yaml overriding the robot default')
+    ap.add_argument('--ckpt-override', default=None,
+                    help='agent dir overriding the robot default')
     ap.add_argument('--vlook-ckpt', default=None,
                     help="agent dir whose critic scores successors, or "
                          "'random' for an untrained floor")
@@ -615,6 +619,10 @@ def main():
     global SUB
     SUB = a.sub
     CFG, CKPT = ROBOTS[a.robot]
+    if a.cfg_override:
+        CFG = a.cfg_override
+    if a.ckpt_override:
+        CKPT = a.ckpt_override
     dev = torch.device(a.device)
     y = yaml.safe_load(open(REPO / CFG))
     keys = {f.name for f in dataclasses.fields(EnvConfig)}

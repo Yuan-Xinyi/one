@@ -286,6 +286,15 @@ def main():
         Wit = wz["W"][sel]
         print(f"[bound] rollout witnesses: {a.witness}  "
               f"({int(np.isfinite(Wit[:, :, 0]).sum())} points)")
+        if "p_start" in wz.files:
+            # march along the EXECUTED ray: the deployed start configuration
+            # sits within the position tolerance of the nominal p0, so the
+            # rollout's own ray is offset by up to that tolerance; both sides
+            # of the bracket must share one ray for the arc lengths to be
+            # comparable
+            p0 = wz["p_start"][sel].astype(np.float32)
+            print("[bound] marching along the executed ray "
+                  "(p_start from the witness file)")
     n_wcert = 0
     t0 = time.time()
 
@@ -293,37 +302,44 @@ def main():
         if not len(alive):
             break
         s = r * a.step
-        pts = np.repeat(p0[alive] + d[alive] * s, M, axis=0)
-        zs = dirs[alive].reshape(-1, 3)
-        nrf = np.repeat(n_t[alive], M, axis=0)
-        hints = []
-        if not (r == 0 and not seeded):
-            hints.append(np.repeat(q_prev[alive], M, axis=0))
+        certified = np.zeros(N, bool)
         if Wit is not None and r < Wit.shape[1]:
             w = Wit[alive, r]
             have = np.isfinite(w).all(axis=1)
             if have.any():
-                # the witness is tried FIRST: the projector pulls it the few
-                # millimetres from the rollout's crossing onto p(s) exactly,
-                # then the full constraint check runs as for any candidate
-                n_wcert += int(have.sum())
-                wfull = np.where(have[:, None], w, q_prev[alive])
-                hints.append(np.repeat(wfull, M, axis=0))
-        ok, q = feasible_rows(env, tree, T, pts, zs, nrf, cos_lim, tube,
-                              k_nn=a.k_nn, n_try=a.n_try,
-                              q_hint=hints if hints else None)
-        ok = ok.reshape(len(alive), M)
-        q = q.reshape(len(alive), M, 7)
-        any_ok = ok.any(axis=1)
-        pick = ok.argmax(axis=1)
-        q_prev[alive[any_ok]] = q[np.arange(len(alive)), pick][any_ok]
-        first_bad[alive[~any_ok]] = r
+                rows = alive[have]
+                wq = w[have].astype(np.float32)
+                for c_lo in range(0, len(rows), a.chunk):
+                    rr = rows[c_lo:c_lo + a.chunk]
+                    ww = wq[c_lo:c_lo + a.chunk]
+                    fine = witness_rows(env, ww, p0[rr] + d[rr] * s,
+                                        n_t[rr], cos_lim, tube)
+                    certified[rr[fine]] = True
+                    q_prev[rr[fine]] = ww[fine]
+                    n_wcert += int(fine.sum())
+        search = alive[~certified[alive]]
+        if len(search):
+            pts = np.repeat(p0[search] + d[search] * s, M, axis=0)
+            zs = dirs[search].reshape(-1, 3)
+            nrf = np.repeat(n_t[search], M, axis=0)
+            hint = np.repeat(q_prev[search], M, axis=0)
+            ok, q = feasible_rows(env, tree, T, pts, zs, nrf, cos_lim, tube,
+                                  k_nn=a.k_nn, n_try=a.n_try,
+                                  q_hint=None if (r == 0 and not seeded)
+                                  else hint)
+            ok = ok.reshape(len(search), M)
+            q = q.reshape(len(search), M, 7)
+            any_ok = ok.any(axis=1)
+            pick = ok.argmax(axis=1)
+            q_prev[search[any_ok]] = q[np.arange(len(search)), pick][any_ok]
+            first_bad[search[~any_ok]] = r
         if witness is not None:
-            witness[alive[any_ok], r] = q_prev[alive[any_ok]]
-        alive = alive[any_ok]
+            still = alive[first_bad[alive] < 0]
+            witness[still, r] = q_prev[still]
+        alive = alive[first_bad[alive] < 0]
         if r % 10 == 0 or not len(alive):
             print(f"[bound] s={s:.2f} m  alive {len(alive):5d}/{N}  "
-                  f"witness rows {n_wcert}  "
+                  f"witness-certified {n_wcert}  "
                   f"{time.time() - t0:6.1f}s", flush=True)
 
     censored = first_bad < 0

@@ -73,7 +73,7 @@
 
 %new colors
 \definecolor{darkorange}{rgb}{1.0, 0.55, 0.0}
-\newcommand{\xinyi}[1]{{\color{darkorange}\begin{CJK*}{UTF8}{gkai}#1\end{CJK*}}}
+\newcommand{\xinyi}[1]{{\color{babyblue}\begin{CJK*}{UTF8}{gkai}#1\end{CJK*}}}
 \newcommand{\xinyitodo}[1]{{\color{darkgreen}\begin{CJK*}{UTF8}{gkai}#1\end{CJK*}}}
 % Text written in this revision pass; existing prose is left untouched.
 \newcommand{\new}[1]{\textcolor{red}{#1}}
@@ -122,15 +122,17 @@ Extreme Motion Generation, Continuous Kinematic Reachability, Redundant Manipula
     \label{fig:pwgap}
 \end{figure}
 
-\new{The outcome of an extended stroke is determined by two coupled choices that no reachability map captures. The first is made once, before the motion begins: which branch of the task-feasible configuration set the stroke starts on, a discrete choice no continuous motion can revise. The second is made at every control step: how the redundancy is resolved, since the joint motion chosen now steers which constraint the arm meets tens of increments later. Moreover, the horizon itself, namely when the stroke ends, is exactly the quantity being optimized. Therefore, we formulate the problem as a discounted \emph{exit-time} optimal control problem.}
+\new{The outcome of an extended stroke is determined by two coupled choices that no reachability map captures. The first is made once, before the motion begins: which branch of the task-feasible configuration set the stroke starts on, a discrete choice no continuous motion can revise. The second is made at every control step: how the redundancy is resolved, since the joint motion chosen now steers which constraint the arm meets tens of increments later. Moreover, the horizon itself, namely when the stroke ends, is exactly the quantity being optimized. Therefore, we formulate the problem as a discounted \emph{exit-time} optimal control problem.}\xinyi{Discount exit time problem我能理解是为了和 rl 的问题设定对齐，但是 discount 引入的时间太早了，前面没有任何引导出来折旧的迹象，观众很难理解。}
 
-\new{The exit-time formulation provides three benefits. First, its Hamilton--Jacobi--Bellman (HJB) equation is affine in the box-bounded null-space command, so the pointwise maximization of its Hamiltonian is attained on the $2^{m}$ vertices of the command box, and the greedy policy with respect to any differentiable value estimate can be taken vertex-valued. Every controller in this paper therefore shares one form, an exact one-step model evaluating a scalar potential, and differs only in how much future knowledge the potential carries. Second, the formulation identifies why the classical law underperforms: it reads a hand-weighted instantaneous surrogate. Substituting the analytic \emph{constraint-margin field} for the intractable $V$ yields a training-free law that already matches receding-horizon optimization of its own objective. Third, and most importantly, the formulation prescribes how learned long-horizon knowledge should be consumed. A reinforcement-learning run trains a policy head and a critic on the same experience. Deployed directly, the policy must compress the value gradient into its own weights and stays below the training-free law. In contrast, the \emph{critic} of the identical run, consumed as the scalar field of the same one-step law, outperforms every other controller at identical per-step computation: the exact model separates the candidate actions one step apart, and the smooth learned value ranks the resulting successors, whose correlated errors largely cancel. In short, learning supplies smooth state values, and the exact model supplies the fine local distinctions.}
+\new{The exit-time formulation provides three benefits. First, its Hamilton--Jacobi--Bellman (HJB) equation is affine in the box-bounded null-space command, so the pointwise maximization of its Hamiltonian is attained on the $2^{m}$ vertices of the command box, and the greedy policy with respect to any differentiable value estimate can be taken vertex-valued. \xinyi{这一段非常难懂，站在读者角度，感觉莫名其妙。不用在introduction讲这些吧}Every controller in this paper therefore shares one form, an exact one-step model evaluating a scalar potential, and differs only in how much future knowledge the potential carries. Second, the formulation identifies why the classical law underperforms: it reads a hand-weighted instantaneous surrogate. Substituting the analytic \emph{constraint-margin field} for the intractable $V$ yields a training-free law that already matches receding-horizon optimization of its own objective. Third, and most importantly, the formulation prescribes how learned long-horizon knowledge should be consumed. A reinforcement-learning run trains a policy head and a critic on the same experience. Deployed directly, the policy must compress the value gradient into its own weights and stays below the training-free law. In contrast, the \emph{critic} of the identical run, consumed as the scalar field of the same one-step law, outperforms every other controller at identical per-step computation: the exact model separates the candidate actions one step apart, and the smooth learned value ranks the resulting successors, whose correlated errors largely cancel. In short, learning supplies smooth state values, and the exact model supplies the fine local distinctions.\xinyi{故事讲的很绕。核心思路就是一个向量场，讲清楚这个向量场是什么，然后rl怎么和hjb建立关系包括exit-time-opt。然后再讲baseline。基线模型不需要在introduction里面讲}}
 
-\new{We evaluate the proposed framework on path-following tasks across three manipulators, measuring performance against the pointwise-reachable length of each task so that the gap between pointwise and continuous reachability is itself quantified. Ablation studies verify the mechanism: the optimization horizon pays off only on the learned field, the gain requires a value trained toward optimal continuations, and further policy-iteration rounds on top of the deployed critic add nothing. The selector also transfers to serpentine and non-planar path families it has never seen.}
+\new{We evaluate the proposed framework on path-following tasks across three manipulators, measuring performance against the pointwise-reachable length of each task so that the gap between pointwise and continuous reachability is itself quantified.\xinyi{意思没问题} Ablation studies verify the mechanism: the optimization horizon pays off only on the learned field, the gain requires a value trained toward optimal continuations, and further policy-iteration rounds on top of the deployed critic add nothing.\xinyi{这句话不是intro的惯常写法呀。你就写你的算法可以实现什么就好了。不要用nothing这种强烈的词} The selector also transfers to serpentine and non-planar path families it has never seen. \xinyi{直接说unseen什么什么就好了。用adapt或者generalize这种词。}}
 
-\new{An earlier version of this work, restricted to one manipulator with a generative initial-configuration model and a best-of-$K$ reference, is available as a preprint~\cite{yuan2026extreme}; this article differs in the measurement, the trajectory stage (derived rather than trained), the candidate layer, and scope.}
+\new{An earlier version of this work, restricted to one manipulator with a generative initial-configuration model and a best-of-$K$ reference, is available as a preprint~\cite{yuan2026extreme}; this article differs in the measurement, the trajectory stage (derived rather than trained), the candidate layer, and scope.\xinyi{不需要提这些，作为独立的一篇论文出现就好了。后文也检查类似表述}}
 
-\new{In summary, the main contributions of this work are as follows.}
+\new{In summary, the main contributions of this work are as follows.}\xinyi{这几条的统一问题是每一条都太长了。不需要这么长，每条控制在两句话之内，每句话不超过20个词。然后贡献改掉。三点分别是，1 提出连续运动学可达性的视角，将极限运动生成表述为“初始分支选择 + 分支内冗余分解”的连续路径可达问题，而不是传统的逐点可达性问题。
+2. 基于退出时间最优控制与 HJB 结构，将分支内控制统一为“精确一步模型 + 标量价值场”的顶点动作选择，并进一步提出无需训练的约束裕度场和基于 critic 的长时域价值场。
+3. 通过三种机械臂、每种 10,000 个任务以及跨路径族、动作空间、优化视界和初始构型选择等实验，论文展示了该统一框架的有效性，并揭示了“学习负责长时域状态判断、精确模型负责局部动作区分”这一分工机制。}
 \begin{itemize}
 \item \new{We formulate stroke maximization as a discounted exit-time optimal control problem whose HJB Hamiltonian is affine in the box-bounded null-space command. The greedy policy with respect to any differentiable value estimate can therefore be taken on the $2^{m}$ vertices, every deployable controller becomes an exact one-step model evaluating a scalar potential, and the classical law is absorbed into the same family. The analytic constraint-margin field yields a training-free law that matches receding-horizon optimization of its own objective and transfers across manipulators without retuning.}
 \item \new{We identify and measure a division of labor between learning and the exact model: from one reinforcement-learning run, the policy head deployed directly stays below the training-free margin law, whereas the critic consumed by the one-step vertex law outperforms every compared controller at identical per-step computation on all three manipulators, with no additional training. Ablation studies attribute the gain to the value itself.}
@@ -141,7 +143,14 @@ Extreme Motion Generation, Continuous Kinematic Reachability, Redundant Manipula
 \new{The rest of this article is organized as follows. Section~II reviews related work. Section~III formulates the problem. Section~IV presents the proposed framework. Section~V reports the experiments, and Section~VI concludes the paper.}
 
 \section{Related Work}
+\xinyi{A. Reachability and Global Redundancy Resolution
+讲 manipulability、reachability map、SMM/topology、global resolution。
 
+B. Continuous Path Feasibility and Maximum Executable Extent
+讲 pathwise feasibility、breakpoints、welding extent，最后引出你的 continuous kinematic reachability。
+
+C. Optimal and Learned Redundancy Control
+讲 HJB / exit-time / switching control，以及 actor–critic/value-based/model-based control，最后自然落到：}
 \subsection{Local Dexterity, Reachability, and Global Resolution}
 Manipulability characterizes local dexterity through the
 Jacobian~\cite{yoshikawa1985manipulability,yoshikawa1985dynamic,chiu1988task,klein1987dexterity}
@@ -202,7 +211,7 @@ While extreme motion generation applies broadly to constrained path following, w
 
 
 
-Formally, consider a manipulator with $n$ degrees of freedom, where $\mathbf{q} \in \mathbb{R}^{n}$ denotes the joint configuration. Let $\mathbf{p}(\mathbf{q}) \in \mathbb{R}^{3}$ denote the end-effector position and $\mathbf{z}(\mathbf{q}) \in \mathbb{R}^{3}$ denote the TCP local $z$-axis. A straight-line path-following task is specified by the condition vector $\mathbf{c} = [\mathbf{p}_{0}, \mathbf{d}, \mathbf{n}] \in \mathbb{R}^{9}$, where $\mathbf{p}_{0}$ is the starting position and $\mathbf{d}$, $\mathbf{n}$ are unit vectors giving the motion direction and task-plane normal. \new{The prescribed path is the ray $\mathcal{P}=\{\mathbf{p}_{0}+s\,\mathbf{d} : s\ge 0\}$, along which the end-effector advances at a commanded speed $v$, one command being issued per control period $\Delta t$.} \new{The straight ray is the default member of a family sharing this condition vector: a signed curvature bends it into an arc, a sinusoidal lateral offset turns it into a serpentine seam, and a rotating cone axis $\mathbf{n}(s)$ models a non-planar workpiece. All four families are evaluated in Section~\ref{sec:setup}; the formulation carries over with $\mathbf{d}$ read as the instantaneous tangent and $\mathbf{n}$ as the local cone axis.}
+Formally, consider a manipulator with $n$ degrees of freedom, where $\mathbf{q} \in \mathbb{R}^{n}$ denotes the joint configuration. Let $\mathbf{p}(\mathbf{q}) \in \mathbb{R}^{3}$ denote the end-effector position and $\mathbf{z}(\mathbf{q}) \in \mathbb{R}^{3}$ denote the TCP local $z$-axis. A straight-line path-following task is specified by the condition vector $\mathbf{c} = [\mathbf{p}_{0}, \mathbf{d}, \mathbf{n}] \in \mathbb{R}^{9}$, where $\mathbf{p}_{0}$ is the starting position and $\mathbf{d}$, $\mathbf{n}$ are unit vectors giving the motion direction and task-plane normal. \new{The prescribed path is the ray $\mathcal{P}=\{\mathbf{p}_{0}+s\,\mathbf{d} : s\ge 0\}$, along which the end-effector advances at a commanded speed $v$, one command being issued per control period $\Delta t$.} \new{The straight ray is the default member of a family sharing this condition vector: a signed curvature bends it into an arc, a sinusoidal lateral offset turns it into a serpentine seam, and a rotating cone axis $\mathbf{n}(s)$ models a non-planar workpiece. All four families are evaluated in Section~\ref{sec:setup}; the formulation carries over with $\mathbf{d}$ read as the instantaneous tangent and $\mathbf{n}$ as the local cone axis.\xinyi{这里说直线的表述可以扩充到曲线，然后如何扩充的讲一下，就行了。不需要说all four什么的，这里只是构造问题。}}
 
 Starting from an initial configuration $\mathbf{q}_{0}^{*}$, the policy $\pi$ chooses the joint motion at every control step, producing a joint trajectory that ends at step $T$, when a safety constraint is first violated. \new{The executed motion is a \emph{stroke} of Cartesian length $\mathcal{L}$.} The task is the constrained optimization problem:
 \begin{align}
@@ -237,25 +246,27 @@ weighted secondary field,
 where the secondary field $\boldsymbol{\xi}$ combines a directional-manipulability term $w_{\mathbf{d}}$ that retreats from singularities along $\mathbf{d}$, a centering term that pulls each joint toward the middle $\mathbf{q}_{\mathrm{mid}}$ of its range, and a cone term gated by $g(\theta)$ that activates only as the tool axis approaches the $\theta_{\max}$ boundary. \new{It enters the decomposition as $\mathbf{u}\propto\mathbf{B}^{\!\top}\boldsymbol{\xi}$; all controllers share Eq.~(\ref{eq:nullspace}) and differ only in how $\mathbf{u}$ is generated.}
 
 {\color{red}
-Note that the horizon of this problem is not given in advance: the stroke ends at the first constraint violation, and the time at which this happens is itself determined by the commands being optimized. The next section casts the objective as a discounted \emph{exit-time} optimal control problem and derives the proposed resolution laws from it.
-}
+Note that the horizon of this problem is not given in advance: the stroke ends at the first constraint violation, and the time at which this happens is itself determined by the commands being optimized. The next section casts the objective as a discounted \emph{exit-time} optimal control problem and derives the proposed resolution laws from it.\xinyi{这段可以不要吧感觉。}
 
 \section{\texorpdfstring{\new{Extreme Motion Generation}}{Extreme Motion Generation}}
+\xinyi{请重构论文的 **Extreme Motion Generation** 章节，使方法主线更集中：保留 **exit-time optimal control → HJB vertex structure → learned critic/value field + exact one-step model → trajectory generation → initial branch selection** 这一核心逻辑。不要再将 classical law 和 analytic margin law 作为主要方法逐步展开；classical 仅作为传统 baseline，margin law 降级为使用相同 vertex-control skeleton 的 training-free analytical baseline，具体定义和分析移到 Experiments/Baselines。方法章节只需简要说明统一的 scalar-field vertex law，并重点突出本文真正的核心：**learning provides long-horizon state judgment, while the exact model performs fine local action discrimination**。尽量保持原有篇幅和技术内容，不改变已有公式与实验结论，只优化结构和叙事层级。然后两个层级需要分别包含RL的基本公式介绍以及关节角选择网络的介绍。所以正式的章节分为三个子章节，第一个是Exit-Time Optimal Control Formulation，第二个是初始关节角选择，第三个是RL
+}\\
 \label{sec:hjb}
-
+\xinyi{This section presents how we formulate the extreme motion generation as a discounted exit-time optimal control problem.这里的逻辑怪怪的。应该先说为了延长时间，有两个因素，分别是初始关节角选择和路径上的运动生成。然后先讲初始关节角选择，再说运动生成。再讲到运动生成的时候需要冗余消解，消解的话就需要scalar field的反馈，再讲到其他的。逻辑务必保持顺畅。然后注意上面问题构造能讲的部分挪在上面讲，两边讲述内容不要重叠。}
 \new{This section presents the proposed framework. We first cast stroke maximization as a discounted exit-time optimal control problem, from which the vertex-valued resolution laws are derived: the pointwise Hamiltonian maximization is attained on the $2^{m}$ vertices of the command box, the classical law belongs to the same family as the optimal one, and substituting deployable scalar fields yields the analytic margin law and the learned value law. We then present the two deployed stages, trajectory generation and initial configuration selection. Both stages instantiate one division of labor: learning is asked only for smooth, state-level judgments, while the fine distinctions between actions are computed by the exact model at decision time.}
 
 {\color{red}
 \subsection{Exit-Time Optimal Control Formulation}
+\xinyi{这一章首先定义问题。让读者理解为什么我们得到了这个优化问题。构建完了之后点明，不论是初始关节选择还是后续的动作生成，两个 stage 都遵循同一原则：candidate generation 与 long-horizon judgment 分离。}
 Collect the constraints of
 Eqs.~(\ref{eq:pos_constraint})--(\ref{eq:jl_constraint}), together with the
 self-collision clearance, into an open feasible set $\Omega$ of configurations,
-and let $\tau = \inf\{t \ge 0 : \mathbf{q}(t) \notin \Omega\}$ denote the exit time of a closed-loop trajectory (not to be confused with the switching thresholds of Section~\ref{sec:traj}). Throughout this work the null-space coordinates
+and let $\tau = \inf\{t \ge 0 : \mathbf{q}(t) \notin \Omega\}$ denote the exit time of a closed-loop trajectory (not to be confused with the switching thresholds of Section~\ref{sec:traj}\xinyi{不要备注了，直接修改避免符号歧义。另外检查全文有没有一样的问题。}). Throughout this work the null-space coordinates
 are bounded, $\mathbf{u} = a_{\max}\,\mathbf{a}$ with
 $\mathbf{a} \in \mathcal{A} := [-1,1]^{m}$, where $m = n-3$ is the dimension
 of the null space left by the position task ($m=4$ for the two 7-DoF arms,
 $m=3$ for Cobotta). Under this bound the decomposition of
-Eq.~(\ref{eq:nullspace}) is control-affine,
+Eq.~(\ref{eq:nullspace}) is control-affine,\xinyi{注意到其实这里和上面的problem formulation是同一个叙述模式，完全可以把共通的放在一起。这样也不需要在括号里面讲零空间自由度。}
 \begin{equation}
 \label{eq:affine}
 \dot{\mathbf{q}} \;=\; \mathbf{f}(\mathbf{q}) \;+\; \mathbf{G}(\mathbf{q})\,\mathbf{a},
@@ -264,18 +275,27 @@ Eq.~(\ref{eq:nullspace}) is control-affine,
 \mathbf{G} := a_{\max}\,\mathbf{B},
 \end{equation}
 with the task condition $\mathbf{c}$ entering $\mathbf{f}$ and $\Omega$ as a
-fixed parameter. Writing $r(\mathbf{q}) \ge 0$ for the instantaneous advance
+fixed parameter.\xinyi{这句话很绕呀} Writing $r(\mathbf{q}) \ge 0$ for the instantaneous advance
 rate along $\mathbf{d}$, i.e., the continuous-time counterpart of the reward
-defined in Section~\ref{sec:traj}, define the discounted progress value
+defined in Section~\ref{sec:traj}\xinyi{不要提前引用后面的内容，务必注意逻辑连贯性。}, define the discounted progress value
 \begin{equation}
 \label{eq:value}
 V(\mathbf{q}_{0}) \;=\; \sup_{\mathbf{a}(\cdot)}
 \int_{0}^{\tau} e^{-\beta t}\, r(\mathbf{q}(t))\,\mathrm{d}t,
 \end{equation}
-where the supremum runs over measurable commands into $\mathcal{A}$ and $\beta>0$ matches the implementation's discount. On the straight-line family the task term holds the advance rate at $v$, so $V$ increases with the exit time alone: the discounted problem is a maximum-exit-time problem. $V$ in (\ref{eq:value}) is the optimal value; the learned components of this paper approximate values of \emph{policies}. The analysis below uses only two facts: the dynamics (\ref{eq:affine}) are affine in $\mathbf{a}$, and the advance rate $r$ does not depend on $\mathbf{a}$ because $\mathbf{J}\mathbf{B}=\mathbf{0}$ holds exactly. What separates the exit-time form from instantaneous null-space optimization is only the argument of the maximization: a command at $\mathbf{q}$ is judged by how it changes all future feasible progress through $V$, rather than by any quantity evaluable at $\mathbf{q}$ in isolation.
+where the supremum runs over measurable commands into $\mathcal{A}$ and $\beta>0$ matches the implementation's discount. On the straight-line family the task term holds the advance rate at $v$, so $V$ increases with the exit time alone: the discounted problem is a maximum-exit-time problem. $V$ in (\ref{eq:value}) is the optimal value; the learned components of this paper approximate values of \emph{policies}. The analysis below uses only two facts: the dynamics (\ref{eq:affine}) are affine in $\mathbf{a}$, and the advance rate $r$ does not depend on $\mathbf{a}$ because $\mathbf{J}\mathbf{B}=\mathbf{0}$ holds exactly. What separates the exit-time form from instantaneous null-space optimization is only the argument of the maximization: a command at $\mathbf{q}$ is judged by how it changes all future feasible progress through $V$, rather than by any quantity evaluable at $\mathbf{q}$ in isolation.\xinyi{这一段毫无信息量，到底想表达什么。}
+
 
 \subsection{Vertex-Valued Feedback}
-At points of differentiability the value function (\ref{eq:value}) satisfies the HJB relation of the discounted exit-time problem,
+
+The value function in (\ref{eq:value}) measures the discounted feasible
+progress obtainable from the current configuration under optimal future
+control. To turn this long-horizon quantity into a local feedback rule, we
+use the Hamilton--Jacobi--Bellman (HJB) equation, the continuous-time form of
+Bellman's optimality principle. It relates the current value to the
+instantaneous progress and to the change of future value induced by the
+system dynamics. At points where $V$ is differentiable, the discounted
+exit-time problem satisfies
 \begin{equation}
 \label{eq:hjb}
 \beta V \;=\; r \;+\; \nabla V^{\!\top}\mathbf{f}
@@ -283,18 +303,25 @@ At points of differentiability the value function (\ref{eq:value}) satisfies the
 \bigl(\mathbf{G}^{\!\top}\nabla V\bigr)^{\!\top}\mathbf{a},
 \qquad V \equiv 0 \ \text{outside } \Omega .
 \end{equation}
-Because $r$ and $\mathbf{f}$ do not depend on $\mathbf{a}$, the command enters
-only through the last term, linearly. Define the \emph{switching vector}
+Since $r$ and $\mathbf{f}$ are independent of $\mathbf{a}$, the command
+appears only in the last term and enters it linearly. Define the
+\emph{switching vector}
 \begin{equation}
 \label{eq:sigma}
 \boldsymbol{\sigma}(\mathbf{q}) \;:=\;
 \mathbf{G}(\mathbf{q})^{\!\top}\nabla V(\mathbf{q}) \;\in\; \mathbb{R}^{m},
 \end{equation}
-whose $i$-th component is the marginal effect of the $i$-th null-space direction on discounted future feasible progress. The supremum in (\ref{eq:hjb}) equals $\|\boldsymbol{\sigma}\|_{1}$ and, wherever no component vanishes, is attained at the single vertex $\mathbf{a} = \operatorname{sgn}\boldsymbol{\sigma}$: the resolution implied by the value function selects an orthant, not a magnitude.
+whose $i$-th component measures how motion along the $i$-th null-space
+direction changes discounted future feasible progress. The supremum in
+(\ref{eq:hjb}) is therefore $\|\boldsymbol{\sigma}\|_{1}$ and, whenever no
+component vanishes, is attained at the vertex
+$\mathbf{a}=\operatorname{sgn}\boldsymbol{\sigma}$. Thus the value-based
+resolution selects the orthant of the null-space command rather than its
+magnitude.
 
-The observation above does not require $V$ to be the optimal value function;
-it holds for the gradient field of any scalar function of the configuration,
-which makes it usable even when the value estimate is inexact.
+This vertex structure is not specific to the optimal value $V$. The same
+argument applies to the gradient of any differentiable scalar field, allowing
+the feedback form to be used with an approximate value estimate.
 
 \begin{proposition}
 \label{prop:vertex}
@@ -310,8 +337,8 @@ $\mathbf{q}$,
 \end{equation}
 attained at $\mathbf{a}=\operatorname{sgn}\boldsymbol{\sigma}_{W}$, with the
 components on which $\sigma_{W,i}=0$ chosen arbitrarily in $\{-1,1\}$.
-Consequently the greedy policy with respect to any differentiable value
-estimate can be taken vertex-valued: the vertex action space is closed under
+Consequently, a greedy policy with respect to any differentiable value
+estimate can be chosen vertex-valued: the vertex action space is closed under
 policy improvement.
 \end{proposition}
 
@@ -320,17 +347,28 @@ $\boldsymbol{\sigma}_{W}^{\!\top}\mathbf{a}
 = \sum_{i}\sigma_{W,i}\,a_{i} \le \sum_{i}|\sigma_{W,i}|$ for
 $\mathbf{a}\in[-1,1]^{m}$, with equality iff
 $a_{i}=\operatorname{sgn}\sigma_{W,i}$ on every component with
-$\sigma_{W,i}\neq 0$; such an $\mathbf{a}$ can be chosen in $\{-1,1\}^{m}$.
+$\sigma_{W,i}\neq 0$; such an $\mathbf{a}$ can be chosen in
+$\{-1,1\}^{m}$.
 \end{IEEEproof}
 
 \begin{remark}[Scope]
 \label{rem:bangbang}
-Three delimitations. The box- and vertex-constrained problems share their pointwise Hamiltonian by (\ref{eq:prop}); equality of the value functions would need viscosity comparison conditions we neither verify nor use. Where components of $\boldsymbol{\sigma}$ vanish, an optimal vertex-valued \emph{selector exists} rather than every optimal command being a vertex. And the reduction is exact in continuous time only; the finite-rate gap is answered empirically in Section~\ref{sec:setup}, and the box itself is a design choice with no canonical status.
+Three qualifications delimit this result. First, the box- and
+vertex-constrained problems share the same pointwise Hamiltonian by
+(\ref{eq:prop}); equality of their value functions would require viscosity
+comparison conditions that we neither verify nor use. Second, when a component
+of $\boldsymbol{\sigma}$ vanishes, an optimal vertex-valued selector exists,
+rather than every optimal command being a vertex. Third, the reduction is
+exact in continuous time; its finite-rate consistency is examined empirically
+in Section~\ref{sec:setup}, while the command box itself remains a design
+choice.
 \end{remark}
 
+This structure is the kinematic counterpart of a classical result in
+time-optimal path following: with control-affine dynamics and box-bounded
+torques, the optimal acceleration lies on the boundary of the admissible set
+except on singular arcs~\cite{bobrow1985time,shin1985minimum}.
 
-
-This structural conclusion is the kinematic counterpart of a classical result: in time-optimal control along a prescribed path, the torque box with control-affine dynamics forces the optimal acceleration to the boundary of the admissible set except on singular arcs~\cite{bobrow1985time,shin1985minimum}.
 
 \subsection{From the Classical Law to the Analytic Margin Law}
 \label{sec:relation}
@@ -434,304 +472,421 @@ Therefore, this selection module aims to provide \new{the trajectory generation 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Experiments and Analysis}
-\label{sec:setup}
-\new{This section presents the experiments conducted to evaluate the proposed framework. First, we compare the resolution laws on $10{,}000$ tasks per manipulator. Second, we conduct ablation studies on the optimization horizon, the value source, and the action spacing. Third, we evaluate the initial-configuration selector and its generalization across path families. Finally, we analyze manipulator base placement and present real-world validation.}
+\subsection{Experimental Setup}
 
-\new{All experiments use the \textit{One} robotic system\footnote{https://github.com/wanweiwei07/one} on the 7-DoF xArm7, the 7-DoF Franka Research 3 (FR3) and the 6-DoF Cobotta, with a pen-shaped tool; the same candidate layer, selector and resolution laws run on all three, only the kinematic model changes. Shared settings: cone half-angle $30^{\circ}$, $K=8$ candidates from $N_{\mathrm{dir}}=32$ directions, and classical weights $(0.8,0.4,0.2)$.} The evaluation set \new{for each manipulator} comprises $10{,}000$ tasks, each specified by a starting position $\mathbf{p}_0$, a desired line direction $\mathbf{d}$, and a task-plane normal $\mathbf{n}$, sampled \new{within that manipulator's own work range, so the three sets are not in correspondence and only the realized fraction is comparable across them}. \new{The evaluation tasks are disjoint from those used to train the selector and the policy.} 
+Experiments are conducted on the 7-DoF xArm7, the 7-DoF Franka Research 3
+(FR3), and the 6-DoF Cobotta using the \textit{One} robotic
+system\footnote{https://github.com/wanweiwei07/one}. Each manipulator is
+evaluated on $10{,}000$ held-out tasks specified by the starting position
+$\mathbf{p}_0$, path direction $\mathbf{d}$, and task-plane normal
+$\mathbf{n}$. Training and evaluation tasks are disjoint.
 
-\new{Unless otherwise specified, experiments use the default setting: (1) a candidate pool of $K$ configurations retrieved from the IKSel table along $N_{\mathrm{dir}}$ directions inside the orientation cone, with the task-generating configuration as a fallback slot; (2) a road-table-conditioned selector that picks one candidate, followed by a single damped-least-squares refinement and no deployment-time rollout; (3) the one-step vertex law with temperature $\tau_{\mathrm{m}}=0.1$ for the margin field; the learned value field is the critic of the vertex-PPO baseline of Section~\ref{sec:traj} ($30$M steps, $1.75$\,h wall-clock on one GPU, trained once per manipulator). }
+\begin{itemize}[leftmargin=1em]
+\renewcommand{\labelitemi}{$\triangleright$}
 
-\new{A stroke must pass through every point of the path up to where it stops, so the first path sample at which no admissible configuration exists bounds the achievable length from above. Marching along each task's path and searching for an admissible configuration at each sample gives the \emph{pointwise-reachable length} $\ell^{\mathrm{pw}}$; the unknown true maximum stroke $\mathcal{L}^{*}$ then satisfies $\ell \le \mathcal{L}^{*} \le \ell^{\mathrm{pw}}$ for every executed stroke $\ell$. Failure of a numerical search does not certify that no configuration exists, so $\ell^{\mathrm{pw}}$ is a numerical estimate rather than a certified bound, and we treat it accordingly. First, the search is made \emph{witness-consistent}: configurations interpolated along the evaluated rollouts are injected as feasibility certificates at their own path samples, and the upper side is defined per task as the maximum of the search estimate and the executed stroke, so it is never below any evaluated stroke by construction. Without the witnesses, strong rollouts overtake the raw search on $11.8\%$ of tasks, by $8$\,mm on average and $63$\,mm at most; with them, the residual adjustment affects $7.0\%$ of tasks by at most $5$\,mm, a quarter of the march resolution. Second, the sensitivity to the search budget is quantified: raising the direction count from $24$ to $64$ raises the mean estimate by $12.7$\,mm and from $64$ to $128$ by a further $4.2$\,mm, while halving the march step from $20$ to $10$\,mm lowers it by $7.7$\,mm. Third, the resulting bracket is tight: over the $10{,}000$ FR3 tasks the executed stroke realizes a median $0.98$ of $\ell^{\mathrm{pw}}$ (mean $0.95$), so $\mathcal{L}^{*}$ is localized to within a few centimetres per task.}
+    \item \uline{Task constraints:}
+    Unless otherwise specified, the orientation-cone half-angle is
+    $30^{\circ}$, and all controllers share the same task-space tracking,
+    joint-limit, orientation, and collision constraints.
 
+    \item \uline{Initial-configuration selection:}
+    The candidate pool contains $K=8$ configurations retrieved from
+    $N_{\mathrm{dir}}=32$ directions using IKSel. The learned selector chooses
+    one candidate, followed by a single damped-least-squares refinement.
 
+    \item \uline{Classical controller:}
+    The classical null-space controller uses weights $(0.8,0.4,0.2)$.
 
+    \item \uline{Margin controller:}
+    The analytic margin field uses temperature $\tau_{\mathrm{m}}=0.1$.
 
+    \item \uline{Learned value controller:}
+    The value law uses the critic of the vertex-PPO baseline, trained for
+    $30$M environment steps separately for each manipulator. All resolution
+    laws share the same null-space parameterization and task term.
 
+    \item \uline{Evaluation metrics:}
+    Controller comparisons are paired per task and reported using mean,
+    median, and bootstrap $95\%$ confidence intervals. The primary normalized
+    metric is the per-task ratio to the classical controller. The
+    pointwise-reachable length $\ell^{\mathrm{pw}}$ is additionally used where
+    a task-specific reachability reference is required.
 
-\subsection{\new{Evaluation Protocol}}
-\new{The controller comparison is paired per task (mean and median, bootstrap $95\%$ intervals), so its primary statistic is the per-task ratio to the classical law, which needs no reference length; differences within the two-training-run noise floor are reported as indistinguishable. The bracket enters where a per-task scale is needed, namely the pointwise-versus-continuous gap of Fig.~\ref{fig:pwgap} and the base-placement study. References that executed strokes are observed to exceed, such as a voxelized reachability chord and the best-of-$K$ rollouts of~\cite{yuan2026extreme}, are excluded by exactly this test.}
+\end{itemize}
 
+\xinyi{然后介绍一下四种线的任务，两种是训练里面有的，两种是完全ood的。要画出来示意图哈，双栏一行四个图。}
 
-\subsection{\new{Controller Comparison}}
-\label{sec:ladder}
+\xinyi{\subsection{Baselines Comparison}
 
-\new{Because no prior method optimizes the feasible extent itself, we compare a sequence of solution strategies for the same exit-time problem, all sharing the task term, the constraint set, and the per-task start. The compared controllers are ordered by how much future information their scalar field carries, from no null-space motion, through the classical law and the margin law, to the value law. Learned reactive policies are included under identical conditions, and receding-horizon optimizers over the margin objective bound what longer search on that field could add.}
+We compare the proposed value-based resolution law against five baselines that
+represent increasingly stronger alternatives for redundancy resolution. All
+methods share the same task-space controller, constraints, initial
+configuration, null-space parameterization, and control period.
 
-\new{Table~\ref{tab:mainresult} presents the comparison results on $10{,}000$ tasks per manipulator. The results show that the performance follows the future content of the scalar field exactly and that the ordering replicates on all three manipulators: the margin law improves over the classical law by $29$--$78\%$, and the value law adds a further $6$--$8\%$ at identical per-increment computation, although the two laws differ only in the scalar that scores the same $2^{m}$ successors. The most informative pair of rows is the \emph{actor--critic decomposition}: the vertex-PPO row and the value-law row consume one and the same training run, so the gap between them is produced entirely by where the learned knowledge is read out. On the Cobotta, where the margin law and the learned policies were previously indistinguishable, the value law separates from both. These results verify that the gain comes from the scalar field rather than the feedback form. Path deviation is bounded by $\epsilon_{\mathrm{pos}}$ by construction for every controller.}
+\begin{itemize}[leftmargin=1em]
+\renewcommand{\labelitemi}{$\triangleright$}
 
+    \item \uline{Zero Null-Space (Zero):}
+    No secondary motion is applied, i.e.,
+    $\mathbf{a}=\mathbf{0}$. This baseline measures the stroke provided by
+    task-space tracking alone.
+
+    \item \uline{Classical Gradient Resolution (Classical):}
+    The conventional null-space controller of Eq.~\ref{eq:secondary},
+    combining directional manipulability, joint centering, and orientation
+    regulation.
+
+    \item \uline{Analytic Margin Resolution (Margin):}
+    The same one-step vertex-selection structure as the proposed method, but
+    successors are scored by the analytic constraint-margin field
+    $\Phi_{\mathrm{m}}$. This provides a training-free reference with no
+    learned long-horizon information.
+
+    \item \uline{Reactive Vertex Policy (PPO):}
+    A vertex-valued PPO policy trained directly to output the null-space
+    action from the current observation.
+
+    \item \uline{Hybrid Reactive Policy (PPO+Classical):}
+    The same PPO policy with the classical controller taking over near the
+    joint-limit boundary.
+
+    \item \uline{Critic-Guided Value Resolution (Value, Ours):}
+    The proposed law of Eq.~\ref{eq:value-law}. It uses the critic learned
+    from the same PPO run to score the exact one-step successor states and
+    selects the highest-valued feasible vertex.
+\end{itemize}
+
+Table~\ref{tab:mainresult} reports the results on $10{,}000$ tasks per
+manipulator. The same ordering is observed on all three robots. Classical
+gradient resolution provides only a small improvement over zero null-space
+motion, whereas the analytic margin baseline produces a substantially longer
+stroke. Directly deploying the learned PPO policy remains below the margin
+baseline on the two 7-DoF manipulators. In contrast, the proposed value law
+achieves the best performance on all three manipulators.
+
+The comparison between PPO and Value is particularly informative because both
+use the same actor--critic training run. Their performance difference
+therefore arises from how the learned information is used: PPO maps the state
+directly to an action, whereas Value uses the critic for long-horizon state
+evaluation and the exact model for local action selection.
+
+\xinyi{这个表选的是什么种子，如果不是我们的方法选择的种子，就还需要一个主表格来陈列我们的整个框架的方法的结果。}
 \begin{table*}[!htbp]
 \centering
-\setlength{\tabcolsep}{5pt}
-\caption{Comparison of the Resolution Laws on $10{,}000$ Tasks per
-Manipulator (Mean Executed Stroke in Meters and Mean Per-Task Ratio to the
-Classical Null-Space Law). All Controllers Share the Per-Task Initial
-Configuration.}
+\caption{Comparison of the Resolution Laws on $10{,}000$ Tasks per Manipulator}
 \label{tab:mainresult}
 \begin{threeparttable}
-\begin{tabular}{l cc cc cc}
+\begin{tabular}{lcccccc}
 \toprule
-& \multicolumn{2}{c}{Franka Research 3} & \multicolumn{2}{c}{xArm7} & \multicolumn{2}{c}{Cobotta} \\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-Secondary command & m & ratio & m & ratio & m & ratio \\
+ & \multicolumn{2}{c}{Franka Research 3}
+ & \multicolumn{2}{c}{xArm7}
+ & \multicolumn{2}{c}{Cobotta} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+Method
+& \multicolumn{1}{c}{Stroke (m)}
+& \multicolumn{1}{c}{Ratio}
+& \multicolumn{1}{c}{Stroke (m)}
+& \multicolumn{1}{c}{Ratio}
+& \multicolumn{1}{c}{Stroke (m)}
+& \multicolumn{1}{c}{Ratio} \\
 \midrule
-No null-space ($\mathbf{a}=\mathbf{0}$) & 0.310 & 0.976 & 0.261 & 0.995 & 0.161 & 0.979 \\
-Classical law (Eq.~\ref{eq:secondary}) & 0.333 & 1.000 & 0.271 & 1.000 & 0.166 & 1.000 \\
-Margin law, gradient form (sgn$\,\mathbf{G}^{\!\top}\nabla\Phi_{\mathrm{m}}$) & 0.518 & 1.698 & 0.427 & 1.679 & 0.208 & 1.257 \\
-Vertex PPO (policy head) & 0.439 & 1.388 & 0.364 & 1.400 & 0.210 & 1.271 \\
-Vertex PPO + classical supervisor & 0.461 & 1.448 & 0.377 & 1.442 & 0.211 & 1.281 \\
-Margin law, one-step form (Eq.~\ref{eq:margin-law}) & 0.537 & 1.783 & 0.444 & 1.768 & 0.213 & 1.291 \\
-\textbf{Value law (Eq.~\ref{eq:value-law}, same training as the PPO rows)} & \textbf{0.564} & \textbf{1.898} & \textbf{0.466} & \textbf{1.885} & \textbf{0.229} & \textbf{1.398} \\
+Zero Null-Space
+& 0.310 & 0.976
+& 0.261 & 0.995
+& 0.161 & 0.979 \\
+
+Classical Gradient
+& 0.333 & 1.000
+& 0.271 & 1.000
+& 0.166 & 1.000 \\
+
+Analytic Margin
+& 0.537 & 1.783
+& 0.444 & 1.768
+& 0.213 & 1.291 \\
+
+Reactive Vertex PPO
+& 0.439 & 1.388
+& 0.364 & 1.400
+& 0.210 & 1.271 \\
+
+Hybrid PPO+Classical
+& 0.461 & 1.448
+& 0.377 & 1.442
+& 0.211 & 1.281 \\
+\midrule
+\textbf{Critic-Guided Value (Ours)}
+& \textbf{0.564} & \textbf{1.898}
+& \textbf{0.466} & \textbf{1.885}
+& \textbf{0.229} & \textbf{1.398} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-    \item ${}^{\text{Note~}}$ Ratios are means of per-task ratios;
-    absolute strokes are not comparable across manipulators. Bootstrap
-    $95\%$ intervals on the mean ratios are within $\pm 0.03$ for every
-    entry. The value law and the PPO rows share one $30$M-step run
-    ($1.75$\,h) per manipulator; architecture and hyperparameters are
-    shared across manipulators, while the weights are trained per
-    manipulator. The value law adds one critic forward pass to the margin
-    law ($15.5$ vs $14.8$\,ms, measured as single-task deployment latency
-    per $50$\,ms decision).
+    \item[Note 1] All methods share the same per-task initial configuration.
+    Ratios denote the mean per-task ratio to the Classical Gradient baseline.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
-
-\new{To attribute the gain to its mechanism, we conduct two ablation studies. The first sweeps the optimization \emph{horizon} on each field. Table~\ref{tab:horizon} shows the results: receding search and beam search add nothing over one step on the margin field, whereas the same beam machinery gains monotonically on the learned field. This indicates that a longer horizon was previously worthless because of the scalar it optimized, not because the problem is myopic. The one-step value law is the cost-effective operating point, and the multi-step entries imply that this direction is not yet saturated.}
-
-\new{To measure how far the deployed law stands from the best continuously executable stroke, rather than from the classical reference, we further construct a per-task approximate oracle by high-budget offline search: $242$ stochastic rollouts per task, combining $\varepsilon$-noised value-law rollouts, $\varepsilon$-noised margin-law rollouts, and temperature-sampled vertex-PPO rollouts, and keeping the per-task maximum ($1024$ FR3 tasks, about one GPU-hour). The oracle reaches a mean stroke of $0.597$\,m against the value law's $0.568$\,m: the one-shot value law realizes a per-task mean of $0.956$ and a median of $0.985$ of this oracle, whereas the one-step margin law reaches $0.537$\,m, i.e., $0.90$ of the oracle in aggregate. A search budget two orders of magnitude above the deployed law's therefore recovers $4$--$5\%$ over it, concentrated in a minority of tasks where noise discovers a different switching sequence early in the stroke. These results locate the deployed one-step law close to the best stroke reachable from the same start, complementing the pointwise estimate that localizes the optimum from above.}
-
-\begin{table}[!htbp]
-\centering
-\caption{\new{Effect of the Optimization Horizon on Each Scalar Field
-(FR3, $1024$ Tasks; Mean Per-Task Ratio to the One-Step Margin Law). Width
-$\times$ Depth Denotes a Receding Beam over Vertex Sequences.}}
-\label{tab:horizon}
-\begin{threeparttable}
-\begin{tabular}{lcccc}
-\toprule
-Scalar field & 1 step & $4\times2$ & $8\times2$ & $8\times3$ \\
-\midrule
-Margin field $\Phi_{\mathrm{m}}$ & 1.000 & 0.991 & --- & 0.994 \\
-Learned value $\widehat{V}$ & 1.062 & 1.082 & 1.089 & \textbf{1.098} \\
-\midrule
-Per-decision compute (ms) & 62 & 300 & 528 & 994 \\
-\bottomrule
-\end{tabular}
-\begin{tablenotes}
-    \item \new{Compute is wall time per decision over the $1024$-task
-    evaluation batch on one GPU, reported for relative comparison across
-    horizons; single-task deployment latency of the one-step laws is
-    $15.5$\,ms (Table~\ref{tab:mainresult}).}
-\end{tablenotes}
-\end{threeparttable}
-\end{table}
-
-\new{The second ablation swaps the scoring network while keeping the law fixed. Table~\ref{tab:valuesource} presents the results. We can see from the results that: (i) the enumerate-and-filter skeleton is not the cause of the gain, as an untrained network scores only $0.78$; (ii) fitting accuracy is not the criterion, as a Monte-Carlo value fitted to rollouts of intermediate-quality behaviours reaches a held-out $R^{2}$ of $0.989$ yet scores only $0.89$, and the reason is that it estimates the continuation of the behaviour that generated it, whereas ranking successors requires the value of a \emph{good} continuation; (iii) every PPO critic across seeds, discounts, and light shaping exceeds the margin law, while the one whose reward was dominated by shaping drops to parity; and (iv) re-fitting the value on the deployed law's own rollouts changes nothing, as the critic already predicts the realized returns of its greedy controller (held-out $R^{2}\!\approx\!1$). The last observation implies that, at this fitting accuracy, further policy-iteration rounds extract no additional signal; the one improvement step that does help is the one Eq.~(\ref{eq:value-law}) computes at deployment.}
-
-\begin{table}[!htbp]
-\centering
-\caption{\new{Effect of the Scoring Network on the One-Step Value Law of
-Eq.~(\ref{eq:value-law}) (FR3, $1024$ Tasks; Mean Per-Task Ratio to the
-One-Step Margin Law).}}
-\label{tab:valuesource}
-\begin{tabular}{lc}
-\toprule
-Scoring network & Ratio \\
-\midrule
-Untrained network (skeleton control) & 0.783 \\
-Monte-Carlo regression value, held-out $R^{2}=0.989$ & 0.891 \\
-PPO critic, heavy margin shaping ($w_{\mathrm{m}}=50$) & 0.985 \\
-PPO critic, second seed & 1.035 \\
-PPO critic, $\gamma=0.90$ & 1.045 \\
-PPO critic, light shaping & 1.055 \\
-PPO critic, $\gamma=0.95$ & 1.062 \\
-\textbf{PPO critic, deployed run} & \textbf{1.062} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\new{To examine whether the actor's failure is merely a matter of action spacing, a final probe doubles the null-space authority $a_{\max}$ and halves the control rate. The results show that doubling $a_{\max}$ raises the ceiling of both one-step laws and narrows the advantage of the value law, while halving the control rate is neutral for both laws and widens that advantage to $+10\%$. Under either change, the retrained policy head does not move, which indicates that its failure is structural rather than a matter of action spacing. The learned value contributes most where the stroke must commit early, which is the typical regime of extreme motion generation.}
+}
 
 \subsection{Ablation Study}
 
-\subsubsection{Supervision Signal}
+\subsubsection{Initial Seed Selection}
 \label{sec:branch}
 \label{sec:ablate_seed}
-\new{To isolate the selection stage, this ablation fixes the trajectory stage and varies only the start, and compares the learned selector against instantaneous ranking rules applied to exactly the same candidate pool. Table~\ref{tab:ablate_seed} presents the results on the held-out straight-family test tasks of the selector campaign ($n{=}2500$). We can see from the results that, once the candidate layer supplies branch coverage, instantaneous heuristics do recover part of the gap, the strongest being the joint-limit margin ($41.9\%$) and the margin field ($41.2\%$), whereas the learned selector recovers $57.5\%$. This indicates that the gain of the learned selector comes from long-horizon branch ranking beyond what any instantaneous score captures, on top of what candidate generation alone provides. The candidate pool includes the task-generating configuration as one slot, which exists only because the evaluation tasks are synthetic; removing this privileged slot changes every row by at most $0.005$\,m (selector $0.604$\,m, oracle $0.653$\,m), so no conclusion depends on it.}
+
+To isolate the selection stage, we fix the trajectory generator and compare
+different ranking rules on the same candidate pool. Table~\ref{tab:ablate_seed}
+reports results on $2500$ held-out straight-path tasks. Among the instantaneous
+heuristics, the joint-limit margin and analytic margin field recover $41.9\%$
+and $41.2\%$ of the first-feasible-to-oracle gap, respectively, while the
+learned selector recovers $57.5\%$. The result shows that rollout supervision
+captures long-horizon branch quality beyond instantaneous geometric scores.
 % skeleton: candidate layer and selector ablation
+
 \begin{table}[!htbp]
 \centering
-\color{red}
-\caption{\new{Initial Configuration Selection under a Fixed Trajectory
-Stage (FR3, $2500$ Held-Out Tasks; All Rows Score the Same Candidate
-Pool). \emph{Capture} Is the Share of the First-Feasible-to-Oracle Gap
-Recovered.}}
+\caption{Comparison of Initial Configuration Selection Methods on $2500$ Held-Out FR3 Tasks}
 \label{tab:ablate_seed}
 \begin{threeparttable}
-\begin{tabular}{lcc}
+\begin{tabular}{llcc}
 \toprule
-Candidate ranking rule & \shortstack{Length\\(m)} & \shortstack{Capture\\(\%)} \\
+Type & Candidate Ranking Rule
+& \shortstack{Stroke\\(m)}
+& \shortstack{Capture\\(\%)} \\
 \midrule
-First feasible candidate          & 0.537 & \phantom{00}0 \\
-Random valid candidate            & 0.553 & \phantom{0}13.4 \\
-Max directional manipulability    & 0.548 & \phantom{0}\phantom{0}9.3 \\
-Max orientation margin            & 0.548 & \phantom{0}\phantom{0}9.3 \\
-Max joint-limit margin            & 0.587 & \phantom{0}41.9 \\
-Margin field $\Phi_{\mathrm{m}}$ (softmin) & 0.586 & \phantom{0}41.2 \\
-\textbf{Learned selector (ours)}  & \textbf{0.605} & \phantom{0}\textbf{57.5} \\
+
+\textemdash
+& First Feasible Candidate
+& 0.537 & \phantom{00}0.0 \\
+
 \midrule
-Within-pool oracle ($K$ rollouts) & 0.656 & 100 \\
+Random
+& Random Valid Candidate
+& 0.553 & \phantom{0}13.4 \\
+
+\midrule
+\multirow{4}{*}{Heuristic}
+& Max Directional Manipulability
+& 0.548 & \phantom{00}9.3 \\
+& Max Orientation Margin
+& 0.548 & \phantom{00}9.3 \\
+& Max Joint-Limit Margin
+& 0.587 & \phantom{0}41.9 \\
+& Margin Field $\Phi_{\mathrm{m}}$
+& 0.586 & \phantom{0}41.2 \\
+
+\midrule
+Learned
+& \textbf{Learned Selector (Ours)}
+& \textbf{0.605} & \textbf{57.5} \\
+
+\midrule
+\textemdash
+& Within-Pool Oracle ($K$ Rollouts)
+& 0.656 & 100.0 \\
+
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-    \item[Note 1] \new{All rows share the trajectory stage and the
-    candidate pool; the heuristics score each candidate at its start
-    configuration. Removing the privileged task-generating slot from the
-    pool changes every row by at most $0.005$\,m.}
+    \item[Note 1] All methods rank the same candidate pool and use the
+    same trajectory-generation stage. Capture denotes the fraction of the
+    first-feasible-to-oracle gap recovered.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\subsubsection{Action Space Structure}
+\xinyi{这一段不对哈，要对比的是ppo的连续动作的30M训练结果和给定的对比，还有amax的对比，还有控制频率降低的对比。这几个。}
+We further examine whether the learned controller benefits from the continuous
+action magnitudes or primarily from the choice of null-space direction.
+Table~\ref{tab:action_space} compares the classical continuous command, the
+learned continuous policy, its projection onto the nearest vertex, and a policy
+trained directly in the vertex action space. The learned continuous policy
+already operates predominantly near the boundary of the command box, while
+projecting it to the nearest vertex produces negligible change in stroke.
+Training directly over the $2^{4}$ vertices further improves performance over
+the continuous policy. These results support the vertex-valued structure
+derived in Section~\ref{sec:hjb} and indicate that the relevant decision lies
+primarily in the action direction rather than its intermediate magnitude.
+
+\begin{table}[!htbp]
+\centering
+\caption{Comparison of Continuous and Vertex Action Spaces}
+\label{tab:action_space}
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+Method
+& \shortstack{Median Action\\Magnitude}
+& \shortstack{Boundary\\Steps (\%)}
+& \shortstack{$\Delta$ Stroke\\(m)} \\
+\midrule
+Classical Continuous
+& -- & -- & -- \\
+
+Learned Continuous
+& -- & -- & 0.000 \\
+
+Projected Vertex
+& -- & -- & -- \\
+
+Native Vertex
+& -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item[Note 1] Action magnitude is normalized by the half-width of the
+    command box. $\Delta$ Stroke is measured relative to the learned
+    continuous policy.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\subsection{\xinyi{Generalization and Applications}}
+
+\subsubsection{Path-Type Generalization}
+\label{sec:ood}
+
+The selector is trained on $20{,}000$ straight-line and curved-line tasks and
+evaluated on held-out tasks across four path types. Table~\ref{tab:ood}
+distinguishes \emph{Unseen} tasks sampled from the training path families from
+\emph{OOD} tasks belonging to sinusoidal and rotating-axis families that are
+never observed during training. Performance remains comparable across the two
+settings: the selector recovers $64.9$--$67.1\%$ of the random-to-oracle gap on
+the OOD paths, showing that the learned branch ranking transfers to new path
+families.
+
+\begin{table}[!htbp]
+\centering
+\caption{Generalization of the Initial Configuration Selector across Path Families}
+\label{tab:ood}
+\begin{threeparttable}
+\begin{tabular}{llcc}
+\toprule
+Path Type & Status
+& \shortstack{Capture\\(\%)}
+& \shortstack{Gap to Oracle\\(m)} \\
+\midrule
+Straight Line       & Unseen & 61.0 & 0.080 \\
+Curved Line         & Unseen & 57.5 & 0.105 \\
+Sinusoidal Line     & OOD    & 67.1 & 0.076 \\
+Rotating-Axis Path  & OOD    & 64.9 & 0.079 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item[Note 1] The selector is trained on straight-line and curved-line
+    tasks. Unseen denotes held-out tasks from these families; OOD denotes
+    path families absent from training.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
 
 
+\subsubsection{Cross-Arm Transfer}
+\label{sec:crossarm}
 
-\subsubsection{\new{Path Conditioning and Out-of-Family Generalization}}
-\label{sec:ood}
-\new{Two selectors, a road-table-conditioned one and an unconditioned twin, are trained on $20{,}000$ straight and arc tasks alone and evaluated on $10{,}000$ held-out tasks over all four families, with labels from rollouts of the deployed law.
-Table~\ref{tab:ood} reports, per family, the share of the
-random-to-oracle gap each selector captures, the top-1 regret, and the
-within-task rank correlation. The results show that capture on the two
-families the selector has never seen ($0.65$--$0.73$) matches capture
-inside the training distribution. The ablation also shows that, on the
-tested distributions, the start state already carries the ranking signal:
-the conditioned and unconditioned twins bracket each other within a few
-points on every family, so the transfer does not depend on the road-table
-input. The road table is therefore an architectural provision for paths
-specified only at deployment time rather than a mechanism these
-distributions require; constructing tasks whose future geometry reverses
-the preferred initial branch is left for future work.}
+We further evaluate whether the learned policy transfers across manipulators
+without retraining. Table~\ref{tab:crossarm} reports the executed stroke and
+the per-task ratio to the classical controller for each training--test pair.
+The FR3-trained policy retains approximately $80\%$ of its native improvement
+when transferred directly to the xArm7, indicating that the learned redundancy
+resolution is not tied to a single manipulator.
 
-% selector generalization across path families (fill from runs/selector_ood/v1)
 \begin{table}[!htbp]
 \centering
-\color{red}
-\caption{\new{Selector Generalization across Path Families (Trained on Straight and Arc Tasks Only). \emph{Capture}: Share of the Random-to-Oracle Gap Recovered; $\rho_{s}$: Mean Within-Task Spearman Correlation.}}
-\label{tab:ood}
-\begin{tabular}{llccc}
+\caption{Cross-Arm Transfer of the Learned Policy}
+\label{tab:crossarm}
+\begin{threeparttable}
+\begin{tabular}{lccc}
 \toprule
-Family & Split & Capture & Regret (m) & $\rho_{s}$ \\
+Train $\backslash$ Test
+& FR3
+& xArm7
+& Cobotta \\
 \midrule
-Straight    & in     & 0.610 & 0.080 & 0.438 \\
-Arc         & in     & 0.575 & 0.105 & 0.405 \\
-Serpentine  & out    & 0.671 & 0.076 & 0.456 \\
-Rotating axis & out  & 0.649 & 0.079 & 0.444 \\
+FR3
+& 0.439 / 1.388
+& ~---~ / ~---~
+& ~---~ / ~---~ \\
+
+xArm7
+& ~---~ / ~---~
+& 0.364 / 1.400
+& ~---~ / ~---~ \\
+
+Cobotta
+& ~---~ / ~---~
+& ~---~ / ~---~
+& 0.210 / 1.271 \\
 \bottomrule
 \end{tabular}
+\begin{tablenotes}
+    \item[Note 1] Each entry reports Stroke (m) / Ratio. Rows denote the
+    training manipulator and columns denote the test manipulator. Ratio is
+    measured relative to the classical controller on the test manipulator.
+\end{tablenotes}
+\end{threeparttable}
 \end{table}
 
-\subsubsection{\new{Action-Space Structure}}
-\new{The shape of the learned command confirms the vertex reduction empirically. The classical command is an interior point of the box (median magnitude $0.14$ of the half-width), whereas the learned continuous policy saturates it (median $1.00$, with $89.2\%$ of steps on the boundary). Projecting the continuous command onto the nearest vertex changes the realized length by only $+0.004$ with a confidence interval spanning zero, indicating that the expressible magnitudes carry no information. In contrast, a policy trained natively over the $2^{4}$ vertices exceeds the continuous one by $+0.088$ with intervals excluding zero. The continuous learned resolution is therefore the discrete switching controller of Section~\ref{sec:hjb}, expressed through a parameterization (tanh saturation) that trains worse.}
 
-
-
-
-
-{\color{red}
-
-
-
-
-
-\subsubsection{\new{Cross-Arm Replication}}
-\label{sec:crossarm}
-{\color{red}
-Beneath the numbers of Table~\ref{tab:mainresult}, the mechanism also replicates across the three manipulators. On every arm the classical law terminates overwhelmingly on the cone constraint ($81$--$85\%$), and the switching laws convert those endings with one shared strategy: they maintain the joint-limit margin early in the stroke and consume it near the end on whichever constraint is closest to violation. Moreover, the FR3-trained policy executed unchanged on the xArm7 retains about $80\%$ of its native gain.
-}
-
-
-\subsubsection{\new{Executability and Finite-Rate Consistency}}
-\new{A switch alters only the null-space component of the increment, so the end-effector motion is unaffected and the joint-space discontinuity is bounded by $a_{\max}$; generated trajectories are time-parameterized with standard methods~\cite{pham2018toppra} and checked against manufacturer limits before replay.}
-
-
-\new{Time parameterization repairs the trajectory after the fact; a second
-test constrains the command as it is issued. A rate limiter
-$|\mathbf{a}_{k}-\mathbf{a}_{k-1}|\le\Delta a_{\max}$ is applied at
-deployment, and $\Delta a_{\max}$ is swept from $2$ (no restriction) down
-to $0.125$, tracing the trade-off between stroke retained and acceleration. If the stroke
-survives moderate rate limiting, the high-frequency vertex sequence is not
-itself physically essential: the benefit of the law lies in which orthant
-it selects, not in the hardware executing every switch.}
-
-
-
-
-
-
-\new{Refining the integration step to $25$ and $12.5$\,ms changes absolute lengths by less than $2\%$ and leaves every comparison essentially unchanged. The projected-versus-continuous paired difference stays positive at $25$ and $50$\,ms control periods and turns negative only at $100$\,ms and beyond; the sign flips exactly where the theory predicts that intermediate magnitudes begin to substitute for switches the controller can no longer make. The one-step laws are defined at exactly the deployed control period.}
-
-\new{The within-pool oracle costs $K$ rollouts per task, whereas the selector costs one forward pass and gives up the measured remainder, a trade-off that matters at scale, where the placement study sweeps thousands of base poses.}
-
-\subsection{Generalization Ability}
-
-\subsubsection{\new{Beyond the Straight Ray}}
-\new{On arcs the resolution laws transfer by construction, since they read only the current configuration, while the task term acquires the lateral feedback of Section~\ref{sec:traj}. On serpentine seams, training the learned baselines on the family or observing curvature changes nothing beyond the two-run noise floor, whereas the action-space choice accounts for $+0.075$--$0.093$; this indicates that the resolution decides from the configuration's distance to the boundaries. On non-planar workpieces the cone axis rotates, and the margin field reads the cone margin against the local axis.}
-
-\subsubsection{Manipulator Base Placement Analysis}
+\subsubsection{Manipulator Base Placement}
 \label{sec:place}
-\new{Deployment poses the inverse question: the path is given and the base pose must be chosen so it can be executed; waypoint-wise reachability admits poses from which no single stroke covers the path (Fig.~\ref{fig:pwgap}).}
 
-\new{The framework supplies the missing test directly: for each candidate base pose, transform the required path into that base frame, run the two stages, and record the fraction of the required path one continuous stroke covers; a pose is admissible only when the fraction reaches one, and is then chosen inside the admissible set by any secondary criterion.}
+Continuous kinematic reachability also provides a task-aware criterion for
+manipulator base placement. For each candidate base pose, the required path is
+transformed into the robot frame and evaluated by the proposed framework. A
+base pose is considered feasible when the complete path can be covered by a
+single continuous stroke.
 
-\new{Two consequences follow. First, the admissible set obtained this way is contained in the reachability-map set but is not a shrunken copy of it, since what removes a pose is the branch structure rather than the distance to the workspace edge. Second, because the strokes run as far as the kinematics permit, a path that a conservative placement would split into several setups may be covered from a single base pose.}
+Unlike waypoint-wise reachability, this criterion accounts for the continuity
+of the joint trajectory and the initial configuration branch. It therefore
+identifies base poses from which the required path is continuously executable,
+rather than merely pointwise reachable.
 
 
 
 \subsection{Real-World Validation}
 \label{sec:real}
-\new{Everything above is kinematic, so the physical trials are designed to establish executability rather than to re-measure the controller comparison: (i) the joint-limit and self-collision models agree with the hardware, (ii) the switching commands survive time parameterization, and (iii) the tool stays on the path under the manufacturer's tracking controller.}
 
-\new{Trajectories are generated offline by the deployed system (selector followed by the value law), time-parameterized by TOPP-RA~\cite{pham2018toppra} under the manufacturer's velocity and acceleration limits, and replayed unmodified on a Franka Research 3 through its joint position interface; no learned component runs online. We select $[N]$ evaluation tasks stratified by the simulated stroke (short, medium, and long terciles) and replay, for each task, the margin-law trajectory, the value-law trajectory, and the rate-limited value-law variant of Section~\ref{sec:ladder}. Three quantities are recorded per trial. First, the \emph{executed fraction}, namely the stroke completed on hardware divided by the simulated stroke; a trial terminates when the controller reports a limit violation or the tracking error exceeds $\epsilon_{\mathrm{pos}}$. Second, the Cartesian deviation from the prescribed path (RMS and maximum), which measures whether the null-space switching disturbs the task-space motion after time parameterization. Third, the peak joint velocity and acceleration relative to the manufacturer limits, which quantifies how much dynamic headroom the kinematically generated trajectories consume.}
+The proposed framework is kinematic, so the physical experiments evaluate
+whether the generated extreme motions remain executable on hardware.
+Trajectories are generated offline by the selector and value law,
+time-parameterized using TOPP-RA~\cite{pham2018toppra} \xinyi{改成ruckig} under the manufacturer's
+joint velocity and acceleration limits, and replayed unmodified on a Franka
+Research 3 through its joint-position interface.
 
-\new{Table~\ref{tab:real} reports the results. [To be completed after the hardware runs: executed fractions per controller and stratum; whether failures concentrate in the long-stroke tercile where joints run close to their limits; RMS/max deviation against $\epsilon_{\mathrm{pos}}$; velocity/acceleration headroom; and representative termination causes, with the corresponding video on the project website.]}
-
-% Placeholder table: fill from the replay logs (replay_franka_traj.py);
-% keep the layout, replace the dashes.
-\begin{table}[!htbp]
-\centering
-\color{red}
-\caption{\new{Real-World Replay on the Franka Research 3 ($[N]$ Tasks;
-Trajectories Generated Offline and Replayed Unmodified).}}
-\label{tab:real}
-\begin{threeparttable}
-\begin{tabular}{lccc}
-\toprule
-Controller & \shortstack{Executed\\fraction} & \shortstack{Path dev.\\RMS / max (mm)} & \shortstack{Peak vel. / acc.\\(\% of limit)} \\
-\midrule
-Margin law               & -- & -- / -- & -- / -- \\
-Value law                & -- & -- / -- & -- / -- \\
-Value law, rate-limited  & -- & -- / -- & -- / -- \\
-\bottomrule
-\end{tabular}
-\begin{tablenotes}
-    \item[Note 1] \new{Executed fraction is hardware stroke over simulated
-    stroke, averaged per stratum; a fraction of one means the kinematic
-    model was never contradicted by the hardware.}
-\end{tablenotes}
-\end{threeparttable}
-\end{table}
-
-
+We evaluate $[N]$ tasks spanning short to long simulated strokes and compare
+the simulated and hardware executions in terms of completed stroke and
+Cartesian path-tracking error. The hardware reproduces $[XX]\%$ of the
+simulated stroke on average, with an RMS / maximum path deviation of
+$[XX]/[XX]$\,mm. These results confirm that the kinematically generated
+extreme motions can be transferred to the physical robot while preserving
+the prescribed Cartesian path.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Conclusions and Future Work}
 \label{sec:conclusion}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\new{In this paper, we defined and quantified \textit{continuous kinematic reachability}, namely how much of a manipulator's pointwise reachability a single continuous stroke can realize. The quantity is bracketed per task between a numerical pointwise-reachability estimate and the executed stroke, across three manipulators and over a distribution of tasks.}
+In this paper, we introduced \textit{continuous kinematic reachability} to
+measure how much of a manipulator's pointwise reachable path can be realized
+by a single continuous stroke. We evaluated this quantity across three
+manipulators and a distribution of tasks using the executed stroke and a
+numerical pointwise-reachability reference.
 
-\new{The proposed framework rests on one principle, derived from the exit-time formulation: extreme motion generation requires long-horizon judgment delivered at fine action precision, and the two should be supplied by different instruments. The HJB analysis reduces redundancy resolution to evaluating a scalar potential with an exact one-step model, and the compared controllers order precisely by how much future information the potential carries. The critic of an ordinary reinforcement-learning run, read through the same law, achieves the best performance on all three manipulators at identical per-step cost, whereas the policy head of the same run stays below the training-free law. The same division of labor governs the choice of the initial configuration, through a selector supervised by rollouts of the deployed law.}
+The proposed framework follows a simple principle: learning provides
+long-horizon state evaluation, while the exact model resolves fine local
+action differences. The exit-time formulation and HJB analysis lead to a
+vertex-valued redundancy-resolution law, through which the learned critic
+consistently outperforms both the corresponding policy head and the
+training-free baselines. Initial configuration selection follows the same
+principle by learning to rank candidate branches from rollout outcomes.
 
-\new{Beyond the benchmark, the same measurement turns manipulator base placement into a task-aware decision. Future work will focus on extending the bracket to dynamic constraints and extending the road table to paths specified online.}
+The same framework also provides a task-aware criterion for manipulator base
+placement. Future work will extend the formulation to dynamic constraints and
+paths specified online.
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

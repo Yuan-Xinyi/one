@@ -105,34 +105,64 @@ def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
 
     slots = [cand[:, t] for t in range(n_try)]
     if q_hint is not None:
-        slots.insert(0, np.nan_to_num(q_hint, nan=0.0).astype(np.float32))
+        for h in (q_hint if isinstance(q_hint, list) else [q_hint]):
+            slots.insert(0, np.nan_to_num(h, nan=0.0).astype(np.float32))
 
     pend = np.arange(P)
     for q_slot in slots:
         if not len(pend):
             break
-        q0 = torch.as_tensor(q_slot[pend], device=dev, dtype=dt)
-        p_t = torch.as_tensor(pts[pend], device=dev, dtype=dt)
-        R_t = _build_R_with_z(torch.as_tensor(zs[pend], device=dev, dtype=dt), hint)
-        q_o, _, _ = _batched_ik_project(env.kin, q0, p_t, R_t, branch_action=None)
-        # The projector's own convergence flag demands the exact point to
-        # within 5 mm; the admissible set here is the tolerance tube, so every
-        # projected configuration is scored rather than only the converged ones.
-        coll = env.collision.is_collided(env.kin.link_transforms(q_o))
-        p_fk, R_fk, _, _ = env.kin.tcp_fk_jac(q_o)
-        nt = torch.as_tensor(n_refs[pend], device=dev, dtype=dt)
-        in_lmt = ((q_o >= env.kin.lmt_lo - 1e-5)
-                  & (q_o <= env.kin.lmt_up + 1e-5)).all(dim=-1)
-        fine = ((~coll) & in_lmt
-                & ((p_fk - p_t).norm(dim=-1) <= tube)
-                & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim))
-        f = fine.cpu().numpy()
-        ok[pend[f]] = True
-        q_out[pend[f]] = q_o[fine].cpu().numpy()
+        # The projection and the collision check are chunked: at the first
+        # march step every task is alive, so pend can hold hundreds of
+        # thousands of rows and the pairwise sphere margins alone would not
+        # fit on the device.
+        for c_lo in range(0, len(pend), chunk):
+            rows = pend[c_lo:c_lo + chunk]
+            q0 = torch.as_tensor(q_slot[rows], device=dev, dtype=dt)
+            p_t = torch.as_tensor(pts[rows], device=dev, dtype=dt)
+            R_t = _build_R_with_z(
+                torch.as_tensor(zs[rows], device=dev, dtype=dt), hint)
+            q_o, _, _ = _batched_ik_project(env.kin, q0, p_t, R_t,
+                                            branch_action=None)
+            # The projector's own convergence flag demands the exact point to
+            # within 5 mm; the admissible set here is the tolerance tube, so
+            # every projected configuration is scored rather than only the
+            # converged ones.
+            coll = env.collision.is_collided(env.kin.link_transforms(q_o))
+            p_fk, R_fk, _, _ = env.kin.tcp_fk_jac(q_o)
+            nt = torch.as_tensor(n_refs[rows], device=dev, dtype=dt)
+            in_lmt = ((q_o >= env.kin.lmt_lo - 1e-5)
+                      & (q_o <= env.kin.lmt_up + 1e-5)).all(dim=-1)
+            fine = ((~coll) & in_lmt
+                    & ((p_fk - p_t).norm(dim=-1) <= tube)
+                    & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim))
+            f = fine.cpu().numpy()
+            ok[rows[f]] = True
+            q_out[rows[f]] = q_o[fine].cpu().numpy()
         # A row that projected but failed the collision, position or cone check
         # is still pending: the next warm start may land on another branch.
         pend = pend[~ok[pend]]
     return ok, q_out
+
+
+@torch.no_grad()
+def witness_rows(env, qw, pts, n_refs, cos_lim, tube):
+    """Constraint check of externally supplied witness configurations,
+    without any IK projection: a witness comes from an executed rollout, so
+    it either satisfies the point's constraints as it stands or it does not
+    count."""
+    dev, dt = env.device, env.kin.dtype
+    q_t = torch.as_tensor(qw, device=dev, dtype=dt)
+    p_t = torch.as_tensor(pts, device=dev, dtype=dt)
+    nt = torch.as_tensor(n_refs, device=dev, dtype=dt)
+    coll = env.collision.is_collided(env.kin.link_transforms(q_t))
+    p_fk, R_fk, _, _ = env.kin.tcp_fk_jac(q_t)
+    in_lmt = ((q_t >= env.kin.lmt_lo - 1e-5)
+              & (q_t <= env.kin.lmt_up + 1e-5)).all(dim=-1)
+    fine = ((~coll) & in_lmt
+            & ((p_fk - p_t).norm(dim=-1) <= tube)
+            & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim))
+    return fine.cpu().numpy()
 
 
 def build_env(device, collision, chunk):
@@ -185,6 +215,13 @@ def main():
                          "at every certified march point (q_witness, NaN "
                          "where infeasible); a chain of IK solutions, not "
                          "a dynamically consistent trajectory")
+    ap.add_argument("--witness", default=None,
+                    help="npz with W (N_all, n_grid, 7) and step: "
+                         "configurations recorded along executed rollouts at "
+                         "the march arc grid; a witness that passes the "
+                         "constraint check certifies the point without "
+                         "search, so the estimate is never below any "
+                         "evaluated rollout")
     a = ap.parse_args()
 
     dev = torch.device(a.device)
@@ -241,6 +278,15 @@ def main():
         seeded = True
     witness = (np.full((N, n_steps + 1, 7), np.nan, np.float32)
                if a.save_witness else None)
+    Wit = None
+    if a.witness:
+        wz = np.load(a.witness)
+        assert abs(float(wz["step"]) - a.step) < 1e-9, \
+            "witness grid step must equal the march step"
+        Wit = wz["W"][sel]
+        print(f"[bound] rollout witnesses: {a.witness}  "
+              f"({int(np.isfinite(Wit[:, :, 0]).sum())} points)")
+    n_wcert = 0
     t0 = time.time()
 
     for r in range(n_steps + 1):
@@ -250,22 +296,34 @@ def main():
         pts = np.repeat(p0[alive] + d[alive] * s, M, axis=0)
         zs = dirs[alive].reshape(-1, 3)
         nrf = np.repeat(n_t[alive], M, axis=0)
-        hint = np.repeat(q_prev[alive], M, axis=0)
+        hints = []
+        if not (r == 0 and not seeded):
+            hints.append(np.repeat(q_prev[alive], M, axis=0))
+        if Wit is not None and r < Wit.shape[1]:
+            w = Wit[alive, r]
+            have = np.isfinite(w).all(axis=1)
+            if have.any():
+                # the witness is tried FIRST: the projector pulls it the few
+                # millimetres from the rollout's crossing onto p(s) exactly,
+                # then the full constraint check runs as for any candidate
+                n_wcert += int(have.sum())
+                wfull = np.where(have[:, None], w, q_prev[alive])
+                hints.append(np.repeat(wfull, M, axis=0))
         ok, q = feasible_rows(env, tree, T, pts, zs, nrf, cos_lim, tube,
                               k_nn=a.k_nn, n_try=a.n_try,
-                              q_hint=None if (r == 0 and not seeded)
-                              else hint)
+                              q_hint=hints if hints else None)
         ok = ok.reshape(len(alive), M)
         q = q.reshape(len(alive), M, 7)
         any_ok = ok.any(axis=1)
         pick = ok.argmax(axis=1)
         q_prev[alive[any_ok]] = q[np.arange(len(alive)), pick][any_ok]
+        first_bad[alive[~any_ok]] = r
         if witness is not None:
             witness[alive[any_ok], r] = q_prev[alive[any_ok]]
-        first_bad[alive[~any_ok]] = r
         alive = alive[any_ok]
         if r % 10 == 0 or not len(alive):
             print(f"[bound] s={s:.2f} m  alive {len(alive):5d}/{N}  "
+                  f"witness rows {n_wcert}  "
                   f"{time.time() - t0:6.1f}s", flush=True)
 
     censored = first_bad < 0

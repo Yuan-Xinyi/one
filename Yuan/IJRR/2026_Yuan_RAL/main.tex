@@ -804,10 +804,10 @@ Hybrid PPO+Classical
 We next combine the learned initial-configuration selector with the
 critic-guided value controller. Table~\ref{tab:framework} reports the
 result on the FR3 evaluation set, with the value controller fixed across
-all rows so that only the initial configuration changes. Relative to the
-task-generating start, learned selection increases the mean stroke from
-$0.579$ to $0.650$\,m. The selected trajectories achieve a median stroke
-equal to $0.97$ of the numerical pointwise-reachability reference
+all rows so that only the initial configuration changes. Learned selection
+increases the mean stroke from $0.590$\,m for a randomly chosen candidate
+to $0.650$\,m. The selected trajectories achieve a median stroke equal to
+$0.97$ of the numerical pointwise-reachability reference
 $\ell^{\mathrm{pw}}$, while the within-pool oracle indicates the remaining
 gap attributable to candidate ranking.
 
@@ -823,9 +823,6 @@ Initial configuration
 & \shortstack{Stroke\\(m)}
 & \multicolumn{2}{c}{\shortstack{Fraction of $\ell^{\mathrm{pw}}$\\mean / median}} \\
 \midrule
-Task-generating start
-& 0.579 & 0.83 & 0.92 \\
-
 Random candidate
 & 0.590 & 0.84 & 0.88 \\
 

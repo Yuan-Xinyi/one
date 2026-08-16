@@ -555,7 +555,7 @@ $\mathbf{n}$. Training and evaluation tasks are disjoint.
     \item \uline{Initial configurations:}
     For the full-framework and selection experiments, the candidate pool
     contains $K=8$ configurations retrieved from
-    $N_{\mathrm{dir}}=32$ directions using IKSel. The learned selector
+    $N_{\mathrm{dir}}=10$ directions using IKSel. The learned selector
     ranks these candidates, and the selected configuration is followed by
     one damped-least-squares refinement. Controller-only comparisons use
     the same fixed initial configuration for all methods to isolate the
@@ -798,7 +798,10 @@ Within-pool oracle ($K$ rollouts)
 \begin{tablenotes}
     \item[Note 1]
     $\ell^{\mathrm{pw}}$ denotes the numerical pointwise-reachability
-    reference used for task-wise normalization.
+    reference used for task-wise normalization. This table uses the FR3
+    benchmark set for which $\ell^{\mathrm{pw}}$ is available; its task
+    distribution differs from that of Table~\ref{tab:mainresult}, so
+    absolute strokes are not directly comparable across the two tables.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -920,7 +923,7 @@ Longer control period ($100$\,ms)
     \item[Note 1] PPO is retrained for each modified setting. The margin
     and value laws are evaluated with the corresponding null-space authority
     and control period; the value law uses the critic from the matching PPO
-    training run.
+    training run. The continuous-action row is evaluated on $2048$ tasks.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}

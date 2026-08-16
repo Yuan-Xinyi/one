@@ -857,10 +857,11 @@ Within-pool oracle ($K$ rollouts)
 To isolate the selection stage, we fix the motion-generation controller and
 compare different ranking rules on the same candidate pool.
 Table~\ref{tab:ablate_seed} reports results on $2500$ held-out straight-path
-tasks. Joint-limit margin and the analytic margin field recover $41.9\%$ and
-$41.2\%$ of the first-feasible-to-oracle gap, respectively, while the learned
-selector recovers $57.5\%$. These results show that rollout supervision
-provides a stronger ranking signal for initial configurations than the tested
+tasks. Taking the first feasible candidate reaches $0.85$ of the
+within-pool oracle stroke. Ranking by joint-limit margin or by the
+analytic margin field raises this to $0.91$, while the learned selector
+reaches $0.94$. These results show that rollout supervision provides a
+stronger ranking signal for initial configurations than the tested
 instantaneous geometric heuristics.
 
 \begin{table}[!htbp]
@@ -873,45 +874,45 @@ Held-Out FR3 Tasks}
 \toprule
 Type & Candidate Ranking Rule
 & \shortstack{Stroke\\(m)}
-& \shortstack{Capture\\(\%)} \\
+& \shortstack{Fraction\\of Oracle} \\
 \midrule
 
 \textemdash
 & First Feasible Candidate
-& 0.537 & \phantom{00}0.0 \\
+& 0.537 & 0.853 \\
 
 \midrule
 Random
 & Random Valid Candidate
-& 0.553 & \phantom{0}13.4 \\
+& 0.553 & 0.870 \\
 
 \midrule
 \multirow{4}{*}{Heuristic}
 & Max Directional Manipulability
-& 0.548 & \phantom{00}9.3 \\
+& 0.548 & 0.867 \\
 & Max Orientation Margin
-& 0.548 & \phantom{00}9.3 \\
+& 0.548 & 0.865 \\
 & Max Joint-Limit Margin
-& 0.587 & \phantom{0}41.9 \\
+& 0.587 & 0.910 \\
 & Margin Field $\Phi_{\mathrm{m}}$
-& 0.586 & \phantom{0}41.2 \\
+& 0.586 & 0.911 \\
 
 \midrule
 Learned
 & \textbf{Learned Selector (Ours)}
-& \textbf{0.605} & \textbf{57.5} \\
+& \textbf{0.605} & \textbf{0.940} \\
 
 \midrule
 \textemdash
 & Within-Pool Oracle ($K$ Rollouts)
-& 0.656 & 100.0 \\
+& 0.656 & 1.000 \\
 
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] All methods rank the same candidate pool and use the same
-    motion-generation controller. Capture denotes the fraction of the
-    first-feasible-to-oracle stroke gap recovered by each ranking rule.
+    motion-generation controller. Fraction of Oracle denotes the mean
+    per-task ratio of the achieved stroke to the within-pool oracle stroke.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}

@@ -967,8 +967,10 @@ Longer control period ($100$\,ms)
 
 We evaluate whether the learned initial-configuration selector transfers to
 path families outside its training distribution. The selector is trained on
-$20{,}000$ straight-line and curved-line tasks and evaluated on held-out tasks
-from four path families. Table~\ref{tab:ood} distinguishes \emph{Unseen}
+$20{,}000$ tasks, comprising $10{,}000$ straight-line and $10{,}000$
+curved-line tasks in equal proportion, with all $K$ candidates of every
+training task rolled out to produce the ranking labels. It is then
+evaluated on $2{,}500$ held-out tasks from each of the four path families. Table~\ref{tab:ood} distinguishes \emph{Unseen}
 tasks drawn from the two training families from \emph{OOD} tasks belonging
 to sinusoidal and rotating-axis families that are absent from training.
 The selector recovers $64.9$--$67.1\%$ of the random-to-oracle gap on the

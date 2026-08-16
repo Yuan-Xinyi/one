@@ -1038,33 +1038,34 @@ by its own kinematic model.
 
 \begin{table}[!htbp]
 \centering
-\caption{Cross-Arm Transfer of the Learned Value ($10{,}000$ Tasks;
-Stroke (m) / Mean Per-Task Ratio to the Test Manipulator's Classical
-Controller)}
+\caption{Cross-Arm Transfer of the Learned Value on $10{,}000$ Tasks}
 \label{tab:crossarm}
 \begin{threeparttable}
-\begin{tabular}{lcc}
+\begin{tabular}{lcccc}
 \toprule
-Critic source $\backslash$ Test
-& FR3
-& xArm7 \\
+ & \multicolumn{2}{c}{Test on FR3}
+ & \multicolumn{2}{c}{Test on xArm7} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+Critic source
+& \shortstack{Stroke\\(m)} & Ratio
+& \shortstack{Stroke\\(m)} & Ratio \\
 \midrule
-FR3
-& 0.564 / 1.90
-& 0.463 / 1.88 \\
+FR3 critic
+& 0.564 & 1.90
+& 0.463 & 1.88 \\
 
-xArm7
-& 0.526 / 1.76
-& 0.466 / 1.89 \\
+xArm7 critic
+& 0.526 & 1.76
+& 0.466 & 1.89 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-    \item[Note 1] Rows denote the manipulator whose critic is used;
-    columns denote the test manipulator, which always uses its own
-    kinematic model in the value controller of Eq.~\ref{eq:value-law}.
-    Diagonal entries are the native results of
-    Table~\ref{tab:mainresult}. The 6-DoF Cobotta is excluded because its
-    null-space dimension differs.
+    \item[Note 1] Ratio denotes the mean per-task ratio to the test
+    manipulator's classical controller. The test manipulator always uses
+    its own kinematic model in the value controller of
+    Eq.~\ref{eq:value-law}; only the critic is transferred. Diagonal
+    entries are the native results of Table~\ref{tab:mainresult}. The
+    6-DoF Cobotta is excluded because its null-space dimension differs.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}

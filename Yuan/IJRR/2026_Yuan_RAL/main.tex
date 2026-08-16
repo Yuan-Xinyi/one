@@ -224,7 +224,7 @@ Consider an $n$-DoF manipulator with joint configuration $\mathbf{q}\in\mathbb{R
 \begin{equation}
 \mathcal{P}=\{\mathbf{p}_{0}+s\mathbf{d}:s\geq 0\},
 \end{equation}
-and the end-effector advances along it at commanded speed $v$ with control period $\Delta t$. For the curved path families evaluated later, $\mathbf{d}$ and $\mathbf{n}$ are replaced by the local path tangent and cone axis, respectively.
+and the end-effector advances along it at commanded speed $v$ with control period $\Delta t$. The formulation below focuses on straight rays; whether the initial-configuration selector, conditioned on the sampled path ahead, transfers to curved path families is evaluated separately in Section~\ref{sec:ood}.
 
 Given an initial configuration $\mathbf{q}_{0}$ and a redundancy-resolution policy $\pi$, execution terminates at the first violation of a feasibility constraint. Let $\mathcal{L}(\mathbf{q}_{0},\pi;\mathbf{c})$ denote the Cartesian length completed before termination. We define the \emph{continuous kinematic reachability} of task $\mathbf{c}$ as
 \begin{equation}
@@ -516,10 +516,9 @@ F(\mathbf{q},\mathbf{a})\in\Omega
 \end{equation}
 Thus, the continuous-time HJB analysis supplies the vertex candidate set,
 while the finite-rate implementation compares the learned values of the
-corresponding successor observations. Because feasible commands share the
-same nominal task-space increment, their immediate progress rewards are
-approximately identical, so their greedy ordering is determined by the
-successor value. With an approximate learned critic, Eq.~(\ref{eq:value-law})
+corresponding successor observations. Because the task-space controller commands the same nominal path
+increment for all feasible vertices, we rank them by successor value in
+the finite-rate implementation. With an approximate learned critic, Eq.~(\ref{eq:value-law})
 is a model-based value-ranking rule rather than an exact policy-improvement
 guarantee.
 
@@ -540,9 +539,10 @@ training-free baseline in Section~V.
 Experiments are conducted on the 7-DoF xArm7, the 7-DoF Franka Research 3
 (FR3), and the 6-DoF Cobotta using the \textit{One} robotic
 system\footnote{https://github.com/wanweiwei07/one}. Each manipulator is
-evaluated on $10{,}000$ held-out tasks specified by the starting position
-$\mathbf{p}_0$, path direction $\mathbf{d}$, and task-plane normal
-$\mathbf{n}$. Training and evaluation tasks are disjoint.
+evaluated on $10{,}000$ held-out straight-line tasks specified by the
+starting position $\mathbf{p}_0$, path direction $\mathbf{d}$, and
+task-plane normal $\mathbf{n}$. Training and evaluation tasks are
+disjoint.
 
 \begin{itemize}[leftmargin=1em]
 \renewcommand{\labelitemi}{$\triangleright$}
@@ -581,7 +581,20 @@ $\mathbf{n}$. Training and evaluation tasks are disjoint.
     Redundancy-resolution performance is measured by executed stroke and
     the mean per-task ratio to the classical controller. For experiments
     requiring a task-specific reachability reference, we additionally use
-    the numerical pointwise-reachable length $\ell^{\mathrm{pw}}$.
+    the numerical pointwise-reachable length $\ell^{\mathrm{pw}}$,
+    computed as follows. The task's path is sampled every $2$\,cm of arc
+    length, and at each sample a numerical search asks whether any
+    admissible configuration exists, i.e., one whose tool tip lies within
+    $\epsilon_{\mathrm{pos}}$ of the sample, whose tool axis lies inside
+    the orientation cone, and which respects the joint limits and
+    self-collision clearance. The search projects warm starts drawn from a
+    precomputed configuration table over cone-sampled tool directions,
+    together with the previous sample's solution;
+    $\ell^{\mathrm{pw}}$ is the arc length of the first sample at which no
+    admissible configuration is found. Because a failed search does not
+    prove infeasibility, configurations traversed by the evaluated
+    rollouts are additionally injected as feasibility witnesses, so the
+    reference is never below any evaluated stroke.
 \end{itemize}
 
 For the initial-configuration generalization study, we additionally
@@ -643,9 +656,25 @@ are attributable to the redundancy-resolution law.
     \item \uline{Classical Gradient Resolution (Classical):}
     A conventional null-space gradient controller combines directional
     manipulability, joint-limit centering, and orientation regulation using
-    the weights specified in Section~\ref{sec:setup}. It represents
-    instantaneous geometric redundancy resolution without learned
-    long-horizon information.
+    the weights specified in Section~\ref{sec:setup}. Its command performs
+    gradient ascent on the weighted secondary field,
+    \begin{equation}
+    \label{eq:secondary}
+    \boldsymbol{\xi}
+    = k_{\mu}\nabla_{\mathbf{q}} w_{\mathbf{d}}(\mathbf{q})
+    - k_{\mathrm{jl}}
+    \frac{\mathbf{q}-\mathbf{q}_{\mathrm{mid}}}
+         {\mathbf{q}_{\max}-\mathbf{q}_{\min}}
+    + k_{\theta}\, g(\theta)\,
+    \nabla_{\mathbf{q}}\!\bigl(\mathbf{z}(\mathbf{q})^{\top}\mathbf{n}\bigr),
+    \end{equation}
+    applied as $\mathbf{a}_{\mathrm{cl}} \propto
+    \mathbf{B}^{\top}\boldsymbol{\xi}$, where $w_{\mathbf{d}}$ is the
+    directional manipulability along $\mathbf{d}$, the second term centers
+    each joint in its range, and the gate $g(\theta)$ activates the
+    orientation term as the tool axis approaches the cone boundary. It
+    represents instantaneous geometric redundancy resolution without
+    learned long-horizon information.
 
     \item \uline{Analytic Margin Resolution (Margin):}
     The same one-step vertex-selection structure as the proposed controller
@@ -1026,16 +1055,14 @@ xArm7
 \label{sec:place}
 
 Continuous kinematic reachability also induces a task-aware criterion for
-manipulator base placement. For a candidate base pose, the required path
-can be transformed into the robot frame and evaluated using the same
-continuous-path formulation. A base pose is feasible for the task if the
-complete required path can be executed as a single continuous stroke.
-
-Unlike waypoint-wise reachability, this criterion accounts for the
-continuity of the joint trajectory and the choice of initial configuration.
-It therefore distinguishes base poses from which the complete path is
-continuously executable from those for which its points are merely
-individually reachable.
+manipulator base placement: for a candidate base pose, the required path
+is transformed into the robot frame and evaluated with the same
+continuous-path formulation, and the pose is feasible for the task if the
+complete path can be executed as a single continuous stroke. Unlike
+waypoint-wise reachability, this criterion accounts for the continuity of
+the joint trajectory and the choice of initial configuration, and
+therefore distinguishes poses from which the path is continuously
+executable from those whose points are merely individually reachable.
 
 
 \subsection{Real-World Validation}

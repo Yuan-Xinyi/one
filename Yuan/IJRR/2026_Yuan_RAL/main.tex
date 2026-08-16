@@ -522,12 +522,31 @@ excluded from training and serve as out-of-distribution evaluation.}
 
 \begin{figure*}[!tbp]
     \centering
-    \includegraphics[width=\textwidth]{imgs/path_families.png}
-    \caption{\new{The four evaluated path families. (a) Straight ray;
-    (b) arc with signed curvature; (c) serpentine seam with sinusoidal
-    lateral offset; (d) straight path with a rotating cone axis. Red
-    arrows show the local cone axis $\mathbf{n}(s)$. Families (a) and (b)
-    appear in training; (c) and (d) are used strictly out of
+    \begin{subfigure}{0.24\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{imgs/path_straight.jpg}
+        \caption{Straight}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.24\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{imgs/path_arc.jpg}
+        \caption{Arc}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.24\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{imgs/path_serpentine.jpg}
+        \caption{Serpentine}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.24\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{imgs/path_rotating.jpg}
+        \caption{Rotating axis}
+    \end{subfigure}
+    \caption{\new{The four evaluated path families: (a) a straight ray;
+    (b) an arc with signed curvature; (c) a serpentine seam with
+    sinusoidal lateral offset; (d) a straight path with a rotating cone
+    axis. Red arrows show the local cone axis $\mathbf{n}(s)$. Families
+    (a) and (b) appear in training; (c) and (d) are used strictly out of
     distribution.}}
     \label{fig:families}
 \end{figure*}

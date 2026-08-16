@@ -100,3 +100,6 @@ Yuan/IJRR/2026_Yuan_RAL/*.out
 *.bak
 *.tex.pre*
 *.py.pre*
+
+# paper figures are content, not build artifacts
+!Yuan/IJRR/2026_Yuan_RAL/imgs/*

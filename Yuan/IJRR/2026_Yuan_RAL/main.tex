@@ -599,9 +599,12 @@ disjoint.
 
 For the initial-configuration generalization study, we additionally
 consider the four path families illustrated in Fig.~\ref{fig:families}.
-Straight rays and arcs appear in the selector training distribution,
-whereas serpentine seams and rotating-axis paths are excluded from
-training and used as out-of-distribution path families.
+Note that curved paths concern only the selection stage: the
+redundancy-resolution controllers are trained and compared on
+straight-line tasks throughout, whereas the selector's training set
+contains straight rays and arcs, and serpentine seams and rotating-axis
+paths are excluded from its training and used as out-of-distribution
+path families.
 
 \begin{figure*}[!tbp]
     \centering
@@ -1000,52 +1003,58 @@ Rotating-Axis Path  & OOD    & 64.9 & 0.079 \\
 \end{table}
 
 
-\subsubsection{Cross-Arm Transfer of the Reactive Policy}
+\subsubsection{Cross-Arm Transfer of the Learned Value}
 \label{sec:crossarm}
 
-As a diagnostic of how manipulator-specific the learned reactive policy is,
-we transfer the PPO policy between the two 7-DoF manipulators without
-retraining. The Cobotta is excluded because its null-space dimension is
-$m=3$, whereas the FR3 and xArm7 policies operate in a four-dimensional
-null space and are directly interchangeable. Table~\ref{tab:crossarm}
-reports the executed stroke and the mean per-task ratio to the classical
-controller of the test manipulator.
+We next evaluate how manipulator-specific the learned value is by
+transferring the \emph{critic} between the two 7-DoF manipulators without
+retraining. The test manipulator keeps its own kinematic model, task-space
+controller, constraints, and null-space basis; only the scalar field that
+ranks the successor states is replaced by the critic trained on the other
+arm. The Cobotta is excluded because its null-space dimension is $m=3$.
+Table~\ref{tab:crossarm} reports the executed stroke and the mean per-task
+ratio to the classical controller of the test manipulator.
 
-The FR3-trained policy achieves a ratio of $1.35$ on the xArm7, compared
-with $1.40$ for the native xArm7 policy, retaining approximately $87\%$ of
-the native improvement over the classical controller. In the reverse
-direction, the xArm7-trained policy achieves $1.26$ on the FR3 compared
-with $1.39$ natively, retaining approximately $67\%$ of the improvement.
-Thus, the reactive policy exhibits nontrivial transfer between the two
-kinematically similar 7-DoF manipulators, although performance remains
-best when training and testing on the same arm.
+The FR3-trained critic reaches a ratio of $1.88$ on the xArm7, against
+$1.89$ for the native critic, retaining approximately $99\%$ of the native
+improvement. In the reverse direction, the xArm7-trained critic reaches
+$1.76$ on the FR3, retaining approximately $84\%$ and remaining comparable
+to the analytic margin law. For reference, transferring the reactive
+policy head instead retains only $87\%$ and $67\%$ in the two directions.
+This asymmetry is consistent with the division adopted by the framework:
+the transferable component is the smooth long-horizon state evaluation,
+while the fine action discrimination is recomputed on the test manipulator
+by its own kinematic model.
 
 \begin{table}[!htbp]
 \centering
-\caption{Cross-Arm Transfer of the Reactive PPO Policy ($10{,}000$ Tasks;
+\caption{Cross-Arm Transfer of the Learned Value ($10{,}000$ Tasks;
 Stroke (m) / Mean Per-Task Ratio to the Test Manipulator's Classical
 Controller)}
 \label{tab:crossarm}
 \begin{threeparttable}
 \begin{tabular}{lcc}
 \toprule
-Train $\backslash$ Test
+Critic source $\backslash$ Test
 & FR3
 & xArm7 \\
 \midrule
 FR3
-& 0.439 / 1.39
-& 0.350 / 1.35 \\
+& 0.564 / 1.90
+& 0.463 / 1.88 \\
 
 xArm7
-& 0.401 / 1.26
-& 0.364 / 1.40 \\
+& 0.526 / 1.76
+& 0.466 / 1.89 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-    \item[Note 1] Rows denote the training manipulator and columns denote
-    the test manipulator. The 6-DoF Cobotta is excluded because its
-    null-space dimension differs from those of the two 7-DoF manipulators.
+    \item[Note 1] Rows denote the manipulator whose critic is used;
+    columns denote the test manipulator, which always uses its own
+    kinematic model in the value controller of Eq.~\ref{eq:value-law}.
+    Diagonal entries are the native results of
+    Table~\ref{tab:mainresult}. The 6-DoF Cobotta is excluded because its
+    null-space dimension differs.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}

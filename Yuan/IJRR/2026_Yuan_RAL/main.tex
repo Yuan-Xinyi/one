@@ -125,7 +125,7 @@ The achievable stroke depends on two coupled decisions that pointwise reachabili
 
 We address these two decisions through a common candidate-and-rank structure. For initial selection, kinematically feasible configurations are generated and ranked by a learned selector supervised by rollout outcomes. For motion generation, the exit-time formulation yields a value-based redundancy-resolution structure: pointwise Hamiltonian maximization over the bounded null-space command admits a vertex-valued solution. A known kinematic model therefore generates feasible one-step successors under the vertex commands, which can be ranked by either an analytic constraint-margin field or a learned critic. In particular, using the critic from the same actor--critic training run to rank successor states substantially outperforms deploying its policy head directly. This comparison suggests a useful division of labor: learning provides long-horizon state evaluation, while the kinematic model performs local action discrimination.
 
-We evaluate the framework on three manipulators with $10{,}000$ held-out path-following tasks each. The experiments compare redundancy-resolution laws, initial-configuration selection rules, action parameterizations, and control rates. The learned selector is further evaluated on path families absent from its training distribution. Hardware experiments assess whether the generated motions remain executable after time parameterization, and the same continuous-path criterion naturally induces a task-aware criterion for manipulator base placement.
+We evaluate the framework on three manipulators with $10{,}000$ held-out path-following tasks each. The experiments compare redundancy-resolution laws, including continuous- and vertex-action reactive policies, and initial-configuration selection rules. The learned selector is further evaluated on path families absent from its training distribution. Hardware experiments assess whether the generated motions remain executable after time parameterization, and the same continuous-path criterion naturally induces a task-aware criterion for manipulator base placement.
 
 In summary, the main contributions of this work are as follows.
 \begin{itemize}
@@ -713,6 +713,13 @@ are attributable to the redundancy-resolution law.
     This baseline retains the model-based candidate ranking structure but
     uses only instantaneous constraint information.
 
+    \item \uline{Continuous-Action PPO (Continuous PPO):}
+    A PPO policy over the continuous command box $[-1,1]^{m}$ with a
+    tanh-squashed Gaussian head and the tanh-corrected entropy bonus,
+    trained under the same observations, reward, and budget as the vertex
+    policy and deployed through its deterministic mean. It measures what
+    direct reactive learning achieves without the vertex restriction.
+
     \item \uline{Reactive Vertex Policy (PPO):}
     The vertex-valued PPO policy of Section~\ref{sec:traj} directly maps the
     current observation to a null-space command.
@@ -784,7 +791,12 @@ Type
 
 \midrule
 
-\multirow{3}{*}{Learned}
+\multirow{4}{*}{Learned}
+& Continuous PPO
+& 0 & 0 / 0
+& 0 & 0 / 0
+& 0 & 0 / 0 \\
+
 & PPO
 & 0.439 & 0 / 0
 & 0.364 & 0 / 0
@@ -927,65 +939,6 @@ Learned
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
-
-\subsubsection{Action Parameterization and Control Granularity}
-\label{sec:action_ablation}
-
-We next examine whether the performance gap between the reactive policy and
-the value controller can be explained by the action parameterization or
-control granularity. Table~\ref{tab:action_space} reports three modifications
-on the FR3, with PPO retrained for $30$M environment steps under each
-modified setting. Replacing the vertex action space with a continuous
-command box \emph{lowers} the policy to a mean Ratio of $0$: trained with the
-tanh-corrected entropy bonus, the continuous policy no longer saturates
-the command box (median command magnitude $0.40$, under $3\%$ of
-components at the boundary) and loses part of the vertex policy's
-performance, which indicates that the vertex parameterization is itself
-beneficial, consistent with the structure derived in
-Section~\ref{sec:traj}. Increasing
-the null-space authority from $a_{\max}=0.5$ to $1.0$ yields mean Ratios of $0$,
-$0$, and $0$ for the reactive policy, margin law, and value law,
-respectively. Increasing the control period from $50$ to $100$\,ms similarly
-leaves the reactive policy at $0$, while the value law reaches $0$.
-Across these tested settings, the critic-guided value controller therefore
-retains its advantage over direct policy deployment under every action
-parameterization and control interval tested.
-
-\begin{table}[!htbp]
-\centering
-\caption{Action-Parameterization and Control-Granularity Ablation on the FR3
-($1024$ Tasks; Ratio mean / p10)}
-\label{tab:action_space}
-\begin{threeparttable}
-\begin{tabular}{lccc}
-\toprule
-Setting
-& \shortstack{Reactive policy\\Ratio mean / p10}
-& \shortstack{Margin law\\Ratio mean / p10}
-& \shortstack{Ours\\Ratio mean / p10} \\
-\midrule
-Default ($a_{\max}{=}0.5$, $50$\,ms)
-& 0 / 0 & 0 / 0 & 0 / 0 \\
-
-Continuous-action PPO
-& 0 / 0 & -- & -- \\
-
-Doubled authority ($a_{\max}{=}1.0$)
-& 0 / 0 & 0 / 0 & 0 / 0 \\
-
-Longer control period ($100$\,ms)
-& 0 / 0 & 0 / 0 & 0 / 0 \\
-\bottomrule
-\end{tabular}
-\begin{tablenotes}
-    \item[Note 1] PPO is retrained for each modified setting. The margin
-    and value laws are evaluated with the corresponding null-space authority
-    and control period; the value law uses the critic from the matching PPO
-    training run. Ratio is the per-task stroke over the task's
-    $\ell^{\mathrm{pw}}$, reported as mean / p10.
-\end{tablenotes}
-\end{threeparttable}
-\end{table}
 
 \subsection{Generalization and Applications}
 

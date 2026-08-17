@@ -971,44 +971,15 @@ across path families. The selector is trained on $20{,}000$ tasks,
 comprising $10{,}000$ straight and $10{,}000$ arc tasks in equal
 proportion, with all $K$ candidates of every training task rolled out to
 produce the ranking labels; it is then evaluated on $2{,}500$ held-out
-tasks from each of the four families. Table~\ref{tab:ood} distinguishes
-unseen in-distribution tasks (straight, arc) from OOD tasks belonging to
-the serpentine and rotating-axis families that are absent from training.
-The results show that the achieved Ratio is governed by path curvature
+tasks from each of the four families. The Learned Selector rows of
+Table~\ref{tab:ablate_seed} distinguish unseen in-distribution tasks
+(straight, arc) from OOD tasks belonging to the serpentine and
+rotating-axis families that are absent from training. The results show that the achieved Ratio is governed by path curvature
 rather than by training membership: the OOD rotating-axis family, whose
 centerline is straight, matches the in-distribution straight family ($0$
 vs $0$ in mean Ratio), and the OOD serpentine family matches the
 in-distribution arc family ($0$ vs $0$). On every family the learned
 selector remains the strongest non-oracle ranking rule.
-
-\begin{table}[!htbp]
-\centering
-\caption{Generalization of the Initial Configuration Selector across Path Families}
-\label{tab:ood}
-\begin{threeparttable}
-\begin{tabular}{llcc}
-\toprule
-Family & Status
-& \shortstack{Stroke\\(m)}
-& \shortstack{Ratio\\mean / p10} \\
-\midrule
-Straight      & In-dist.\ (unseen) & 0 & 0 / 0 \\
-Arc           & In-dist.\ (unseen) & 0 & 0 / 0 \\
-Serpentine    & OOD                & 0 & 0 / 0 \\
-Rotating-Axis & OOD                & 0 & 0 / 0 \\
-\bottomrule
-\end{tabular}
-\begin{tablenotes}
-    \item[Note 1] The selector is trained on straight and arc tasks.
-    In-dist.\ (unseen) denotes held-out tasks from these families; OOD
-    denotes path families absent from training. Ratio is the per-task
-    ratio of the selected stroke to the task's pointwise-reachable length
-    $\ell^{\mathrm{pw}}$, reported as mean / p10. Rows restate the
-    Learned Selector rows of Table~\ref{tab:ablate_seed} with their
-    training status made explicit.
-\end{tablenotes}
-\end{threeparttable}
-\end{table}
 
 
 \subsubsection{Cross-Arm Transfer of the Learned Value}

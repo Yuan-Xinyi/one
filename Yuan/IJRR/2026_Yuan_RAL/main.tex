@@ -901,130 +901,59 @@ instantaneous geometric heuristics.
 \caption{Comparison of Initial Configuration Selection Methods on $2500$
 Held-Out FR3 Tasks per Path Family}
 \label{tab:ablate_seed}
-
 \begin{threeparttable}
-\setlength{\tabcolsep}{7pt}
-\renewcommand{\arraystretch}{0.95}
 \footnotesize
-
-\begin{tabular}{llccc}
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{lllccc}
 \toprule
-Path Family
+Type
 & Candidate Ranking Rule
+& Family
 & \shortstack{Stroke\\(m)}
 & \shortstack{Ratio\\mean / p10}
 & \shortstack{Near-Oracle\\Tasks (\%)} \\
 \midrule
-
-\multirow{8}{*}{Straight}
-& First Feasible Candidate
-& 0.571 & 0.857 / 0.572 & 37.8 \\
-
-& Random Valid Candidate
-& 0.584 & 0.868 / 0.727 & 8.0 \\
-
-& Max Directional Manipulability
-& 0.579 & 0.866 / 0.597 & 40.4 \\
-
-& Max Orientation Margin
-& 0.580 & 0.867 / 0.609 & 40.3 \\
-
-& Max Joint-Limit Margin
-& 0.618 & 0.907 / 0.766 & 48.0 \\
-
-& Margin Field $\Phi_{\mathrm{m}}$
-& 0.621 & 0.911 / 0.776 & 48.6 \\
-
-& \textbf{Learned Selector (Ours)}
-& \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
-
-& Within-Pool Oracle ($K$ Rollouts)
-& 0.681 & 0.984 / 0.982 & 100.0 \\
-
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & 0.571 & 0.857 / 0.572 & 37.8 \\
+ &  & Arc & 0.733 & 0 / 0 & 32.5 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0.554 & 0.844 / 0.482 & 38.4 \\
 \midrule
-
-\multirow{8}{*}{Arc}
-& First Feasible Candidate
-& 0.733 & 0 / 0 & 32.5 \\
-
-& Random Valid Candidate
-& 0.736 & 0 / 0 & 6.6 \\
-
-& Max Directional Manipulability
-& 0.732 & 0 / 0 & 35.3 \\
-
-& Max Orientation Margin
-& 0.731 & 0 / 0 & 35.6 \\
-
-& Max Joint-Limit Margin
-& 0.803 & 0 / 0 & 41.6 \\
-
-& Margin Field $\Phi_{\mathrm{m}}$
-& 0.807 & 0 / 0 & 42.3 \\
-
-& \textbf{Learned Selector (Ours)}
-& \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
-
-& Within-Pool Oracle ($K$ Rollouts)
-& 1.056 & 0 / 0 & 100.0 \\
-
+\multirow{4}{*}{Random} & \multirow{4}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & 0.584 & 0.868 / 0.727 & 8.0 \\
+ &  & Arc & 0.736 & 0 / 0 & 6.6 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0.567 & 0.856 / 0.695 & 7.4 \\
 \midrule
-
-\multirow{8}{*}{Serpentine}
-& First Feasible Candidate
-& 0 & 0 / 0 & 0 \\
-
-& Random Valid Candidate
-& 0 & 0 / 0 & 0 \\
-
-& Max Directional Manipulability
-& 0 & 0 / 0 & 0 \\
-
-& Max Orientation Margin
-& 0 & 0 / 0 & 0 \\
-
-& Max Joint-Limit Margin
-& 0 & 0 / 0 & 0 \\
-
-& Margin Field $\Phi_{\mathrm{m}}$
-& 0 & 0 / 0 & 0 \\
-
-& \textbf{Learned Selector (Ours)}
-& \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
-
-& Within-Pool Oracle ($K$ Rollouts)
-& 0 & 0 / 0 & 100.0 \\
-
+\multirow{16}{*}{Heuristic} & \multirow{4}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.579 & 0.866 / 0.597 & 40.4 \\
+ &  & Arc & 0.732 & 0 / 0 & 35.3 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0.558 & 0.849 / 0.496 & 39.9 \\
+\cmidrule(lr){2-6}
+ & \multirow{4}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.580 & 0.867 / 0.609 & 40.3 \\
+ &  & Arc & 0.731 & 0 / 0 & 35.6 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0.567 & 0.861 / 0.565 & 40.6 \\
+\cmidrule(lr){2-6}
+ & \multirow{4}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.618 & 0.907 / 0.766 & 48.0 \\
+ &  & Arc & 0.803 & 0 / 0 & 41.6 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0.601 & 0.895 / 0.706 & 46.2 \\
+\cmidrule(lr){2-6}
+ & \multirow{4}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.621 & 0.911 / 0.776 & 48.6 \\
+ &  & Arc & 0.807 & 0 / 0 & 42.3 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0.604 & 0.898 / 0.720 & 46.5 \\
 \midrule
-
-\multirow{8}{*}{Rot.-Axis}
-& First Feasible Candidate
-& 0.554 & 0.844 / 0.482 & 38.4 \\
-
-& Random Valid Candidate
-& 0.567 & 0.856 / 0.695 & 7.4 \\
-
-& Max Directional Manipulability
-& 0.558 & 0.849 / 0.496 & 39.9 \\
-
-& Max Orientation Margin
-& 0.567 & 0.861 / 0.565 & 40.6 \\
-
-& Max Joint-Limit Margin
-& 0.601 & 0.895 / 0.706 & 46.2 \\
-
-& Margin Field $\Phi_{\mathrm{m}}$
-& 0.604 & 0.898 / 0.720 & 46.5 \\
-
-& \textbf{Learned Selector (Ours)}
-& \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
-
-& Within-Pool Oracle ($K$ Rollouts)
-& 0.673 & 0.983 / 0.980 & 100.0 \\
-
+\multirow{4}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{\textbf{Learned Selector (Ours)}}} & \textbf{Straight} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
+ &  & \textbf{Arc} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
+ &  & \textbf{Serpentine} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
+ &  & \textbf{Rot.-Axis} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
+\midrule
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.681 & 0.984 / 0.982 & 100.0 \\
+ &  & Arc & 1.056 & 0 / 0 & 100.0 \\
+ &  & Serpentine & 0 & 0 / 0 & 100.0 \\
+ &  & Rot.-Axis & 0.673 & 0.983 / 0.980 & 100.0 \\
 \bottomrule
 \end{tabular}
-
 \begin{tablenotes}
 \item[Note 1] All methods rank the same candidate pool and use the same
 motion-generation controller. Ratio is the per-task ratio of the achieved
@@ -1032,7 +961,6 @@ stroke to the task's pointwise-reachable length $\ell^{\mathrm{pw}}$,
 reported as mean / p10. Near-Oracle Tasks denotes the percentage of tasks
 whose achieved stroke is within $1$\,cm of the within-pool oracle stroke.
 \end{tablenotes}
-
 \end{threeparttable}
 \end{table*}
 

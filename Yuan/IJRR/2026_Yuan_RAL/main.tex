@@ -611,14 +611,19 @@ disjoint.
     only at the sub-step scale (at most one march step).
 \end{itemize}
 
-For the initial-configuration generalization study, we additionally
-consider the four path families illustrated in Fig.~\ref{fig:families}.
-Note that curved paths concern only the selection stage: the
-redundancy-resolution controllers are trained and compared on
-straight-line tasks throughout, whereas the selector's training set
-contains straight rays and arcs, and serpentine seams and rotating-axis
-paths are excluded from its training and used as out-of-distribution
-path families.
+All evaluation tables compare the four path families illustrated in
+Fig.~\ref{fig:families}: straight, arc, serpentine, and rotating-axis.
+The redundancy-resolution controllers and critics are trained on
+straight-line tasks only, and the initial-configuration selector is
+trained on straight and arc tasks; every evaluated task instance is held
+out from all training. Consequently, straight and arc results measure
+generalization to \emph{unseen but in-distribution} tasks, whereas
+serpentine and rotating-axis results measure generalization to
+\emph{out-of-distribution} (OOD) families that appear in no training set;
+for the motion-generation stage, the arc family is additionally zero-shot,
+since the controllers never observe curved paths during training.
+Straight-line results use $10{,}000$ tasks per manipulator, and each
+curved family uses $2{,}500$ tasks.
 
 \begin{figure*}[!tbp]
     \centering
@@ -737,8 +742,9 @@ are attributable to the redundancy-resolution law.
     highest-valued vertex command.
 \end{itemize}
 
-Table~\ref{tab:mainresult} reports the results on $10{,}000$ held-out tasks
-per manipulator. Classical gradient resolution provides only a modest
+Table~\ref{tab:mainresult} reports the results per path family for each
+manipulator; on the curved families every learned method runs zero-shot.
+Classical gradient resolution provides only a modest
 improvement over zero null-space motion, whereas the analytic margin law
 substantially extends the stroke on all three manipulators. Direct
 deployment of the vertex-PPO policy remains below the margin law, while the
@@ -757,61 +763,59 @@ generation and discrimination.
 
 \begin{table*}[!htbp]
 \centering
-\caption{Comparison of the Resolution Laws on $10{,}000$ Tasks per Manipulator}
+\caption{Comparison of the Resolution Laws across Path Families
+($10{,}000$ Straight and $2{,}500$ Tasks per Curved Family per Manipulator)}
 \label{tab:mainresult}
 \begin{threeparttable}
-\begin{tabular}{llcccccc}
+\footnotesize
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{lllcccccc}
 \toprule
-& & \multicolumn{2}{c}{Franka Research 3}
+& & & \multicolumn{2}{c}{Franka Research 3}
 & \multicolumn{2}{c}{xArm7}
 & \multicolumn{2}{c}{Cobotta} \\
-\cmidrule(lr){3-4} \cmidrule(lr){5-6} \cmidrule(lr){7-8}
+\cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
 Type
 & Method
+& Family
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10} \\
 \midrule
-
-\multirow{3}{*}{Classical}
-& Zero Null-Space
-& 0.310 & 0 / 0
-& 0.261 & 0 / 0
-& 0.161 & 0 / 0 \\
-
-& Classical Gradient
-& 0.333 & 0 / 0
-& 0.271 & 0 / 0
-& 0.166 & 0 / 0 \\
-
-& Analytic Margin
-& 0.537 & 0 / 0
-& 0.444 & 0 / 0
-& 0.213 & 0 / 0 \\
-
+\multirow{12}{*}{Classical} & \multirow{4}{*}{\shortstack[l]{Zero Null-Space}} & Straight & 0.310 & 0 / 0 & 0.261 & 0 / 0 & 0.161 & 0 / 0 \\
+ &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+\addlinespace
+ & \multirow{4}{*}{\shortstack[l]{Classical Gradient}} & Straight & 0.333 & 0 / 0 & 0.271 & 0 / 0 & 0.166 & 0 / 0 \\
+ &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+\addlinespace
+ & \multirow{4}{*}{\shortstack[l]{Analytic Margin}} & Straight & 0.537 & 0 / 0 & 0.444 & 0 / 0 & 0.213 & 0 / 0 \\
+ &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
 \midrule
-
-\multirow{4}{*}{Learned}
-& Continuous PPO
-& 0 & 0 / 0
-& 0 & 0 / 0
-& 0 & 0 / 0 \\
-
-& Vertex PPO
-& 0.439 & 0 / 0
-& 0.364 & 0 / 0
-& 0.210 & 0 / 0 \\
-
-& Vertex PPO + Classical
-& 0.461 & 0 / 0
-& 0.377 & 0 / 0
-& 0.211 & 0 / 0 \\
-
-& \textbf{Critic-Guided Value (Ours)}
-& \textbf{0.564} & \textbf{0 / 0}
-& \textbf{0.466} & \textbf{0 / 0}
-& \textbf{0.229} & \textbf{0 / 0} \\
-
+\multirow{16}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+\addlinespace
+ & \multirow{4}{*}{\shortstack[l]{Vertex PPO}} & Straight & 0.439 & 0 / 0 & 0.364 & 0 / 0 & 0.210 & 0 / 0 \\
+ &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+\addlinespace
+ & \multirow{4}{*}{\shortstack[l]{Vertex PPO + Classical}} & Straight & 0.461 & 0 / 0 & 0.377 & 0 / 0 & 0.211 & 0 / 0 \\
+ &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+\addlinespace
+ & \multirow{4}{*}{\shortstack[l]{\textbf{Critic-Guided Value (Ours)}}} & \textbf{Straight} & \textbf{0.564} & \textbf{0 / 0} & \textbf{0.466} & \textbf{0 / 0} & \textbf{0.229} & \textbf{0 / 0} \\
+ &  & \textbf{Arc} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} \\
+ &  & \textbf{Serpentine} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} \\
+ &  & \textbf{Rot.-Axis} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -826,34 +830,42 @@ Type
 \paragraph{Full framework.}
 We next combine the learned initial-configuration selector with the
 critic-guided value controller. Table~\ref{tab:framework} reports the
-result on the FR3 evaluation set, with the value controller fixed across
-all rows so that only the initial configuration changes. Learned selection
-increases the mean stroke from $0.617$\,m for a randomly chosen candidate
-to $0.677$\,m. The selected trajectories achieve a mean Ratio of $0.948$
-(10th percentile $0.922$), while the within-pool oracle indicates the
-remaining gap attributable to candidate ranking.
+result on the FR3 evaluation sets of all four path families, with the
+value controller fixed across all rows so that only the initial
+configuration changes. On straight tasks, learned selection increases the
+mean stroke from $0.617$\,m for a randomly chosen candidate to $0$\,m,
+reaching a mean Ratio of $0$ (10th percentile $0$), while the within-pool
+oracle indicates the remaining gap attributable to candidate ranking.
 
 \begin{table}[!htbp]
 \centering
-\caption{Full-Framework Results on the FR3 Evaluation Set
-($10{,}000$ Tasks; Value Controller Used for Motion Generation in All Rows)}
+\caption{Full-Framework Results on the FR3 Evaluation Sets
+(Value Controller Used for Motion Generation in All Rows)}
 \label{tab:framework}
 \begin{threeparttable}
-\begin{tabular}{lccc}
+\begin{tabular}{llcc}
 \toprule
-Initial configuration
+Initial configuration & Family
 & \shortstack{Stroke\\(m)}
 & \shortstack{Ratio\\mean / p10} \\
 \midrule
-Random candidate
-& 0.617 & 0.872 / 0.761 \\
-
-\textbf{Learned selector (ours)}
-& \textbf{0.677} & \textbf{0.948 / 0.922} \\
-
+\multirow{4}{*}{Random candidate}
+& Straight   & 0.617 & 0.872 / 0.761 \\
+& Arc        & 0 & 0 / 0 \\
+& Serpentine & 0 & 0 / 0 \\
+& Rot.-Axis  & 0 & 0 / 0 \\
 \midrule
-Within-pool oracle ($K$ rollouts)
-& 0.706 & 0.980 / 0.961 \\
+\multirow{4}{*}{\textbf{Learned selector (ours)}}
+& \textbf{Straight}   & \textbf{0} & \textbf{0 / 0} \\
+& \textbf{Arc}        & \textbf{0} & \textbf{0 / 0} \\
+& \textbf{Serpentine} & \textbf{0} & \textbf{0 / 0} \\
+& \textbf{Rot.-Axis}  & \textbf{0} & \textbf{0 / 0} \\
+\midrule
+\multirow{4}{*}{Within-pool oracle ($K$ rollouts)}
+& Straight   & 0.706 & 0.980 / 0.961 \\
+& Arc        & 0 & 0 / 0 \\
+& Serpentine & 0 & 0 / 0 \\
+& Rot.-Axis  & 0 & 0 / 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -875,8 +887,9 @@ Within-pool oracle ($K$ rollouts)
 
 To isolate the selection stage, we fix the motion-generation controller and
 compare different ranking rules on the same candidate pool.
-Table~\ref{tab:ablate_seed} reports results on $2500$ held-out straight-path
-tasks. Taking the first feasible candidate reaches a mean Ratio of $0$;
+Table~\ref{tab:ablate_seed} reports results on $2500$ held-out tasks per
+path family. On straight tasks, taking the first feasible candidate
+reaches a mean Ratio of $0$;
 ranking by joint-limit margin or by the analytic margin field raises this
 to $0$, while the learned selector reaches $0$ with a 10th percentile of
 $0$. These results show that rollout supervision provides a
@@ -886,47 +899,55 @@ instantaneous geometric heuristics.
 \begin{table*}[!htbp]
 \centering
 \caption{Comparison of Initial Configuration Selection Methods on $2500$
-Held-Out FR3 Tasks}
+Held-Out FR3 Tasks per Path Family}
 \label{tab:ablate_seed}
 \begin{threeparttable}
-\begin{tabular}{llccc}
+\begin{tabular}{lllccc}
 \toprule
-Type & Candidate Ranking Rule
+Type & Candidate Ranking Rule & Family
 & \shortstack{Stroke\\(m)}
 & \shortstack{Ratio\\mean / p10}
 & \shortstack{Near-Oracle\\Tasks (\%)} \\
 \midrule
-
-\textemdash
-& First Feasible Candidate
-& 0.571 & 0 / 0 & 37.8 \\
-
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{First Feasible Candidate} & Straight & 0.571 & 0 / 0 & 37.8 \\
+ &  & Arc & 0 & 0 / 0 & 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 \\
 \midrule
-Random
-& Random Valid Candidate
-& 0.584 & 0 / 0 & \phantom{0}8.0 \\
-
+\multirow{4}{*}{Random} & \multirow{4}{*}{Random Valid Candidate} & Straight & 0.584 & 0 / 0 & \phantom{0}8.0 \\
+ &  & Arc & 0 & 0 / 0 & 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 \\
 \midrule
-\multirow{4}{*}{Heuristic}
-& Max Directional Manipulability
-& 0.579 & 0 / 0 & 40.4 \\
-& Max Orientation Margin
-& 0.580 & 0 / 0 & 40.3 \\
-& Max Joint-Limit Margin
-& 0.618 & 0 / 0 & 48.0 \\
-& Margin Field $\Phi_{\mathrm{m}}$
-& 0.621 & 0 / 0 & 48.6 \\
-
+\multirow{16}{*}{Heuristic} & \multirow{4}{*}{Max Directional Manipulability} & Straight & 0.579 & 0 / 0 & 40.4 \\
+ &  & Arc & 0 & 0 / 0 & 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 \\
+\addlinespace
+ & \multirow{4}{*}{Max Orientation Margin} & Straight & 0.580 & 0 / 0 & 40.3 \\
+ &  & Arc & 0 & 0 / 0 & 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 \\
+\addlinespace
+ & \multirow{4}{*}{Max Joint-Limit Margin} & Straight & 0.618 & 0 / 0 & 48.0 \\
+ &  & Arc & 0 & 0 / 0 & 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 \\
+\addlinespace
+ & \multirow{4}{*}{Margin Field $\Phi_{\mathrm{m}}$} & Straight & 0.621 & 0 / 0 & 48.6 \\
+ &  & Arc & 0 & 0 / 0 & 0 \\
+ &  & Serpentine & 0 & 0 / 0 & 0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 0 \\
 \midrule
-Learned
-& \textbf{Learned Selector (Ours)}
-& \textbf{0.636} & \textbf{0 / 0} & \textbf{64.5} \\
-
+\multirow{4}{*}{Learned} & \multirow{4}{*}{\textbf{Learned Selector (Ours)}} & \textbf{Straight} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
+ &  & \textbf{Arc} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
+ &  & \textbf{Serpentine} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
+ &  & \textbf{Rot.-Axis} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
 \midrule
-\textemdash
-& Within-Pool Oracle ($K$ Rollouts)
-& 0.681 & 0 / 0 & 100.0 \\
-
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{Within-Pool Oracle ($K$ Rollouts)} & Straight & 0.681 & 0 / 0 & 100.0 \\
+ &  & Arc & 0 & 0 / 0 & 100.0 \\
+ &  & Serpentine & 0 & 0 / 0 & 100.0 \\
+ &  & Rot.-Axis & 0 & 0 / 0 & 100.0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -945,21 +966,20 @@ Learned
 \subsubsection{Path-Type Generalization}
 \label{sec:ood}
 
-We evaluate whether the learned initial-configuration selector transfers to
-path families outside its training distribution. The selector is trained on
-$20{,}000$ tasks, comprising $10{,}000$ straight-line and $10{,}000$
-curved-line tasks in equal proportion, with all $K$ candidates of every
-training task rolled out to produce the ranking labels. It is then
-evaluated on $2{,}500$ held-out tasks from each of the four path families.
-Table~\ref{tab:ood} distinguishes \emph{Unseen} tasks drawn from the two
-training families from \emph{OOD} tasks belonging to sinusoidal and
-rotating-axis families that are absent from training. The results show
-that the achieved Ratio is governed by path curvature
-rather than by training membership: the unseen rotating-axis family, whose
-centerline is straight, matches the seen straight family ($0$ vs
-$0$ in mean Ratio), and the unseen sinusoidal family matches the seen
-curved family ($0$ vs $0$). On every family the learned selector remains the
-strongest non-oracle ranking rule.
+We summarize how the learned initial-configuration selector transfers
+across path families. The selector is trained on $20{,}000$ tasks,
+comprising $10{,}000$ straight and $10{,}000$ arc tasks in equal
+proportion, with all $K$ candidates of every training task rolled out to
+produce the ranking labels; it is then evaluated on $2{,}500$ held-out
+tasks from each of the four families. Table~\ref{tab:ood} distinguishes
+unseen in-distribution tasks (straight, arc) from OOD tasks belonging to
+the serpentine and rotating-axis families that are absent from training.
+The results show that the achieved Ratio is governed by path curvature
+rather than by training membership: the OOD rotating-axis family, whose
+centerline is straight, matches the in-distribution straight family ($0$
+vs $0$ in mean Ratio), and the OOD serpentine family matches the
+in-distribution arc family ($0$ vs $0$). On every family the learned
+selector remains the strongest non-oracle ranking rule.
 
 \begin{table}[!htbp]
 \centering
@@ -968,22 +988,24 @@ strongest non-oracle ranking rule.
 \begin{threeparttable}
 \begin{tabular}{llcc}
 \toprule
-Path Type & Status
+Family & Status
 & \shortstack{Stroke\\(m)}
 & \shortstack{Ratio\\mean / p10} \\
 \midrule
-Straight Line       & Unseen & 0.636 & 0 / 0 \\
-Curved Line         & Unseen & 0.313 & 0 / 0 \\
-Sinusoidal Line     & OOD    & 0.296 & 0 / 0 \\
-Rotating-Axis Path  & OOD    & 0.624 & 0 / 0 \\
+Straight      & In-dist.\ (unseen) & 0 & 0 / 0 \\
+Arc           & In-dist.\ (unseen) & 0 & 0 / 0 \\
+Serpentine    & OOD                & 0 & 0 / 0 \\
+Rotating-Axis & OOD                & 0 & 0 / 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-    \item[Note 1] The selector is trained on straight-line and curved-line
-    tasks. Unseen denotes held-out tasks from these families; OOD denotes
-    path families absent from training. Ratio is the per-task ratio of
-    the selected stroke to the task's pointwise-reachable length
-    $\ell^{\mathrm{pw}}$, reported as mean / p10.
+    \item[Note 1] The selector is trained on straight and arc tasks.
+    In-dist.\ (unseen) denotes held-out tasks from these families; OOD
+    denotes path families absent from training. Ratio is the per-task
+    ratio of the selected stroke to the task's pointwise-reachable length
+    $\ell^{\mathrm{pw}}$, reported as mean / p10. Rows restate the
+    Learned Selector rows of Table~\ref{tab:ablate_seed} with their
+    training status made explicit.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -1013,25 +1035,29 @@ by its own kinematic model.
 
 \begin{table}[!htbp]
 \centering
-\caption{Cross-Arm Transfer of the Learned Value on $10{,}000$ Tasks}
+\caption{Cross-Arm Transfer of the Learned Value across Path Families}
 \label{tab:crossarm}
 \begin{threeparttable}
-\begin{tabular}{lcccc}
+\begin{tabular}{llcccc}
 \toprule
- & \multicolumn{2}{c}{Test on FR3}
+ & & \multicolumn{2}{c}{Test on FR3}
  & \multicolumn{2}{c}{Test on xArm7} \\
-\cmidrule(lr){2-3} \cmidrule(lr){4-5}
-Critic source
+\cmidrule(lr){3-4} \cmidrule(lr){5-6}
+Critic source & Family
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10} \\
 \midrule
-FR3 critic
-& 0.564 & 0 / 0
-& 0.463 & 0 / 0 \\
-
-xArm7 critic
-& 0.526 & 0 / 0
-& 0.466 & 0 / 0 \\
+\multirow{4}{*}{FR3 critic}
+& Straight   & 0.564 & 0 / 0 & 0.463 & 0 / 0 \\
+& Arc        & 0 & 0 / 0 & 0 & 0 / 0 \\
+& Serpentine & 0 & 0 / 0 & 0 & 0 / 0 \\
+& Rot.-Axis  & 0 & 0 / 0 & 0 & 0 / 0 \\
+\midrule
+\multirow{4}{*}{xArm7 critic}
+& Straight   & 0.526 & 0 / 0 & 0.466 & 0 / 0 \\
+& Arc        & 0 & 0 / 0 & 0 & 0 / 0 \\
+& Serpentine & 0 & 0 / 0 & 0 & 0 / 0 \\
+& Rot.-Axis  & 0 & 0 / 0 & 0 & 0 / 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}

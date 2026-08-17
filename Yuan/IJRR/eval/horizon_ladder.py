@@ -38,6 +38,7 @@ import yaml
 from Yuan.IJRR.env.env import (
     NSRLBatchedEnv, EnvConfig, build_task_aligned_basis, damped_pinv,
     LATERAL_SAFETY_NET)
+from Yuan.IJRR.env.path_geometry import path_frame
 from Yuan.IJRR.env.classical_nullspace import (
     ClassicalNullspaceController, cn_action_fn)
 from Yuan.IJRR.env.line_distribution import (
@@ -385,6 +386,23 @@ def make_vlook(model, env, agent, chunk=32768):
         mg = torch.cat([model.margins(qn[i:i + chunk], pe[i:i + chunk],
                                       de[i:i + chunk], ne[i:i + chunk])
                         for i in range(0, B * K, chunk)])
+        if bool((e.path_kappa.abs() > 1e-9).any()
+                or (e.path_amp.abs() > 1e-6).any()):
+            # On curved paths the ray (p_start, instantaneous tangent) is not
+            # the task path: its lateral error is a common-mode offset that
+            # grows with progress and eventually gates out ALL successors.
+            # Replace the lateral term by the distance to the true path.
+            d0e = e.path_d0.repeat_interleave(K, 0)
+            kpe = e.path_kappa.repeat_interleave(K, 0)
+            ame = e.path_amp.repeat_interleave(K, 0)
+            wle = e.path_wavelen.repeat_interleave(K, 0)
+            lat = torch.cat([path_frame(
+                model.kin.tcp_fk_jac(qn[i:i + chunk])[0], pe[i:i + chunk],
+                d0e[i:i + chunk], ne[i:i + chunk], kpe[i:i + chunk],
+                ame[i:i + chunk], wle[i:i + chunk])[2]
+                for i in range(0, B * K, chunk)])
+            mg = mg.clone()
+            mg[:, 2] = (LATERAL_SAFETY_NET - lat) / LATERAL_SAFETY_NET
         alive = (mg.amin(-1) > 0).reshape(B, K)
         v = torch.cat([agent.critic(
             _obs_of(e, qn[i:i + chunk], de[i:i + chunk], ne[i:i + chunk],
@@ -439,6 +457,22 @@ def make_vbeam(model, env, agent, width, H, chunk=32768):
             mg = torch.cat([model.margins(qn[i:i + chunk], pe[i:i + chunk],
                                           de[i:i + chunk], ne[i:i + chunk])
                             for i in range(0, qe.shape[0], chunk)])
+            if bool((e.path_kappa.abs() > 1e-9).any()
+                    or (e.path_amp.abs() > 1e-6).any()):
+                # Same true-path lateral fix as in make_vlook.
+                exv = lambda t: t.view(B, 1, 1, 3).expand(
+                    -1, Wc, K, -1).reshape(-1, 3)
+                exs = lambda t: t.view(B, 1, 1).expand(
+                    -1, Wc, K).reshape(-1)
+                d0e, kpe = exv(e.path_d0), exs(e.path_kappa)
+                ame, wle = exs(e.path_amp), exs(e.path_wavelen)
+                lat = torch.cat([path_frame(
+                    model.kin.tcp_fk_jac(qn[i:i + chunk])[0],
+                    pe[i:i + chunk], d0e[i:i + chunk], ne[i:i + chunk],
+                    kpe[i:i + chunk], ame[i:i + chunk], wle[i:i + chunk])[2]
+                    for i in range(0, qe.shape[0], chunk)])
+                mg = mg.clone()
+                mg[:, 2] = (LATERAL_SAFETY_NET - lat) / LATERAL_SAFETY_NET
             alive = (mg.amin(-1) > 0)
             v = _value(e, qn, de, ne, ae)
             v = torch.where(alive, v, torch.full_like(v, -1e9))

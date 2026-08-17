@@ -221,7 +221,9 @@ def _batched_ik_project(kin: BatchedFR3Kinematics,
             # Nullspace pull toward q_mid (or swivel target). Disabled when the
             # caller wants the seed's null-direction offsets preserved, e.g.
             # for 2D landscape slices in the task nullspace.
-            N = torch.eye(7, device=q.device, dtype=q.dtype).expand(q.shape[0], 7, 7)
+            nj = q.shape[-1]
+            N = torch.eye(nj, device=q.device, dtype=q.dtype).expand(
+                q.shape[0], nj, nj)
             N = N - Jpinv @ J
             if branch_action is None:
                 delta_q_secondary = 0.2 * (kin.q_mid - q)

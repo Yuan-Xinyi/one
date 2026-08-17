@@ -608,7 +608,10 @@ disjoint.
     prove infeasibility, the reference is finally taken per task as the
     maximum of the search estimate and the executed stroke, so every
     reported Ratio is at most one by construction; where the adjustment
-    binds, it is below one march step on $99.99\%$ of tasks.
+    binds, its median size is $4$\,mm and $96\%$ of all tasks lie within
+    one march step of the search estimate, with the residual tail
+    concentrated on high-curvature arcs where the pointwise search is
+    conservative.
 \end{itemize}
 
 All evaluation tables compare the four path families illustrated in
@@ -784,39 +787,39 @@ Type
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10} \\
 \midrule
 \multirow{12}{*}{Classical} & \multirow{4}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \pinkbox{0.308} & \pinkbox{0.570 / 0.165} & \pinkbox{0.259} & \pinkbox{0.550 / 0.157} & \pinkbox{0.159} & \pinkbox{0.600 / 0.255} \\
- &  & Arc & \pinkbox{0.318} & \pinkbox{0.504 / 0.110} & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Serpentine & \pinkbox{0.303} & \pinkbox{0.542 / 0.150} & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Rot.-Axis & \pinkbox{0.315} & \pinkbox{0.563 / 0.168} & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Arc & \pinkbox{0.318} & \pinkbox{0.504 / 0.110} & \pinkbox{0.270} & \pinkbox{0.507 / 0.124} & \pinkbox{0.160} & \pinkbox{0.593 / 0.250} \\
+ &  & Serpentine & \pinkbox{0.303} & \pinkbox{0.542 / 0.150} & \pinkbox{0.258} & \pinkbox{0.531 / 0.145} & \pinkbox{0.151} & \pinkbox{0.566 / 0.234} \\
+ &  & Rot.-Axis & \pinkbox{0.315} & \pinkbox{0.563 / 0.168} & \pinkbox{0.261} & \pinkbox{0.549 / 0.155} & \pinkbox{0.159} & \pinkbox{0.597 / 0.261} \\
 \cmidrule(lr){2-9}
  & \multirow{4}{*}{\shortstack[l]{Classical Gradient}} & Straight & 0.332 & 0.606 / 0.179 & 0.269 & 0.564 / 0.178 & 0.163 & 0.613 / 0.276 \\
- &  & Arc & 0.345 & 0.530 / 0.121 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Serpentine & 0.326 & 0.576 / 0.165 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Rot.-Axis & 0.339 & 0.600 / 0.185 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Arc & 0.345 & 0.530 / 0.121 & 0.284 & 0.521 / 0.138 & 0.164 & 0.605 / 0.271 \\
+ &  & Serpentine & 0.326 & 0.576 / 0.165 & 0.268 & 0.546 / 0.163 & 0.156 & 0.578 / 0.250 \\
+ &  & Rot.-Axis & 0.339 & 0.600 / 0.185 & 0.273 & 0.567 / 0.179 & 0.163 & 0.610 / 0.283 \\
 \cmidrule(lr){2-9}
  & \multirow{4}{*}{\shortstack[l]{Analytic Margin}} & Straight & 0.531 & 0.836 / 0.420 & 0.432 & 0.788 / 0.323 & 0.208 & 0.742 / 0.350 \\
- &  & Arc & 0.724 & 0.779 / 0.267 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Serpentine & 0.535 & 0.811 / 0.379 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Rot.-Axis & 0.526 & 0.816 / 0.376 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Arc & 0.724 & 0.779 / 0.267 & 0.560 & 0.769 / 0.262 & 0.212 & 0.740 / 0.365 \\
+ &  & Serpentine & 0.535 & 0.811 / 0.379 & 0.430 & 0.765 / 0.296 & 0.203 & 0.715 / 0.339 \\
+ &  & Rot.-Axis & 0.526 & 0.816 / 0.376 & 0.435 & 0.788 / 0.330 & 0.209 & 0.742 / 0.368 \\
 \midrule
-\multirow{16}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 0.696 / 0.174 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Arc & 0.447 & 0.615 / 0.130 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Serpentine & 0.407 & 0.671 / 0.160 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Rot.-Axis & 0.411 & 0.685 / 0.175 & 0 & 0 / 0 & 0 & 0 / 0 \\
+\multirow{16}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 0.696 / 0.174 & 0.340 & 0.667 / 0.168 & 0.197 & 0.711 / 0.303 \\
+ &  & Arc & 0.447 & 0.615 / 0.130 & 0.380 & 0.622 / 0.144 & 0.201 & 0.705 / 0.307 \\
+ &  & Serpentine & 0.407 & 0.671 / 0.160 & 0.337 & 0.645 / 0.161 & 0.191 & 0.679 / 0.273 \\
+ &  & Rot.-Axis & 0.411 & 0.685 / 0.175 & 0.344 & 0.669 / 0.172 & 0.199 & 0.710 / 0.309 \\
 \cmidrule(lr){2-9}
  & \multirow{4}{*}{\shortstack[l]{Vertex PPO}} & Straight & 0.437 & 0.726 / 0.182 & 0.361 & 0.691 / 0.170 & 0.206 & 0.734 / 0.318 \\
- &  & Arc & 0.487 & 0.645 / 0.137 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Serpentine & 0.436 & 0.699 / 0.161 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Rot.-Axis & 0.437 & 0.714 / 0.181 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Arc & 0.487 & 0.645 / 0.137 & 0.402 & 0.645 / 0.140 & 0.210 & 0.731 / 0.321 \\
+ &  & Serpentine & 0.436 & 0.699 / 0.161 & 0.359 & 0.672 / 0.154 & 0.201 & 0.705 / 0.297 \\
+ &  & Rot.-Axis & 0.437 & 0.714 / 0.181 & 0.363 & 0.694 / 0.173 & 0.207 & 0.735 / 0.333 \\
 \cmidrule(lr){2-9}
  & \multirow{4}{*}{\shortstack[l]{Vertex PPO + Classical}} & Straight & 0.458 & 0.760 / 0.238 & 0.374 & 0.715 / 0.209 & 0.207 & 0.741 / 0.338 \\
- &  & Arc & 0.516 & 0.674 / 0.167 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Serpentine & 0.457 & 0.731 / 0.216 & 0 & 0 / 0 & 0 & 0 / 0 \\
- &  & Rot.-Axis & 0.458 & 0.745 / 0.235 & 0 & 0 / 0 & 0 & 0 / 0 \\
+ &  & Arc & 0.516 & 0.674 / 0.167 & 0.422 & 0.670 / 0.174 & 0.213 & 0.740 / 0.347 \\
+ &  & Serpentine & 0.457 & 0.731 / 0.216 & 0.370 & 0.692 / 0.196 & 0.202 & 0.712 / 0.313 \\
+ &  & Rot.-Axis & 0.458 & 0.745 / 0.235 & 0.374 & 0.713 / 0.205 & 0.209 & 0.742 / 0.352 \\
 \cmidrule(lr){2-9}
  & \multirow{4}{*}{\shortstack[l]{\textbf{Critic-Guided Value (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.563}} & \limebox{\textbf{0.866 / 0.583}} & \limebox{\textbf{0.462}} & \limebox{\textbf{0.821 / 0.455}} & \limebox{\textbf{0.225}} & \limebox{\textbf{0.792 / 0.406}} \\
- &  & \textbf{Arc} & \limebox{\textbf{0.733}} & \limebox{\textbf{0.798 / 0.319}} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} \\
- &  & \textbf{Serpentine} & \limebox{\textbf{0.557}} & \limebox{\textbf{0.832 / 0.461}} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} \\
- &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.554}} & \limebox{\textbf{0.844 / 0.482}} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} \\
+ &  & \textbf{Arc} & \limebox{\textbf{0.733}} & \limebox{\textbf{0.798 / 0.319}} & \limebox{\textbf{0.584}} & \limebox{\textbf{0.799 / 0.374}} & \limebox{\textbf{0.229}} & \limebox{\textbf{0.788 / 0.415}} \\
+ &  & \textbf{Serpentine} & \limebox{\textbf{0.557}} & \limebox{\textbf{0.832 / 0.461}} & \limebox{\textbf{0.461}} & \limebox{\textbf{0.799 / 0.418}} & \limebox{\textbf{0.219}} & \limebox{\textbf{0.761 / 0.383}} \\
+ &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.554}} & \limebox{\textbf{0.844 / 0.482}} & \limebox{\textbf{0.463}} & \limebox{\textbf{0.821 / 0.452}} & \limebox{\textbf{0.225}} & \limebox{\textbf{0.788 / 0.428}} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -1026,15 +1029,15 @@ Train & Family
 \midrule
 \multirow{4}{*}{FR3}
 & Straight   & 0.563 & 0.866 / 0.583 & 0.460 & 0.818 / 0.445 \\
-& Arc        & 0.733 & 0.798 / 0.319 & 0 & 0 / 0 \\
-& Serpentine & 0.557 & 0.832 / 0.461 & 0 & 0 / 0 \\
-& Rot.-Axis  & 0.554 & 0.844 / 0.482 & 0 & 0 / 0 \\
+& Arc        & 0.733 & 0.798 / 0.319 & 0.574 & 0.793 / 0.353 \\
+& Serpentine & 0.557 & 0.832 / 0.461 & 0.458 & 0.796 / 0.400 \\
+& Rot.-Axis  & 0.554 & 0.844 / 0.482 & 0.460 & 0.818 / 0.439 \\
 \midrule
 \multirow{4}{*}{xArm7}
 & Straight   & 0.525 & 0.817 / 0.430 & 0.462 & 0.821 / 0.455 \\
-& Arc        & 0.662 & 0.746 / 0.254 & 0 & 0 / 0 \\
-& Serpentine & 0.521 & 0.786 / 0.384 & 0 & 0 / 0 \\
-& Rot.-Axis  & 0.509 & 0.786 / 0.367 & 0 & 0 / 0 \\
+& Arc        & 0.662 & 0.746 / 0.254 & 0.584 & 0.799 / 0.374 \\
+& Serpentine & 0.521 & 0.786 / 0.384 & 0.461 & 0.799 / 0.418 \\
+& Rot.-Axis  & 0.509 & 0.786 / 0.367 & 0.463 & 0.821 / 0.452 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}

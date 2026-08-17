@@ -607,8 +607,8 @@ disjoint.
     admissible configuration is found. Because a failed search does not
     prove infeasibility, the reference is finally taken per task as the
     maximum of the search estimate and the executed stroke, so every
-    reported Ratio is at most one by construction; the adjustment binds
-    only at the sub-step scale (at most one march step).
+    reported Ratio is at most one by construction; where the adjustment
+    binds, it is below one march step on $99.99\%$ of tasks.
 \end{itemize}
 
 All evaluation tables compare the four path families illustrated in
@@ -782,37 +782,37 @@ Type
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10} \\
 \midrule
-\multirow{12}{*}{Classical} & \multirow{4}{*}{\shortstack[l]{Zero Null-Space}} & Straight & 0.310 & 0 / 0 & 0.261 & 0 / 0 & 0.161 & 0 / 0 \\
+\multirow{12}{*}{Classical} & \multirow{4}{*}{\shortstack[l]{Zero Null-Space}} & Straight & 0.308 & 0.570 / 0.165 & 0.261 & 0 / 0 & 0.161 & 0 / 0 \\
  &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
 \addlinespace
- & \multirow{4}{*}{\shortstack[l]{Classical Gradient}} & Straight & 0.333 & 0 / 0 & 0.271 & 0 / 0 & 0.166 & 0 / 0 \\
+ & \multirow{4}{*}{\shortstack[l]{Classical Gradient}} & Straight & 0.332 & 0.606 / 0.179 & 0.271 & 0 / 0 & 0.166 & 0 / 0 \\
  &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
 \addlinespace
- & \multirow{4}{*}{\shortstack[l]{Analytic Margin}} & Straight & 0.537 & 0 / 0 & 0.444 & 0 / 0 & 0.213 & 0 / 0 \\
+ & \multirow{4}{*}{\shortstack[l]{Analytic Margin}} & Straight & 0.531 & 0.836 / 0.420 & 0.444 & 0 / 0 & 0.213 & 0 / 0 \\
  &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
 \midrule
-\multirow{16}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
+\multirow{16}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 0.696 / 0.174 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
 \addlinespace
- & \multirow{4}{*}{\shortstack[l]{Vertex PPO}} & Straight & 0.439 & 0 / 0 & 0.364 & 0 / 0 & 0.210 & 0 / 0 \\
+ & \multirow{4}{*}{\shortstack[l]{Vertex PPO}} & Straight & 0.437 & 0.726 / 0.182 & 0.364 & 0 / 0 & 0.210 & 0 / 0 \\
  &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
 \addlinespace
- & \multirow{4}{*}{\shortstack[l]{Vertex PPO + Classical}} & Straight & 0.461 & 0 / 0 & 0.377 & 0 / 0 & 0.211 & 0 / 0 \\
+ & \multirow{4}{*}{\shortstack[l]{Vertex PPO + Classical}} & Straight & 0.458 & 0.760 / 0.238 & 0.377 & 0 / 0 & 0.211 & 0 / 0 \\
  &  & Arc & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
  &  & Rot.-Axis & 0 & 0 / 0 & 0 & 0 / 0 & 0 & 0 / 0 \\
 \addlinespace
- & \multirow{4}{*}{\shortstack[l]{\textbf{Critic-Guided Value (Ours)}}} & \textbf{Straight} & \textbf{0.564} & \textbf{0 / 0} & \textbf{0.466} & \textbf{0 / 0} & \textbf{0.229} & \textbf{0 / 0} \\
+ & \multirow{4}{*}{\shortstack[l]{\textbf{Critic-Guided Value (Ours)}}} & \textbf{Straight} & \textbf{0.563} & \textbf{0.866 / 0.583} & \textbf{0.466} & \textbf{0 / 0} & \textbf{0.229} & \textbf{0 / 0} \\
  &  & \textbf{Arc} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} \\
  &  & \textbf{Serpentine} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} \\
  &  & \textbf{Rot.-Axis} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} & \textbf{0} & \textbf{0 / 0} \\
@@ -996,7 +996,7 @@ ratio to the classical controller of the test manipulator.
 
 The FR3-trained critic reaches a mean Ratio of $0$ on the xArm7, against
 $0$ for the native critic; in the reverse direction, the xArm7-trained
-critic reaches $0$ on the FR3 against $0$ natively. For reference,
+critic reaches $0.817$ on the FR3 against $0.866$ natively. For reference,
 transferring the reactive policy head instead loses a larger share of the
 native improvement in both directions.
 This asymmetry is consistent with the division adopted by the framework:
@@ -1019,13 +1019,13 @@ Critic source & Family
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10} \\
 \midrule
 \multirow{4}{*}{FR3 critic}
-& Straight   & 0.564 & 0 / 0 & 0.463 & 0 / 0 \\
+& Straight   & 0.563 & 0.866 / 0.583 & 0.463 & 0 / 0 \\
 & Arc        & 0 & 0 / 0 & 0 & 0 / 0 \\
 & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 \\
 & Rot.-Axis  & 0 & 0 / 0 & 0 & 0 / 0 \\
 \midrule
 \multirow{4}{*}{xArm7 critic}
-& Straight   & 0.526 & 0 / 0 & 0.466 & 0 / 0 \\
+& Straight   & 0.525 & 0.817 / 0.430 & 0.466 & 0 / 0 \\
 & Arc        & 0 & 0 / 0 & 0 & 0 / 0 \\
 & Serpentine & 0 & 0 / 0 & 0 & 0 / 0 \\
 & Rot.-Axis  & 0 & 0 / 0 & 0 & 0 / 0 \\

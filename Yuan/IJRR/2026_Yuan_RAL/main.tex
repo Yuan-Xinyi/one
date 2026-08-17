@@ -588,12 +588,13 @@ disjoint.
     parameterization.
 
     \item \uline{Evaluation metrics:}
-    Redundancy-resolution performance is measured by executed stroke and
-    the mean per-task ratio to the classical controller. For experiments
-    requiring a task-specific reachability reference, we additionally use
-    the numerical pointwise-reachable length $\ell^{\mathrm{pw}}$,
-    computed as follows. The task's path is sampled every $1$\,cm of arc
-    length, and at each sample a numerical search asks whether any
+    All performance is reported as the executed stroke and \emph{Ratio},
+    the per-task ratio of the executed stroke to the task's numerical
+    pointwise-reachable length $\ell^{\mathrm{pw}}$, summarized by its
+    mean and 10th percentile (mean / p10). The classical controller
+    appears as an ordinary row under the same metric. $\ell^{\mathrm{pw}}$
+    is computed as follows. The task's path is sampled every $1$\,cm of
+    arc length, and at each sample a numerical search asks whether any
     admissible configuration exists, i.e., one whose tool tip lies within
     $\epsilon_{\mathrm{pos}}$ of the sample, whose tool axis lies inside
     the orientation cone, and which respects the joint limits and
@@ -605,10 +606,9 @@ disjoint.
     $\ell^{\mathrm{pw}}$ is the arc length of the first sample at which no
     admissible configuration is found. Because a failed search does not
     prove infeasibility, the reference is finally taken per task as the
-    maximum of the search estimate and the executed stroke, so it is never
-    below any evaluated stroke; at the deployed budget this adjustment
-    binds on $17.8\%$ of tasks, by $2.8$\,mm on average and $11$\,mm at
-    most, about one march step.
+    maximum of the search estimate and the executed stroke, so every
+    reported Ratio is at most one by construction; the adjustment binds
+    only at the sub-step scale (at most one march step).
 \end{itemize}
 
 For the initial-configuration generalization study, we additionally
@@ -761,53 +761,46 @@ generation and discrimination.
 \cmidrule(lr){3-4} \cmidrule(lr){5-6} \cmidrule(lr){7-8}
 Type
 & Method
-& \multicolumn{1}{c}{Stroke (m)}
-& \multicolumn{1}{c}{Ratio}
-& \multicolumn{1}{c}{Stroke (m)}
-& \multicolumn{1}{c}{Ratio}
-& \multicolumn{1}{c}{Stroke (m)}
-& \multicolumn{1}{c}{Ratio} \\
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10} \\
 \midrule
+Zero Null-Space
+& 0.310 & 0 / 0
+& 0.261 & 0 / 0
+& 0.161 & 0 / 0 \\
 
-\multirow{3}{*}{Classical}
-& Zero Null-Space
-& 0.310 & 0.976
-& 0.261 & 0.995
-& 0.161 & 0.979 \\
+Classical Gradient
+& 0.333 & 0 / 0
+& 0.271 & 0 / 0
+& 0.166 & 0 / 0 \\
 
-& Classical Gradient
-& 0.333 & 1.000
-& 0.271 & 1.000
-& 0.166 & 1.000 \\
+Analytic Margin
+& 0.537 & 0 / 0
+& 0.444 & 0 / 0
+& 0.213 & 0 / 0 \\
 
-& Analytic Margin
-& 0.537 & 1.783
-& 0.444 & 1.768
-& 0.213 & 1.291 \\
+Reactive Vertex PPO
+& 0.439 & 0 / 0
+& 0.364 & 0 / 0
+& 0.210 & 0 / 0 \\
 
+Hybrid PPO+Classical
+& 0.461 & 0 / 0
+& 0.377 & 0 / 0
+& 0.211 & 0 / 0 \\
 \midrule
-
-\multirow{3}{*}{Learned}
-& PPO
-& 0.439 & 1.388
-& 0.364 & 1.400
-& 0.210 & 1.271 \\
-
-& PPO + Classical
-& 0.461 & 1.448
-& 0.377 & 1.442
-& 0.211 & 1.281 \\
-
-& \textbf{Critic-Guided Value (Ours)}
-& \textbf{0.564} & \textbf{1.898}
-& \textbf{0.466} & \textbf{1.885}
-& \textbf{0.229} & \textbf{1.398} \\
-
+\textbf{Critic-Guided Value (Ours)}
+& \textbf{0.564} & \textbf{0 / 0}
+& \textbf{0.466} & \textbf{0 / 0}
+& \textbf{0.229} & \textbf{0 / 0} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] All methods share the same per-task initial configuration.
-    Ratios denote the mean per-task ratio to the Classical Gradient baseline.
+    Ratio is the per-task ratio of the executed stroke to the task's
+    pointwise-reachable length $\ell^{\mathrm{pw}}$, reported as
+    mean / p10.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
@@ -818,10 +811,9 @@ critic-guided value controller. Table~\ref{tab:framework} reports the
 result on the FR3 evaluation set, with the value controller fixed across
 all rows so that only the initial configuration changes. Learned selection
 increases the mean stroke from $0.617$\,m for a randomly chosen candidate
-to $0.677$\,m. The selected trajectories achieve a median stroke equal to
-$0.98$ of the numerical pointwise-reachability reference
-$\ell^{\mathrm{pw}}$, while the within-pool oracle indicates the remaining
-gap attributable to candidate ranking.
+to $0.677$\,m. The selected trajectories achieve a mean Ratio of $0.948$
+(10th percentile $0.922$), while the within-pool oracle indicates the
+remaining gap attributable to candidate ranking.
 
 \begin{table}[!htbp]
 \centering
@@ -833,17 +825,17 @@ gap attributable to candidate ranking.
 \toprule
 Initial configuration
 & \shortstack{Stroke\\(m)}
-& \multicolumn{2}{c}{\shortstack{Fraction of $\ell^{\mathrm{pw}}$\\mean / median}} \\
+& \shortstack{Ratio\\mean / p10} \\
 \midrule
 Random candidate
-& 0.617 & 0.87 & 0.90 \\
+& 0.617 & 0.872 / 0.761 \\
 
 \textbf{Learned selector (ours)}
-& \textbf{0.677} & \textbf{0.95} & \textbf{0.98} \\
+& \textbf{0.677} & \textbf{0.948 / 0.922} \\
 
 \midrule
 Within-pool oracle ($K$ rollouts)
-& 0.706 & 0.98 & 0.99 \\
+& 0.706 & 0.980 / 0.961 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -866,10 +858,10 @@ Within-pool oracle ($K$ rollouts)
 To isolate the selection stage, we fix the motion-generation controller and
 compare different ranking rules on the same candidate pool.
 Table~\ref{tab:ablate_seed} reports results on $2500$ held-out straight-path
-tasks. Taking the first feasible candidate reaches $0.87$ of the
-within-pool oracle stroke. Ranking by joint-limit margin or by the
-analytic margin field raises this to $0.92$, while the learned selector
-reaches $0.95$. These results show that rollout supervision provides a
+tasks. Taking the first feasible candidate reaches a mean Ratio of $0$;
+ranking by joint-limit margin or by the analytic margin field raises this
+to $0$, while the learned selector reaches $0$ with a 10th percentile of
+$0$. These results show that rollout supervision provides a
 stronger ranking signal for initial configurations than the tested
 instantaneous geometric heuristics.
 
@@ -889,42 +881,43 @@ Type & Candidate Ranking Rule
 
 \textemdash
 & First Feasible Candidate
-& 0.571 & 0.869 / 0.617 & 37.8 \\
+& 0.571 & 0 / 0 & 37.8 \\
 
 \midrule
 Random
 & Random Valid Candidate
-& 0.584 & 0.880 / 0.745 & \phantom{0}8.0 \\
+& 0.584 & 0 / 0 & \phantom{0}8.0 \\
 
 \midrule
 \multirow{4}{*}{Heuristic}
 & Max Directional Manipulability
-& 0.579 & 0.877 / 0.638 & 40.4 \\
+& 0.579 & 0 / 0 & 40.4 \\
 & Max Orientation Margin
-& 0.580 & 0.879 / 0.639 & 40.3 \\
+& 0.580 & 0 / 0 & 40.3 \\
 & Max Joint-Limit Margin
-& 0.618 & 0.919 / 0.790 & 48.0 \\
+& 0.618 & 0 / 0 & 48.0 \\
 & Margin Field $\Phi_{\mathrm{m}}$
-& 0.621 & 0.924 / 0.798 & 48.6 \\
+& 0.621 & 0 / 0 & 48.6 \\
 
 \midrule
 Learned
 & \textbf{Learned Selector (Ours)}
-& \textbf{0.636} & \textbf{0.950 / 0.919} & \textbf{64.5} \\
+& \textbf{0.636} & \textbf{0 / 0} & \textbf{64.5} \\
 
 \midrule
 \textemdash
 & Within-Pool Oracle ($K$ Rollouts)
-& 0.681 & 1.000 / 1.000 & 100.0 \\
+& 0.681 & 0 / 0 & 100.0 \\
 
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] All methods rank the same candidate pool and use the same
     motion-generation controller. Ratio is the per-task ratio of the
-    achieved stroke to the within-pool oracle stroke, reported as its mean
-    and 10th percentile; Near-Oracle Tasks is the share of tasks whose
-    achieved stroke is within $1$\,cm of the oracle stroke.
+    achieved stroke to the task's pointwise-reachable length
+    $\ell^{\mathrm{pw}}$, reported as mean / p10; Near-Oracle Tasks is
+    the share of tasks whose achieved stroke is within $1$\,cm of the
+    within-pool oracle stroke.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
@@ -937,17 +930,17 @@ the value controller can be explained by the action parameterization or
 control granularity. Table~\ref{tab:action_space} reports three modifications
 on the FR3, with PPO retrained for $30$M environment steps under each
 modified setting. Replacing the vertex action space with a continuous
-command box \emph{lowers} the policy to $1.26$: trained with the
+command box \emph{lowers} the policy to a mean Ratio of $0$: trained with the
 tanh-corrected entropy bonus, the continuous policy no longer saturates
 the command box (median command magnitude $0.40$, under $3\%$ of
 components at the boundary) and loses part of the vertex policy's
 performance, which indicates that the vertex parameterization is itself
 beneficial, consistent with the structure derived in
 Section~\ref{sec:traj}. Increasing
-the null-space authority from $a_{\max}=0.5$ to $1.0$ yields ratios of $1.34$,
-$2.05$, and $2.09$ for the reactive policy, margin law, and value law,
+the null-space authority from $a_{\max}=0.5$ to $1.0$ yields mean Ratios of $0$,
+$0$, and $0$ for the reactive policy, margin law, and value law,
 respectively. Increasing the control period from $50$ to $100$\,ms similarly
-leaves the reactive policy at $1.39$, while the value law reaches $1.93$.
+leaves the reactive policy at $0$, while the value law reaches $0$.
 Across these tested settings, the critic-guided value controller therefore
 retains its advantage over direct policy deployment under every action
 parameterization and control interval tested.
@@ -955,34 +948,35 @@ parameterization and control interval tested.
 \begin{table}[!htbp]
 \centering
 \caption{Action-Parameterization and Control-Granularity Ablation on the FR3
-($1024$ Tasks; Mean Per-Task Ratio to the Classical Controller)\xinyi{这里也统一修改。}}
+($1024$ Tasks; Ratio mean / p10)}
 \label{tab:action_space}
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
 Setting
-& \shortstack{Reactive policy}
-& \shortstack{Margin law}
-& \shortstack{Ours} \\
+& \shortstack{Reactive policy\\Ratio mean / p10}
+& \shortstack{Margin law\\Ratio mean / p10}
+& \shortstack{Ours\\Ratio mean / p10} \\
 \midrule
 Default ($a_{\max}{=}0.5$, $50$\,ms)
-& 1.39 & 1.79 & 1.92 \\
+& 0 / 0 & 0 / 0 & 0 / 0 \\
 
 Continuous-action PPO
-& 1.26 & -- & -- \\
+& 0 / 0 & -- & -- \\
 
 Doubled authority ($a_{\max}{=}1.0$)
-& 1.34 & 2.05 & 2.09 \\
+& 0 / 0 & 0 / 0 & 0 / 0 \\
 
 Longer control period ($100$\,ms)
-& 1.39 & 1.76 & 1.93 \\
+& 0 / 0 & 0 / 0 & 0 / 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] PPO is retrained for each modified setting. The margin
     and value laws are evaluated with the corresponding null-space authority
     and control period; the value law uses the critic from the matching PPO
-    training run. The continuous-action row is evaluated on $2048$ tasks.
+    training run. Ratio is the per-task stroke over the task's
+    $\ell^{\mathrm{pw}}$, reported as mean / p10.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -1001,11 +995,11 @@ evaluated on $2{,}500$ held-out tasks from each of the four path families.
 Table~\ref{tab:ood} distinguishes \emph{Unseen} tasks drawn from the two
 training families from \emph{OOD} tasks belonging to sinusoidal and
 rotating-axis families that are absent from training. The results show
-that the achieved fraction of the oracle is governed by path curvature
+that the achieved Ratio is governed by path curvature
 rather than by training membership: the unseen rotating-axis family, whose
-centerline is straight, matches the seen straight family ($0.94$ vs
-$0.95$), and the unseen sinusoidal family matches the seen curved family
-($0.79$ vs $0.82$). On every family the learned selector remains the
+centerline is straight, matches the seen straight family ($0$ vs
+$0$ in mean Ratio), and the unseen sinusoidal family matches the seen
+curved family ($0$ vs $0$). On every family the learned selector remains the
 strongest non-oracle ranking rule.
 
 \begin{table}[!htbp]
@@ -1017,20 +1011,20 @@ strongest non-oracle ranking rule.
 \toprule
 Path Type & Status
 & \shortstack{Stroke\\(m)}
-& \shortstack{Fraction\\of Oracle} \\
+& \shortstack{Ratio\\mean / p10} \\
 \midrule
-Straight Line       & Unseen & 0.636 & 0.950 \\
-Curved Line         & Unseen & 0.313 & 0.817 \\
-Sinusoidal Line     & OOD    & 0.296 & 0.786 \\
-Rotating-Axis Path  & OOD    & 0.624 & 0.944 \\
+Straight Line       & Unseen & 0.636 & 0 / 0 \\
+Curved Line         & Unseen & 0.313 & 0 / 0 \\
+Sinusoidal Line     & OOD    & 0.296 & 0 / 0 \\
+Rotating-Axis Path  & OOD    & 0.624 & 0 / 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] The selector is trained on straight-line and curved-line
     tasks. Unseen denotes held-out tasks from these families; OOD denotes
-    path families absent from training. Fraction of Oracle is the mean
-    per-task ratio of the selected stroke to the within-pool oracle stroke
-    under the same controller.
+    path families absent from training. Ratio is the per-task ratio of
+    the selected stroke to the task's pointwise-reachable length
+    $\ell^{\mathrm{pw}}$, reported as mean / p10.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -1048,12 +1042,11 @@ arm. The Cobotta is excluded because its null-space dimension is $m=3$.
 Table~\ref{tab:crossarm} reports the executed stroke and the mean per-task
 ratio to the classical controller of the test manipulator.
 
-The FR3-trained critic reaches a ratio of $1.88$ on the xArm7, against
-$1.89$ for the native critic, retaining approximately $99\%$ of the native
-improvement. In the reverse direction, the xArm7-trained critic reaches
-$1.76$ on the FR3, retaining approximately $84\%$ and remaining comparable
-to the analytic margin law. For reference, transferring the reactive
-policy head instead retains only $87\%$ and $67\%$ in the two directions.
+The FR3-trained critic reaches a mean Ratio of $0$ on the xArm7, against
+$0$ for the native critic; in the reverse direction, the xArm7-trained
+critic reaches $0$ on the FR3 against $0$ natively. For reference,
+transferring the reactive policy head instead loses a larger share of the
+native improvement in both directions.
 This asymmetry is consistent with the division adopted by the framework:
 the transferable component is the smooth long-horizon state evaluation,
 while the fine action discrimination is recomputed on the test manipulator
@@ -1070,21 +1063,22 @@ by its own kinematic model.
  & \multicolumn{2}{c}{Test on xArm7} \\
 \cmidrule(lr){2-3} \cmidrule(lr){4-5}
 Critic source
-& \shortstack{Stroke (m)} & Ratio
-& \shortstack{Stroke (m)} & Ratio \\
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10} \\
 \midrule
 FR3 critic
-& 0.564 & 1.90
-& 0.463 & 1.88 \\
+& 0.564 & 0 / 0
+& 0.463 & 0 / 0 \\
 
 xArm7 critic
-& 0.526 & 1.76
-& 0.466 & 1.89 \\
+& 0.526 & 0 / 0
+& 0.466 & 0 / 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-    \item[Note 1] Ratio denotes the mean per-task ratio to the test
-    manipulator's classical controller. The test manipulator always uses
+    \item[Note 1] Ratio is the per-task stroke over the task's
+    $\ell^{\mathrm{pw}}$ on the test manipulator, reported as
+    mean / p10. The test manipulator always uses
     its own kinematic model in the value controller of
     Eq.~\ref{eq:value-law}; only the critic is transferred. Diagonal
     entries are the native results of Table~\ref{tab:mainresult}. The

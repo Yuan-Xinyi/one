@@ -561,8 +561,8 @@ disjoint.
 
     \item \uline{Initial configurations:}
     For the full-framework and selection experiments, the candidate pool
-    contains $K=8$ configurations retrieved from
-    $N_{\mathrm{dir}}=10$ directions using IKSel. The learned selector
+    contains $K=32$ configurations retrieved from
+    $N_{\mathrm{dir}}=40$ directions using IKSel. The learned selector
     ranks these candidates, and the selected configuration is followed by
     one damped-least-squares refinement. Controller-only comparisons use
     the same fixed initial configuration for all methods to isolate the
@@ -592,19 +592,23 @@ disjoint.
     the mean per-task ratio to the classical controller. For experiments
     requiring a task-specific reachability reference, we additionally use
     the numerical pointwise-reachable length $\ell^{\mathrm{pw}}$,
-    computed as follows. The task's path is sampled every $2$\,cm of arc
+    computed as follows. The task's path is sampled every $1$\,cm of arc
     length, and at each sample a numerical search asks whether any
     admissible configuration exists, i.e., one whose tool tip lies within
     $\epsilon_{\mathrm{pos}}$ of the sample, whose tool axis lies inside
     the orientation cone, and which respects the joint limits and
     self-collision clearance. The search projects warm starts drawn from a
-    precomputed configuration table over cone-sampled tool directions,
-    together with the previous sample's solution;
+    precomputed configuration table over $96$ cone-sampled tool directions
+    with $16$ retries per sample, together with the previous sample's
+    solution, and configurations traversed by the evaluated rollouts are
+    additionally injected as feasibility witnesses;
     $\ell^{\mathrm{pw}}$ is the arc length of the first sample at which no
     admissible configuration is found. Because a failed search does not
-    prove infeasibility, configurations traversed by the evaluated
-    rollouts are additionally injected as feasibility witnesses, so the
-    reference is never below any evaluated stroke.
+    prove infeasibility, the reference is finally taken per task as the
+    maximum of the search estimate and the executed stroke, so it is never
+    below any evaluated stroke; at the deployed budget this adjustment
+    binds on $17.8\%$ of tasks, by $2.8$\,mm on average and $11$\,mm at
+    most, about one march step.
 \end{itemize}
 
 For the initial-configuration generalization study, we additionally
@@ -641,10 +645,11 @@ path families.
     \caption{Path families used to evaluate initial-configuration
     generalization: (a) a straight ray; (b) an arc with signed curvature;
     (c) a serpentine seam with sinusoidal lateral offset; and (d) a
-    straight path with a rotating cone axis. Red arrows indicate the local
-    cone axis $\mathbf{n}(s)$. Families (a) and (b) appear in selector
-    training, whereas (c) and (d) are used only for out-of-distribution
-    evaluation.}
+    straight path with a rotating cone axis. Each panel shows the path in
+    3D above the translucent task plane; red arrows indicate the local
+    cone axis $\mathbf{n}(s)$, which departs from the plane normal only in
+    (d). Families (a) and (b) appear in selector training, whereas (c) and
+    (d) are used only for out-of-distribution evaluation.}
     \label{fig:families}
 \end{figure*}
 
@@ -805,9 +810,9 @@ We next combine the learned initial-configuration selector with the
 critic-guided value controller. Table~\ref{tab:framework} reports the
 result on the FR3 evaluation set, with the value controller fixed across
 all rows so that only the initial configuration changes. Learned selection
-increases the mean stroke from $0.590$\,m for a randomly chosen candidate
-to $0.650$\,m. The selected trajectories achieve a median stroke equal to
-$0.97$ of the numerical pointwise-reachability reference
+increases the mean stroke from $0.617$\,m for a randomly chosen candidate
+to $0.677$\,m. The selected trajectories achieve a median stroke equal to
+$0.98$ of the numerical pointwise-reachability reference
 $\ell^{\mathrm{pw}}$, while the within-pool oracle indicates the remaining
 gap attributable to candidate ranking.
 
@@ -824,14 +829,14 @@ Initial configuration
 & \multicolumn{2}{c}{\shortstack{Fraction of $\ell^{\mathrm{pw}}$\\mean / median}} \\
 \midrule
 Random candidate
-& 0.590 & 0.84 & 0.88 \\
+& 0.617 & 0.87 & 0.90 \\
 
 \textbf{Learned selector (ours)}
-& \textbf{0.650} & \textbf{0.92} & \textbf{0.97} \\
+& \textbf{0.677} & \textbf{0.95} & \textbf{0.98} \\
 
 \midrule
 Within-pool oracle ($K$ rollouts)
-& 0.689 & 0.96 & 0.98 \\
+& 0.706 & 0.98 & 0.99 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -854,10 +859,10 @@ Within-pool oracle ($K$ rollouts)
 To isolate the selection stage, we fix the motion-generation controller and
 compare different ranking rules on the same candidate pool.
 Table~\ref{tab:ablate_seed} reports results on $2500$ held-out straight-path
-tasks. Taking the first feasible candidate reaches $0.85$ of the
+tasks. Taking the first feasible candidate reaches $0.87$ of the
 within-pool oracle stroke. Ranking by joint-limit margin or by the
-analytic margin field raises this to $0.91$, while the learned selector
-reaches $0.94$. These results show that rollout supervision provides a
+analytic margin field raises this to $0.92$, while the learned selector
+reaches $0.95$. These results show that rollout supervision provides a
 stronger ranking signal for initial configurations than the tested
 instantaneous geometric heuristics.
 
@@ -876,33 +881,33 @@ Type & Candidate Ranking Rule
 
 \textemdash
 & First Feasible Candidate
-& 0.537 & 0.853 \\
+& 0.571 & 0.869 \\
 
 \midrule
 Random
 & Random Valid Candidate
-& 0.553 & 0.870 \\
+& 0.584 & 0.880 \\
 
 \midrule
 \multirow{4}{*}{Heuristic}
 & Max Directional Manipulability
-& 0.548 & 0.867 \\
+& 0.579 & 0.877 \\
 & Max Orientation Margin
-& 0.548 & 0.865 \\
+& 0.580 & 0.879 \\
 & Max Joint-Limit Margin
-& 0.587 & 0.910 \\
+& 0.618 & 0.919 \\
 & Margin Field $\Phi_{\mathrm{m}}$
-& 0.586 & 0.911 \\
+& 0.621 & 0.924 \\
 
 \midrule
 Learned
 & \textbf{Learned Selector (Ours)}
-& \textbf{0.605} & \textbf{0.940} \\
+& \textbf{0.636} & \textbf{0.950} \\
 
 \midrule
 \textemdash
 & Within-Pool Oracle ($K$ Rollouts)
-& 0.656 & 1.000 \\
+& 0.681 & 1.000 \\
 
 \bottomrule
 \end{tabular}
@@ -921,17 +926,21 @@ We next examine whether the performance gap between the reactive policy and
 the value controller can be explained by the action parameterization or
 control granularity. Table~\ref{tab:action_space} reports three modifications
 on the FR3, with PPO retrained for $30$M environment steps under each
-modified setting. Replacing the vertex action space with a continuous command
-box leaves the mean policy ratio unchanged at $1.39$, indicating that the
-vertex parameterization itself does not explain the observed gap. Increasing
+modified setting. Replacing the vertex action space with a continuous
+command box \emph{lowers} the policy to $1.26$: trained with the
+tanh-corrected entropy bonus, the continuous policy no longer saturates
+the command box (median command magnitude $0.40$, under $3\%$ of
+components at the boundary) and loses part of the vertex policy's
+performance, which indicates that the vertex parameterization is itself
+beneficial, consistent with the structure derived in
+Section~\ref{sec:traj}. Increasing
 the null-space authority from $a_{\max}=0.5$ to $1.0$ yields ratios of $1.34$,
 $2.05$, and $2.09$ for the reactive policy, margin law, and value law,
 respectively. Increasing the control period from $50$ to $100$\,ms similarly
 leaves the reactive policy at $1.39$, while the value law reaches $1.93$.
 Across these tested settings, the critic-guided value controller therefore
-retains its advantage over direct policy deployment, and this advantage is
-not removed by changing either the action parameterization or the control
-interval.
+retains its advantage over direct policy deployment under every action
+parameterization and control interval tested.
 
 \begin{table}[!htbp]
 \centering
@@ -950,7 +959,7 @@ Default ($a_{\max}{=}0.5$, $50$\,ms)
 & 1.39 & 1.79 & 1.92 \\
 
 Continuous-action PPO
-& 1.39 & -- & -- \\
+& 1.26 & -- & -- \\
 
 Doubled authority ($a_{\max}{=}1.0$)
 & 1.34 & 2.05 & 2.09 \\
@@ -978,14 +987,16 @@ path families outside its training distribution. The selector is trained on
 $20{,}000$ tasks, comprising $10{,}000$ straight-line and $10{,}000$
 curved-line tasks in equal proportion, with all $K$ candidates of every
 training task rolled out to produce the ranking labels. It is then
-evaluated on $2{,}500$ held-out tasks from each of the four path families. Table~\ref{tab:ood} distinguishes \emph{Unseen}
-tasks drawn from the two training families from \emph{OOD} tasks belonging
-to sinusoidal and rotating-axis families that are absent from training.
-The selector recovers $64.9$--$67.1\%$ of the random-to-oracle gap on the
-OOD families, compared with $57.5$--$61.0\%$ on held-out tasks from the
-training families. These results show that the learned initial-configuration
-ranking transfers to the two evaluated path families not seen during
-training.
+evaluated on $2{,}500$ held-out tasks from each of the four path families.
+Table~\ref{tab:ood} distinguishes \emph{Unseen} tasks drawn from the two
+training families from \emph{OOD} tasks belonging to sinusoidal and
+rotating-axis families that are absent from training. The results show
+that the achieved fraction of the oracle is governed by path curvature
+rather than by training membership: the unseen rotating-axis family, whose
+centerline is straight, matches the seen straight family ($0.94$ vs
+$0.95$), and the unseen sinusoidal family matches the seen curved family
+($0.79$ vs $0.82$). On every family the learned selector remains the
+strongest non-oracle ranking rule.
 
 \begin{table}[!htbp]
 \centering
@@ -995,19 +1006,21 @@ training.
 \begin{tabular}{llcc}
 \toprule
 Path Type & Status
-& \shortstack{Capture\\(\%)}
-& \shortstack{Gap to Oracle\\(m)} \\
+& \shortstack{Stroke\\(m)}
+& \shortstack{Fraction\\of Oracle} \\
 \midrule
-Straight Line       & Unseen & 61.0 & 0.080 \\
-Curved Line         & Unseen & 57.5 & 0.105 \\
-Sinusoidal Line     & OOD    & 67.1 & 0.076 \\
-Rotating-Axis Path  & OOD    & 64.9 & 0.079 \\
+Straight Line       & Unseen & 0.636 & 0.950 \\
+Curved Line         & Unseen & 0.313 & 0.817 \\
+Sinusoidal Line     & OOD    & 0.296 & 0.786 \\
+Rotating-Axis Path  & OOD    & 0.624 & 0.944 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] The selector is trained on straight-line and curved-line
     tasks. Unseen denotes held-out tasks from these families; OOD denotes
-    path families absent from training.
+    path families absent from training. Fraction of Oracle is the mean
+    per-task ratio of the selected stroke to the within-pool oracle stroke
+    under the same controller.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}

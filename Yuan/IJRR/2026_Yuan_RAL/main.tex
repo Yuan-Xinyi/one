@@ -753,13 +753,14 @@ generation and discrimination.
 \caption{Comparison of the Resolution Laws on $10{,}000$ Tasks per Manipulator}
 \label{tab:mainresult}
 \begin{threeparttable}
-\begin{tabular}{lcccccc}
+\begin{tabular}{llcccccc}
 \toprule
- & \multicolumn{2}{c}{Franka Research 3}
- & \multicolumn{2}{c}{xArm7}
- & \multicolumn{2}{c}{Cobotta} \\
-\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
-Method
+& & \multicolumn{2}{c}{Franka Research 3}
+& \multicolumn{2}{c}{xArm7}
+& \multicolumn{2}{c}{Cobotta} \\
+\cmidrule(lr){3-4} \cmidrule(lr){5-6} \cmidrule(lr){7-8}
+Type
+& Method
 & \multicolumn{1}{c}{Stroke (m)}
 & \multicolumn{1}{c}{Ratio}
 & \multicolumn{1}{c}{Stroke (m)}
@@ -767,35 +768,41 @@ Method
 & \multicolumn{1}{c}{Stroke (m)}
 & \multicolumn{1}{c}{Ratio} \\
 \midrule
-Zero Null-Space
+
+\multirow{3}{*}{Classical}
+& Zero Null-Space
 & 0.310 & 0.976
 & 0.261 & 0.995
 & 0.161 & 0.979 \\
 
-Classical Gradient
+& Classical Gradient
 & 0.333 & 1.000
 & 0.271 & 1.000
 & 0.166 & 1.000 \\
 
-Analytic Margin
+& Analytic Margin
 & 0.537 & 1.783
 & 0.444 & 1.768
 & 0.213 & 1.291 \\
 
-Reactive Vertex PPO
+\midrule
+
+\multirow{3}{*}{Learned}
+& PPO
 & 0.439 & 1.388
 & 0.364 & 1.400
 & 0.210 & 1.271 \\
 
-Hybrid PPO+Classical
+& PPO + Classical
 & 0.461 & 1.448
 & 0.377 & 1.442
 & 0.211 & 1.281 \\
-\midrule
-\textbf{Critic-Guided Value (Ours)}
+
+& \textbf{Critic-Guided Value (Ours)}
 & \textbf{0.564} & \textbf{1.898}
 & \textbf{0.466} & \textbf{1.885}
 & \textbf{0.229} & \textbf{1.398} \\
+
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -866,58 +873,61 @@ reaches $0.95$. These results show that rollout supervision provides a
 stronger ranking signal for initial configurations than the tested
 instantaneous geometric heuristics.
 
-\begin{table}[!htbp]
+\begin{table*}[!htbp]
 \centering
 \caption{Comparison of Initial Configuration Selection Methods on $2500$
 Held-Out FR3 Tasks}
 \label{tab:ablate_seed}
 \begin{threeparttable}
-\begin{tabular}{llcc}
+\begin{tabular}{llccc}
 \toprule
 Type & Candidate Ranking Rule
 & \shortstack{Stroke\\(m)}
-& \shortstack{Fraction\\of Oracle} \\
+& \shortstack{Ratio\\mean / p10}
+& \shortstack{Near-Oracle\\Tasks (\%)} \\
 \midrule
 
 \textemdash
 & First Feasible Candidate
-& 0.571 & 0.869 \\
+& 0.571 & 0.869 / 0.617 & 37.8 \\
 
 \midrule
 Random
 & Random Valid Candidate
-& 0.584 & 0.880 \\
+& 0.584 & 0.880 / 0.745 & \phantom{0}8.0 \\
 
 \midrule
 \multirow{4}{*}{Heuristic}
 & Max Directional Manipulability
-& 0.579 & 0.877 \\
+& 0.579 & 0.877 / 0.638 & 40.4 \\
 & Max Orientation Margin
-& 0.580 & 0.879 \\
+& 0.580 & 0.879 / 0.639 & 40.3 \\
 & Max Joint-Limit Margin
-& 0.618 & 0.919 \\
+& 0.618 & 0.919 / 0.790 & 48.0 \\
 & Margin Field $\Phi_{\mathrm{m}}$
-& 0.621 & 0.924 \\
+& 0.621 & 0.924 / 0.798 & 48.6 \\
 
 \midrule
 Learned
 & \textbf{Learned Selector (Ours)}
-& \textbf{0.636} & \textbf{0.950} \\
+& \textbf{0.636} & \textbf{0.950 / 0.919} & \textbf{64.5} \\
 
 \midrule
 \textemdash
 & Within-Pool Oracle ($K$ Rollouts)
-& 0.681 & 1.000 \\
+& 0.681 & 1.000 / 1.000 & 100.0 \\
 
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] All methods rank the same candidate pool and use the same
-    motion-generation controller. Fraction of Oracle denotes the mean
-    per-task ratio of the achieved stroke to the within-pool oracle stroke.
+    motion-generation controller. Ratio is the per-task ratio of the
+    achieved stroke to the within-pool oracle stroke, reported as its mean
+    and 10th percentile; Near-Oracle Tasks is the share of tasks whose
+    achieved stroke is within $1$\,cm of the oracle stroke.
 \end{tablenotes}
 \end{threeparttable}
-\end{table}
+\end{table*}
 
 \subsubsection{Action Parameterization and Control Granularity}
 \label{sec:action_ablation}
@@ -945,15 +955,15 @@ parameterization and control interval tested.
 \begin{table}[!htbp]
 \centering
 \caption{Action-Parameterization and Control-Granularity Ablation on the FR3
-($1024$ Tasks; Mean Per-Task Ratio to the Classical Controller)}
+($1024$ Tasks; Mean Per-Task Ratio to the Classical Controller)\xinyi{这里也统一修改。}}
 \label{tab:action_space}
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
 Setting
-& \shortstack{Reactive\\policy}
-& \shortstack{Margin\\law}
-& \shortstack{Value\\law} \\
+& \shortstack{Reactive policy}
+& \shortstack{Margin law}
+& \shortstack{Ours} \\
 \midrule
 Default ($a_{\max}{=}0.5$, $50$\,ms)
 & 1.39 & 1.79 & 1.92 \\
@@ -1060,8 +1070,8 @@ by its own kinematic model.
  & \multicolumn{2}{c}{Test on xArm7} \\
 \cmidrule(lr){2-3} \cmidrule(lr){4-5}
 Critic source
-& \shortstack{Stroke\\(m)} & Ratio
-& \shortstack{Stroke\\(m)} & Ratio \\
+& \shortstack{Stroke (m)} & Ratio
+& \shortstack{Stroke (m)} & Ratio \\
 \midrule
 FR3 critic
 & 0.564 & 1.90

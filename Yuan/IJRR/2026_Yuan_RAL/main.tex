@@ -260,37 +260,38 @@ Because only the $3$-DoF position is tracked, the manipulator retains a null spa
 \label{eq:nullspace}
 \dot{\mathbf{q}}
 =
-\mathbf{J}_{\lambda}^{+}\dot{\mathbf{x}}
+\mathbf{J}^{+}\dot{\mathbf{x}}
 +
-\mathbf{B}(\mathbf{q})\mathbf{u},
-\qquad
-\mathbf{J}\mathbf{B}=\mathbf{0},
-\quad
-\mathbf{B}^{\top}\mathbf{B}=\mathbf{I},
+(\mathbf{I}-\mathbf{J}^{+}\mathbf{J})\,\boldsymbol{\xi},
 \end{equation}
-where $\mathbf{J}_{\lambda}^{+}$ is the damped pseudoinverse of the position Jacobian, $\mathbf{B}(\mathbf{q})$ is an orthonormal basis of its null space, and $\mathbf{u}$ contains the null-space coordinates. Thus, all controllers share the same task-space motion and differ only in how the null-space command is selected.
+where $\mathbf{J}^{+}$ is the pseudoinverse of the position Jacobian and $\boldsymbol{\xi}$ denotes the secondary joint-space command. We parameterize this command as
+\begin{equation}
+\boldsymbol{\xi}
+=
+\mathbf{B}(\mathbf{q})\mathbf{a},
+\qquad
+\mathbf{J}\mathbf{B}(\mathbf{q})=\mathbf{0},
+\quad
+\mathbf{B}(\mathbf{q})^{\top}\mathbf{B}(\mathbf{q})=\mathbf{I},
+\end{equation}
+where $\mathbf{B}(\mathbf{q})\in\mathbb{R}^{n\times m}$ is an orthonormal basis of the null space of $\mathbf{J}$ and $\mathbf{a}\in\mathbb{R}^{m}$ contains the null-space coordinates. Thus, all controllers share the same task-space motion and differ only in how the null-space command $\mathbf{a}$ is selected.
 
 We bound the null-space command as
 \begin{equation}
-\mathbf{u}=a_{\max}\mathbf{a},
-\qquad
-\mathbf{a}\in\mathcal{A}:=[-1,1]^{m},
+\mathbf{a}\in\mathcal{A}:=[-a_{\max},a_{\max}]^{m},
 \end{equation}
-where $m=n-3$ for a full-row-rank position Jacobian. The resulting kinematics are control-affine:
+where $m=n-3$ for a full-row-rank position Jacobian. Since $\mathbf{B}(\mathbf{q})$ lies in the null space of $\mathbf{J}$, the resulting kinematics can be written as
 \begin{equation}
 \label{eq:affine}
 \dot{\mathbf{q}}
 =
-\mathbf{f}(\mathbf{q};\mathbf{c})
+\mathbf{J}^{+}\dot{\mathbf{x}}
 +
-\mathbf{G}(\mathbf{q})\mathbf{a},
-\qquad
-\mathbf{f}:=\mathbf{J}_{\lambda}^{+}\dot{\mathbf{x}},
-\quad
-\mathbf{G}:=a_{\max}\mathbf{B}.
+\mathbf{B}(\mathbf{q})\mathbf{a}.
 \end{equation}
 
-Equation~(\ref{eq:ckr}) therefore contains the two decisions addressed by the proposed framework: selecting the initial configuration $\mathbf{q}_{0}$ and selecting the bounded null-space command throughout the resulting continuous motion.
+Equation~(\ref{eq:ckr}) therefore contains the two decisions addressed by the proposed framework: selecting the initial configuration $\mathbf{q}_{0}$ and selecting the bounded null-space command $\mathbf{a}$ throughout the resulting continuous motion.
+
 
 
 \section{Extreme Motion Generation}
@@ -316,9 +317,9 @@ constraints of Section~III, and define the exit time
 =
 \inf\{t\geq 0:\mathbf{q}(t)\notin\Omega\}.
 \end{equation}
-For a fixed task condition $\mathbf{c}$, let $r(\mathbf{q};\mathbf{c})$
-denote the instantaneous progress rate along the prescribed path. We define
-the discounted exit-time value
+For a fixed task condition $\mathbf{c}$, let $v$ denote the commanded
+progress rate along the prescribed path. We define the discounted exit-time
+value as
 \begin{equation}
 \label{eq:value}
 V(\mathbf{q}_{0};\mathbf{c})
@@ -326,13 +327,14 @@ V(\mathbf{q}_{0};\mathbf{c})
 \sup_{\mathbf{a}(\cdot)}
 \int_{0}^{\tau_{\mathrm{exit}}}
 e^{-\beta t}
-r(\mathbf{q}(t);\mathbf{c})\,\mathrm{d}t,
+v\,\mathrm{d}t,
 \end{equation}
-where $\beta>0$ and the supremum is over measurable commands in
-$\mathcal{A}$. Under the fixed path-advance rate used in this work,
-$r$ is constant while the trajectory remains feasible. Hence maximizing
-Eq.~(\ref{eq:value}) is equivalent to delaying the first constraint
-violation and therefore to maximizing the executed stroke.
+where $\beta>0$ is the continuous-time discount rate and the supremum is
+taken over measurable commands $\mathbf{a}(\cdot)$ satisfying
+$\mathbf{a}(t)\in\mathcal{A}$. Under the fixed path-advance rate used in this
+work, $v$ is constant while the trajectory remains feasible. Hence maximizing
+Eq.~(\ref{eq:value}) is equivalent to delaying the first constraint violation
+and therefore to maximizing the executed stroke.
 
 This formulation also connects the two stages of the framework. Initial
 configuration selection compares the future stroke attainable from
@@ -381,78 +383,78 @@ $\mathbf{B}(\mathbf{q})$. To obtain a task-aligned parameterization,
 directions associated with directional manipulability, joint-limit
 centering, and orientation margin are projected into the null space and
 orthonormalized; the remaining orthogonal directions complete the basis.
-The null-space velocity is
-\begin{equation}
-\dot{\mathbf{q}}_{\mathrm{null}}
-=
-\mathbf{B}(\mathbf{q})\left(a_{\max}\mathbf{a}\right),
-\end{equation}
-so the controllers differ only in how $\mathbf{a}$ is selected.
+Thus, the controllers differ only in how the null-space command
+$\mathbf{a}$ in Eq.~(\ref{eq:affine}) is selected.
 
 The exit-time formulation provides a structured rule for this selection.
 At points where $V$ is differentiable, the Hamilton--Jacobi--Bellman
 equation associated with Eq.~(\ref{eq:value}) is
 \begin{equation}
 \label{eq:hjb}
+\begin{aligned}
 \beta V
-=
-r
+&=
+v
 +
-\nabla_{\mathbf{q}}V^{\top}\mathbf{f}
+\nabla_{\mathbf{q}}V^{\top}\mathbf{J}^{+}\dot{\mathbf{x}}
 +
 \sup_{\mathbf{a}\in\mathcal{A}}
 \left(
-\mathbf{G}^{\top}\nabla_{\mathbf{q}}V
+\mathbf{B}(\mathbf{q})^{\top}\nabla_{\mathbf{q}}V
 \right)^{\top}\mathbf{a},
-\qquad
-V=0 \ \text{outside } \Omega .
+\\
+V&=0 \quad \text{outside } \Omega .
+\end{aligned}
 \end{equation}
-Because $r$ and $\mathbf{f}$ are independent of $\mathbf{a}$, the command
-appears linearly in the final term. Define
+Because $v$ and $\mathbf{J}^{+}\dot{\mathbf{x}}$ are independent of
+$\mathbf{a}$, the command appears linearly in the final term. Define
 \begin{equation}
 \label{eq:sigma}
 \boldsymbol{\sigma}(\mathbf{q})
 =
-\mathbf{G}(\mathbf{q})^{\top}
+\mathbf{B}(\mathbf{q})^{\top}
 \nabla_{\mathbf{q}}V(\mathbf{q})
 \in\mathbb{R}^{m}.
 \end{equation}
-For the box-bounded command set $\mathcal{A}=[-1,1]^{m}$, the pointwise
-Hamiltonian maximization is attained by a vertex command.
+For the box-bounded command set
+$\mathcal{A}=[-a_{\max},a_{\max}]^{m}$, the pointwise Hamiltonian
+maximization is attained by a vertex command.
 
 \begin{proposition}
 \label{prop:vertex}
 Let $W:\Omega\rightarrow\mathbb{R}$ be differentiable and define
-$\boldsymbol{\sigma}_{W}
+\begin{equation}
+\boldsymbol{\sigma}_{W}(\mathbf{q})
 =
-\mathbf{G}^{\top}\nabla_{\mathbf{q}}W$.
+\mathbf{B}(\mathbf{q})^{\top}\nabla_{\mathbf{q}}W(\mathbf{q}).
+\end{equation}
 Then
 \begin{equation}
 \label{eq:prop}
-\max_{\mathbf{a}\in[-1,1]^{m}}
+\max_{\mathbf{a}\in[-a_{\max},a_{\max}]^{m}}
 \boldsymbol{\sigma}_{W}^{\top}\mathbf{a}
 =
-\max_{\mathbf{a}\in\{-1,1\}^{m}}
+\max_{\mathbf{a}\in\{-a_{\max},a_{\max}\}^{m}}
 \boldsymbol{\sigma}_{W}^{\top}\mathbf{a}
 =
-\|\boldsymbol{\sigma}_{W}\|_{1}.
+a_{\max}\|\boldsymbol{\sigma}_{W}\|_{1}.
 \end{equation}
 An optimizer can be chosen as
-$\mathbf{a}=\operatorname{sgn}(\boldsymbol{\sigma}_{W})$, with arbitrary
+$\mathbf{a}=a_{\max}\operatorname{sgn}(\boldsymbol{\sigma}_{W})$, with arbitrary
 vertex values on components for which $\sigma_{W,i}=0$.
 \end{proposition}
 
 \begin{IEEEproof}
-For $\mathbf{a}\in[-1,1]^{m}$,
+For $\mathbf{a}\in[-a_{\max},a_{\max}]^{m}$,
 \begin{equation}
 \boldsymbol{\sigma}_{W}^{\top}\mathbf{a}
 =
 \sum_{i}\sigma_{W,i}a_{i}
 \leq
-\sum_{i}|\sigma_{W,i}|.
+a_{\max}\sum_{i}|\sigma_{W,i}|.
 \end{equation}
 Equality is attained by choosing
-$a_i=\operatorname{sgn}(\sigma_{W,i})$ whenever
+$a_i=a_{\max}\operatorname{sgn}(\sigma_{W,i})$ whenever
 $\sigma_{W,i}\neq 0$, which is a vertex-valued command.
 \end{IEEEproof}
 
@@ -472,9 +474,10 @@ vertex policy
 $\pi_{\theta}(\mathbf{a}\mid\mathbf{o})$
 together with a critic
 $\widehat{V}_{\phi}(\mathbf{o})$.
-The observation contains the normalized joint configuration and its
-square, task vectors $\mathbf{d}$ and $\mathbf{n}$, tool-axis features,
-and the previous command. The per-step reward is normalized path progress,
+The observation $\mathbf{o}$ contains the normalized joint configuration
+and its square, task vectors $\mathbf{d}$ and $\mathbf{n}$, tool-axis
+features, and the previous command. The per-step reward is normalized path
+progress,
 \begin{equation}
 \label{eq:reward}
 r_t
@@ -505,7 +508,7 @@ in its previous-command component. The deployed value controller is
 =
 \arg\max_{
 \substack{
-\mathbf{a}\in\{-1,1\}^{m}\\
+\mathbf{a}\in\{-a_{\max},a_{\max}\}^{m}\\
 F(\mathbf{q},\mathbf{a})\in\Omega
 }
 }
@@ -516,11 +519,11 @@ F(\mathbf{q},\mathbf{a})\in\Omega
 \end{equation}
 Thus, the continuous-time HJB analysis supplies the vertex candidate set,
 while the finite-rate implementation compares the learned values of the
-corresponding successor observations. Because the task-space controller commands the same nominal path
-increment for all feasible vertices, we rank them by successor value in
-the finite-rate implementation. With an approximate learned critic, Eq.~(\ref{eq:value-law})
-is a model-based value-ranking rule rather than an exact policy-improvement
-guarantee.
+corresponding successor observations. Because the task-space controller
+commands the same nominal path increment for all feasible vertices, we rank
+them by successor value in the finite-rate implementation. With an
+approximate learned critic, Eq.~(\ref{eq:value-law}) is a model-based
+value-ranking rule rather than an exact policy-improvement guarantee.
 
 This construction avoids differentiating the learned critic directly.
 Instead, the known kinematic model maps each candidate command to a

@@ -69,6 +69,12 @@ class EnvConfig:
     cone_deg: float = 30.0
     max_steps: int = 10000
     tcp_offset: float = 0.0
+    # Reset-time randomization of the wrist-roll joint (last joint). The TCP
+    # position and tool axis are exactly invariant to it (rotation about the
+    # tool axis), so this is a free symmetry augmentation that exposes the
+    # critic to the full q7 range; 0 disables, x>0 draws uniformly within
+    # the central x-fraction of the joint range.
+    q7_reset_uniform: float = 0.0
     # Terminal penalties (unified to 0; lifetime alone reflects performance)
     r_collision: float = 0.0
     r_cone: float = 0.0
@@ -484,6 +490,14 @@ class NSRLBatchedEnv:
             return
         spec = self.line_dist.sample(n_reset)
         self.q[mask] = spec["q0"]
+        if self.cfg.q7_reset_uniform > 0.0:
+            lo, up = self.kin.lmt_lo[-1], self.kin.lmt_up[-1]
+            mid, half = 0.5 * (lo + up), 0.5 * (up - lo)
+            u = torch.rand(n_reset, device=self.device, dtype=self.q.dtype)
+            q7 = mid + (2.0 * u - 1.0) * half * self.cfg.q7_reset_uniform
+            qm = self.q[mask]
+            qm[:, -1] = q7
+            self.q[mask] = qm
         self.line_dir[mask] = spec["line_dir"]
         self.path_d0[mask] = spec["line_dir"]
         self.n_target[mask] = spec["n_target"]

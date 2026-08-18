@@ -139,3 +139,104 @@ class PriorVertexAgent(VertexAgent):
     @torch.no_grad()
     def actor_mean(self, x: torch.Tensor) -> torch.Tensor:
         return self.vertices[self._logits(x).argmax(-1)]
+
+
+class _SeqVertexBase(nn.Module):
+    """Shared scaffolding for sequence-backbone vertex agents.
+
+    The observation is a K-step history window flattened to K*D; the
+    backbone maps it to a feature vector from which the categorical vertex
+    head and the value head read. Interface-identical to VertexAgent.
+    """
+
+    def __init__(self, obs_dim: int, act_dim: int, history: int):
+        super().__init__()
+        assert obs_dim % history == 0, (obs_dim, history)
+        self.history = history
+        self.base_dim = obs_dim // history
+        self.act_dim = act_dim
+        self.action_store_dim = 1
+        self.n_actions = 2 ** act_dim
+        grid = np.stack(np.meshgrid(*[[-1.0, 1.0]] * act_dim,
+                                    indexing='ij'), -1)
+        self.register_buffer('vertices',
+                             torch.tensor(grid.reshape(-1, act_dim),
+                                          dtype=torch.float32))
+
+    def _feat(self, x):
+        raise NotImplementedError
+
+    def _logits(self, x):
+        return self._logits_head(self._feat(x))
+
+    def critic(self, x):
+        return self._value_head(self._feat(x))
+
+    def to_env(self, action):
+        return self.vertices[action.squeeze(-1).long()]
+
+    def get_value(self, x):
+        return self.critic(x).squeeze(-1)
+
+    def get_action_and_value(self, x, action=None, mask=None):
+        f = self._feat(x)
+        logits = self._logits_head(f)
+        if mask is not None:
+            logits = logits.masked_fill(~mask, -1e9)
+        dist = Categorical(logits=logits)
+        idx = dist.sample() if action is None else action.squeeze(-1).long()
+        return (idx.unsqueeze(-1).float(), dist.log_prob(idx), dist.entropy(),
+                self._value_head(f).squeeze(-1), None)
+
+    @torch.no_grad()
+    def actor_mean(self, x):
+        return self.vertices[self._logits(x).argmax(-1)]
+
+
+class LSTMVertexAgent(_SeqVertexBase):
+    """LSTM backbone over the K-step observation window (last hidden)."""
+
+    def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 512,
+                 history: int = 8, lstm_hidden: int = 256, **_ignored):
+        super().__init__(obs_dim, act_dim, history)
+        self.lstm = nn.LSTM(self.base_dim, lstm_hidden, num_layers=1,
+                            batch_first=True)
+        self._logits_head = nn.Sequential(
+            _layer_init(nn.Linear(lstm_hidden, hidden_dim)), nn.ReLU(),
+            _layer_init(nn.Linear(hidden_dim, self.n_actions), std=0.01))
+        self._value_head = nn.Sequential(
+            _layer_init(nn.Linear(lstm_hidden, hidden_dim)), nn.ReLU(),
+            _layer_init(nn.Linear(hidden_dim, 1), std=1.0))
+
+    def _feat(self, x):
+        B = x.shape[0]
+        seq = x.view(B, self.history, self.base_dim)
+        out, _ = self.lstm(seq)
+        return out[:, -1]
+
+
+class TransformerVertexAgent(_SeqVertexBase):
+    """Causal-free encoder over the K-step window (history-only context),
+    reading the last token."""
+
+    def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 512,
+                 history: int = 8, d_model: int = 128, nhead: int = 4,
+                 n_layers: int = 2, **_ignored):
+        super().__init__(obs_dim, act_dim, history)
+        self.embed = _layer_init(nn.Linear(self.base_dim, d_model))
+        self.pos = nn.Parameter(torch.zeros(1, history, d_model))
+        layer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=nhead, dim_feedforward=4 * d_model,
+            batch_first=True, dropout=0.0, norm_first=True)
+        self.encoder = nn.TransformerEncoder(layer, num_layers=n_layers)
+        self._logits_head = nn.Sequential(
+            _layer_init(nn.Linear(d_model, hidden_dim)), nn.ReLU(),
+            _layer_init(nn.Linear(hidden_dim, self.n_actions), std=0.01))
+        self._value_head = nn.Sequential(
+            _layer_init(nn.Linear(d_model, hidden_dim)), nn.ReLU(),
+            _layer_init(nn.Linear(hidden_dim, 1), std=1.0))
+
+    def _feat(self, x):
+        B = x.shape[0]
+        seq = self.embed(x.view(B, self.history, self.base_dim)) + self.pos
+        return self.encoder(seq)[:, -1]

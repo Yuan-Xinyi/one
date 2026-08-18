@@ -32,7 +32,8 @@ import yaml
 from Yuan.IJRR.env.env import NSRLBatchedEnv, EnvConfig, TERM_NAMES
 from Yuan.IJRR.env.line_distribution import LineDistribution
 from Yuan.IJRR.stage2_traj.ppo import PPOConfig, train as ppo_train, Agent
-from Yuan.IJRR.stage2_traj.vertex_agent import VertexAgent, PriorVertexAgent
+from Yuan.IJRR.stage2_traj.vertex_agent import (VertexAgent, PriorVertexAgent, LSTMVertexAgent, TransformerVertexAgent)
+from Yuan.IJRR.stage2_traj.history_env import HistoryStackEnv
 
 
 def _resolve_log_path(out_dir: Path) -> Path:
@@ -188,6 +189,14 @@ def main():
 
 
 
+    kind_early = cfg_yaml.get("agent", {}).get("kind")
+    if kind_early in ("vertex_lstm", "vertex_tf"):
+        k_hist = int(cfg_yaml.get("agent", {}).get("history", 8))
+        train_env = HistoryStackEnv(train_env, k_hist)
+        eval_env = HistoryStackEnv(eval_env, k_hist)
+        print(f"[train] history window k={k_hist}: obs_dim "
+              f"{train_env.base_obs_dim} -> {train_env.obs_dim}")
+
     eval_fn = _make_eval_fn(eval_env)
     n_updates = ppo_cfg.total_timesteps // (ppo_cfg.n_steps * env_cfg.n_envs)
     print(f"[train] starting PPO: total={ppo_cfg.total_timesteps}, updates={n_updates}")
@@ -200,6 +209,20 @@ def main():
                                 act_dim=train_env.act_dim,
                                 hidden_dim=ppo_cfg.hidden_dim).to(device)
         print(f"[train] vertex action space: {agent_obj.n_actions} actions")
+    elif kind == "vertex_lstm":
+        agent_obj = LSTMVertexAgent(obs_dim=train_env.obs_dim,
+                                    act_dim=train_env.act_dim,
+                                    hidden_dim=ppo_cfg.hidden_dim,
+                                    history=int(cfg_yaml["agent"].get(
+                                        "history", 8))).to(device)
+        print(f"[train] LSTM vertex agent: {agent_obj.n_actions} actions")
+    elif kind == "vertex_tf":
+        agent_obj = TransformerVertexAgent(
+            obs_dim=train_env.obs_dim, act_dim=train_env.act_dim,
+            hidden_dim=ppo_cfg.hidden_dim,
+            history=int(cfg_yaml["agent"].get("history", 8))).to(device)
+        print(f"[train] Transformer vertex agent: "
+              f"{agent_obj.n_actions} actions")
     elif kind == "vertex_prior":
         agent_obj = PriorVertexAgent(obs_dim=train_env.obs_dim,
                                      act_dim=train_env.act_dim,

@@ -590,8 +590,8 @@ disjoint.
     \item \uline{Evaluation metrics:}
     All performance is reported as the executed stroke and \emph{Ratio},
     the per-task ratio of the executed stroke to the task's numerical
-    pointwise-reachable length $\ell^{\mathrm{pw}}$, summarized by its
-    mean and 10th percentile (mean / p10). The classical controller
+    pointwise-reachable length $\ell^{\mathrm{pw}}$, reported in percent
+    and summarized by its mean and 10th percentile (mean / p10). The classical controller
     appears as an ordinary row under the same metric. $\ell^{\mathrm{pw}}$
     is computed as follows. The task's path is sampled every $1$\,cm of
     arc length, and at each sample a numerical search asks whether any
@@ -782,51 +782,51 @@ generation and discrimination.
 Type
 & Method
 & Family
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10} \\
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
-\multirow{12}{*}{Classical} & \multirow{4}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \pinkbox{0.308} & \pinkbox{0.570 / 0.165} & \pinkbox{0.259} & \pinkbox{0.550 / 0.157} & \pinkbox{0.159} & \pinkbox{0.600 / 0.255} \\
- &  & Arc & \pinkbox{0.318} & \pinkbox{0.504 / 0.110} & \pinkbox{0.270} & \pinkbox{0.507 / 0.124} & \pinkbox{0.160} & \pinkbox{0.593 / 0.250} \\
- &  & Serpentine & \pinkbox{0.303} & \pinkbox{0.542 / 0.150} & \pinkbox{0.258} & \pinkbox{0.531 / 0.145} & \pinkbox{0.151} & \pinkbox{0.566 / 0.234} \\
- &  & Rot.-Axis & \pinkbox{0.315} & \pinkbox{0.563 / 0.168} & \pinkbox{0.261} & \pinkbox{0.549 / 0.155} & \pinkbox{0.159} & \pinkbox{0.597 / 0.261} \\
+\multirow{12}{*}{Classical} & \multirow{4}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \pinkbox{0.308} & \pinkbox{57.0 / 16.5} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \pinkbox{0.159} & \pinkbox{60.0 / 25.5} \\
+ &  & Arc & \pinkbox{0.318} & \pinkbox{50.4 / 11.0} & \pinkbox{0.270} & \pinkbox{50.7 / 12.4} & \pinkbox{0.160} & \pinkbox{59.3 / 25.0} \\
+ &  & Serpentine & \pinkbox{0.303} & \pinkbox{54.2 / 15.0} & \pinkbox{0.258} & \pinkbox{53.1 / 14.5} & \pinkbox{0.151} & \pinkbox{56.6 / 23.4} \\
+ &  & Rot.-Axis & \pinkbox{0.315} & \pinkbox{56.3 / 16.8} & \pinkbox{0.261} & \pinkbox{54.9 / 15.5} & \pinkbox{0.159} & \pinkbox{59.7 / 26.1} \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{Classical Gradient}} & Straight & 0.332 & 0.606 / 0.179 & 0.269 & 0.564 / 0.178 & 0.163 & 0.613 / 0.276 \\
- &  & Arc & 0.345 & 0.530 / 0.121 & 0.284 & 0.521 / 0.138 & 0.164 & 0.605 / 0.271 \\
- &  & Serpentine & 0.326 & 0.576 / 0.165 & 0.268 & 0.546 / 0.163 & 0.156 & 0.578 / 0.250 \\
- &  & Rot.-Axis & 0.339 & 0.600 / 0.185 & 0.273 & 0.567 / 0.179 & 0.163 & 0.610 / 0.283 \\
+ & \multirow{4}{*}{\shortstack[l]{Classical Gradient}} & Straight & 0.332 & 60.6 / 17.9 & 0.269 & 56.4 / 17.8 & 0.163 & 61.3 / 27.6 \\
+ &  & Arc & 0.345 & 53.0 / 12.1 & 0.284 & 52.1 / 13.8 & 0.164 & 60.5 / 27.1 \\
+ &  & Serpentine & 0.326 & 57.6 / 16.5 & 0.268 & 54.6 / 16.3 & 0.156 & 57.8 / 25.0 \\
+ &  & Rot.-Axis & 0.339 & 60.0 / 18.5 & 0.273 & 56.7 / 17.9 & 0.163 & 61.0 / 28.3 \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{Analytic Margin}} & Straight & 0.531 & 0.836 / 0.420 & 0.432 & 0.788 / 0.323 & 0.208 & 0.742 / 0.350 \\
- &  & Arc & 0.724 & 0.779 / 0.267 & 0.560 & 0.769 / 0.262 & 0.212 & 0.740 / 0.365 \\
- &  & Serpentine & 0.535 & 0.811 / 0.379 & 0.430 & 0.765 / 0.296 & 0.203 & 0.715 / 0.339 \\
- &  & Rot.-Axis & 0.526 & 0.816 / 0.376 & 0.435 & 0.788 / 0.330 & 0.209 & 0.742 / 0.368 \\
+ & \multirow{4}{*}{\shortstack[l]{Analytic Margin}} & Straight & 0.531 & 83.6 / 42.0 & 0.432 & 78.8 / 32.3 & 0.208 & 74.2 / 35.0 \\
+ &  & Arc & 0.724 & 77.9 / 26.7 & 0.560 & 76.9 / 26.2 & 0.212 & 74.0 / 36.5 \\
+ &  & Serpentine & 0.535 & 81.1 / 37.9 & 0.430 & 76.5 / 29.6 & 0.203 & 71.5 / 33.9 \\
+ &  & Rot.-Axis & 0.526 & 81.6 / 37.6 & 0.435 & 78.8 / 33.0 & 0.209 & 74.2 / 36.8 \\
 \midrule
-\multirow{16}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 0.696 / 0.174 & 0.340 & 0.667 / 0.168 & 0.197 & 0.711 / 0.303 \\
- &  & Arc & 0.447 & 0.615 / 0.130 & 0.380 & 0.622 / 0.144 & 0.201 & 0.705 / 0.307 \\
- &  & Serpentine & 0.407 & 0.671 / 0.160 & 0.337 & 0.645 / 0.161 & 0.191 & 0.679 / 0.273 \\
- &  & Rot.-Axis & 0.411 & 0.685 / 0.175 & 0.344 & 0.669 / 0.172 & 0.199 & 0.710 / 0.309 \\
+\multirow{16}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 69.6 / 17.4 & 0.340 & 66.7 / 16.8 & 0.197 & 71.1 / 30.3 \\
+ &  & Arc & 0.447 & 61.5 / 13.0 & 0.380 & 62.2 / 14.4 & 0.201 & 70.5 / 30.7 \\
+ &  & Serpentine & 0.407 & 67.1 / 16.0 & 0.337 & 64.5 / 16.1 & 0.191 & 67.9 / 27.3 \\
+ &  & Rot.-Axis & 0.411 & 68.5 / 17.5 & 0.344 & 66.9 / 17.2 & 0.199 & 71.0 / 30.9 \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{Vertex PPO}} & Straight & 0.437 & 0.726 / 0.182 & 0.361 & 0.691 / 0.170 & 0.206 & 0.734 / 0.318 \\
- &  & Arc & 0.487 & 0.645 / 0.137 & 0.402 & 0.645 / 0.140 & 0.210 & 0.731 / 0.321 \\
- &  & Serpentine & 0.436 & 0.699 / 0.161 & 0.359 & 0.672 / 0.154 & 0.201 & 0.705 / 0.297 \\
- &  & Rot.-Axis & 0.437 & 0.714 / 0.181 & 0.363 & 0.694 / 0.173 & 0.207 & 0.735 / 0.333 \\
+ & \multirow{4}{*}{\shortstack[l]{Vertex PPO}} & Straight & 0.437 & 72.6 / 18.2 & 0.361 & 69.1 / 17.0 & 0.206 & 73.4 / 31.8 \\
+ &  & Arc & 0.487 & 64.5 / 13.7 & 0.402 & 64.5 / 14.0 & 0.210 & 73.1 / 32.1 \\
+ &  & Serpentine & 0.436 & 69.9 / 16.1 & 0.359 & 67.2 / 15.4 & 0.201 & 70.5 / 29.7 \\
+ &  & Rot.-Axis & 0.437 & 71.4 / 18.1 & 0.363 & 69.4 / 17.3 & 0.207 & 73.5 / 33.3 \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{Vertex PPO + Classical}} & Straight & 0.458 & 0.760 / 0.238 & 0.374 & 0.715 / 0.209 & 0.207 & 0.741 / 0.338 \\
- &  & Arc & 0.516 & 0.674 / 0.167 & 0.422 & 0.670 / 0.174 & 0.213 & 0.740 / 0.347 \\
- &  & Serpentine & 0.457 & 0.731 / 0.216 & 0.370 & 0.692 / 0.196 & 0.202 & 0.712 / 0.313 \\
- &  & Rot.-Axis & 0.458 & 0.745 / 0.235 & 0.374 & 0.713 / 0.205 & 0.209 & 0.742 / 0.352 \\
+ & \multirow{4}{*}{\shortstack[l]{Vertex PPO + Classical}} & Straight & 0.458 & 76.0 / 23.8 & 0.374 & 71.5 / 20.9 & 0.207 & 74.1 / 33.8 \\
+ &  & Arc & 0.516 & 67.4 / 16.7 & 0.422 & 67.0 / 17.4 & 0.213 & 74.0 / 34.7 \\
+ &  & Serpentine & 0.457 & 73.1 / 21.6 & 0.370 & 69.2 / 19.6 & 0.202 & 71.2 / 31.3 \\
+ &  & Rot.-Axis & 0.458 & 74.5 / 23.5 & 0.374 & 71.3 / 20.5 & 0.209 & 74.2 / 35.2 \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{\textbf{Critic-Guided Value (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.563}} & \limebox{\textbf{0.866 / 0.583}} & \limebox{\textbf{0.462}} & \limebox{\textbf{0.821 / 0.455}} & \limebox{\textbf{0.225}} & \limebox{\textbf{0.792 / 0.406}} \\
- &  & \textbf{Arc} & \limebox{\textbf{0.733}} & \limebox{\textbf{0.798 / 0.319}} & \limebox{\textbf{0.584}} & \limebox{\textbf{0.799 / 0.374}} & \limebox{\textbf{0.229}} & \limebox{\textbf{0.788 / 0.415}} \\
- &  & \textbf{Serpentine} & \limebox{\textbf{0.557}} & \limebox{\textbf{0.832 / 0.461}} & \limebox{\textbf{0.461}} & \limebox{\textbf{0.799 / 0.418}} & \limebox{\textbf{0.219}} & \limebox{\textbf{0.761 / 0.383}} \\
- &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.554}} & \limebox{\textbf{0.844 / 0.482}} & \limebox{\textbf{0.463}} & \limebox{\textbf{0.821 / 0.452}} & \limebox{\textbf{0.225}} & \limebox{\textbf{0.788 / 0.428}} \\
+ & \multirow{4}{*}{\shortstack[l]{\textbf{Critic-Guided Value (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.563}} & \limebox{\textbf{86.6 / 58.3}} & \limebox{\textbf{0.462}} & \limebox{\textbf{82.1 / 45.5}} & \limebox{\textbf{0.225}} & \limebox{\textbf{79.2 / 40.6}} \\
+ &  & \textbf{Arc} & \limebox{\textbf{0.733}} & \limebox{\textbf{79.8 / 31.9}} & \limebox{\textbf{0.584}} & \limebox{\textbf{79.9 / 37.4}} & \limebox{\textbf{0.229}} & \limebox{\textbf{78.8 / 41.5}} \\
+ &  & \textbf{Serpentine} & \limebox{\textbf{0.557}} & \limebox{\textbf{83.2 / 46.1}} & \limebox{\textbf{0.461}} & \limebox{\textbf{79.9 / 41.8}} & \limebox{\textbf{0.219}} & \limebox{\textbf{76.1 / 38.3}} \\
+ &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.554}} & \limebox{\textbf{84.4 / 48.2}} & \limebox{\textbf{0.463}} & \limebox{\textbf{82.1 / 45.2}} & \limebox{\textbf{0.225}} & \limebox{\textbf{78.8 / 42.8}} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] All methods share the same per-task initial configuration.
     Ratio is the per-task ratio of the executed stroke to the task's
-    pointwise-reachable length $\ell^{\mathrm{pw}}$, reported as
-    mean / p10.
+    pointwise-reachable length $\ell^{\mathrm{pw}}$, reported in percent
+    as mean / p10.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
@@ -838,7 +838,7 @@ result on the FR3 evaluation sets of all four path families, with the
 value controller fixed across all rows so that only the initial
 configuration changes. On straight tasks, learned selection increases the
 mean stroke from $0.617$\,m for a randomly chosen candidate to
-$0.678$\,m, reaching a mean Ratio of $0.949$ (10th percentile $0.925$),
+$0.678$\,m, reaching a mean Ratio of $94.9\%$ (10th percentile $92.5\%$),
 while the within-pool oracle indicates the remaining gap attributable to
 candidate ranking; the same ordering holds on every curved family.
 
@@ -852,25 +852,25 @@ candidate ranking; the same ordering holds on every curved family.
 \toprule
 Initial configuration & Family
 & \shortstack{Stroke\\(m)}
-& \shortstack{Ratio\\mean / p10} \\
+& \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
 \multirow{4}{*}{Random candidate}
-& Straight   & 0.617 & 0.872 / 0.761 \\
-& Arc        & 0.736 & 0.809 / 0.497 \\
-& Serpentine & 0.579 & 0.853 / 0.714 \\
-& Rot.-Axis  & 0.567 & 0.855 / 0.695 \\
+& Straight   & 0.617 & 87.2 / 76.1 \\
+& Arc        & 0.736 & 80.9 / 49.7 \\
+& Serpentine & 0.579 & 85.3 / 71.4 \\
+& Rot.-Axis  & 0.567 & 85.5 / 69.5 \\
 \midrule
 \multirow{4}{*}{\textbf{Learned selector (ours)}}
-& \textbf{Straight}   & \textbf{0.678} & \textbf{0.949 / 0.925} \\
-& \textbf{Arc}        & \textbf{0.848} & \textbf{0.889 / 0.513} \\
-& \textbf{Serpentine} & \textbf{0.631} & \textbf{0.921 / 0.883} \\
-& \textbf{Rot.-Axis}  & \textbf{0.624} & \textbf{0.930 / 0.879} \\
+& \textbf{Straight}   & \textbf{0.678} & \textbf{94.9 / 92.5} \\
+& \textbf{Arc}        & \textbf{0.848} & \textbf{88.9 / 51.3} \\
+& \textbf{Serpentine} & \textbf{0.631} & \textbf{92.1 / 88.3} \\
+& \textbf{Rot.-Axis}  & \textbf{0.624} & \textbf{93.0 / 87.9} \\
 \midrule
 \multirow{4}{*}{Within-pool oracle ($K$ rollouts)}
-& Straight   & 0.706 & 0.980 / 0.961 \\
-& Arc        & 1.056 & 0.975 / 0.976 \\
-& Serpentine & 0.681 & 0.971 / 0.944 \\
-& Rot.-Axis  & 0.673 & 0.983 / 0.979 \\
+& Straight   & 0.706 & 98.0 / 96.1 \\
+& Arc        & 1.056 & 97.5 / 97.6 \\
+& Serpentine & 0.681 & 97.1 / 94.4 \\
+& Rot.-Axis  & 0.673 & 98.3 / 97.9 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -894,10 +894,10 @@ To isolate the selection stage, we fix the motion-generation controller and
 compare different ranking rules on the same candidate pool.
 Table~\ref{tab:ablate_seed} reports results on $2500$ held-out tasks per
 path family. On straight tasks, taking the first feasible candidate
-reaches a mean Ratio of $0.857$;
+reaches a mean Ratio of $85.7\%$;
 ranking by joint-limit margin or by the analytic margin field raises this
-to $0.911$, while the learned selector reaches $0.940$ with a 10th
-percentile of $0.920$. These results show that rollout supervision provides a
+to $91.1\%$, while the learned selector reaches $94.0\%$ with a 10th
+percentile of $92.0\%$. These results show that rollout supervision provides a
 stronger ranking signal for initial configurations than the tested
 instantaneous geometric heuristics.
 
@@ -915,55 +915,55 @@ Type
 & Candidate Ranking Rule
 & Family
 & \shortstack{Stroke\\(m)}
-& \shortstack{Ratio\\mean / p10}
+& \shortstack{Ratio (\%)\\mean / p10}
 & \shortstack{Near-Oracle\\Tasks (\%)} \\
 \midrule
-\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & \pinkbox{0.571} & \pinkbox{0.857 / 0.572} & 37.8 \\
- &  & Arc & 0.733 & \pinkbox{0.798 / 0.319} & 32.5 \\
- &  & Serpentine & \pinkbox{0.557} & \pinkbox{0.832 / 0.461} & 36.7 \\
- &  & Rot.-Axis & \pinkbox{0.554} & \pinkbox{0.844 / 0.482} & 38.4 \\
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & \pinkbox{0.571} & \pinkbox{85.7 / 57.2} & 37.8 \\
+ &  & Arc & 0.733 & \pinkbox{79.8 / 31.9} & 32.5 \\
+ &  & Serpentine & \pinkbox{0.557} & \pinkbox{83.2 / 46.1} & 36.7 \\
+ &  & Rot.-Axis & \pinkbox{0.554} & \pinkbox{84.4 / 48.2} & 38.4 \\
 \midrule
-\multirow{4}{*}{Random} & \multirow{4}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & 0.584 & 0.868 / 0.727 & \pinkbox{8.0} \\
- &  & Arc & 0.736 & 0.809 / 0.497 & \pinkbox{6.6} \\
- &  & Serpentine & 0.579 & 0.853 / 0.714 & \pinkbox{7.6} \\
- &  & Rot.-Axis & 0.567 & 0.855 / 0.695 & \pinkbox{7.4} \\
+\multirow{4}{*}{Random} & \multirow{4}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & 0.584 & 86.8 / 72.7 & \pinkbox{8.0} \\
+ &  & Arc & 0.736 & 80.9 / 49.7 & \pinkbox{6.6} \\
+ &  & Serpentine & 0.579 & 85.3 / 71.4 & \pinkbox{7.6} \\
+ &  & Rot.-Axis & 0.567 & 85.5 / 69.5 & \pinkbox{7.4} \\
 \midrule
-\multirow{16}{*}{Heuristic} & \multirow{4}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.579 & 0.866 / 0.597 & 40.4 \\
- &  & Arc & 0.732 & 0.803 / 0.297 & 35.3 \\
- &  & Serpentine & 0.574 & 0.849 / 0.548 & 41.8 \\
- &  & Rot.-Axis & 0.558 & 0.848 / 0.496 & 39.9 \\
+\multirow{16}{*}{Heuristic} & \multirow{4}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.579 & 86.6 / 59.7 & 40.4 \\
+ &  & Arc & 0.732 & 80.3 / 29.7 & 35.3 \\
+ &  & Serpentine & 0.574 & 84.9 / 54.8 & 41.8 \\
+ &  & Rot.-Axis & 0.558 & 84.8 / 49.6 & 39.9 \\
 \cmidrule(lr){2-6}
- & \multirow{4}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.580 & 0.867 / 0.609 & 40.3 \\
- &  & Arc & \pinkbox{0.731} & 0.810 / 0.318 & 35.6 \\
- &  & Serpentine & 0.582 & 0.859 / 0.588 & 41.0 \\
- &  & Rot.-Axis & 0.567 & 0.860 / 0.565 & 40.6 \\
+ & \multirow{4}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.580 & 86.7 / 60.9 & 40.3 \\
+ &  & Arc & \pinkbox{0.731} & 81.0 / 31.8 & 35.6 \\
+ &  & Serpentine & 0.582 & 85.9 / 58.8 & 41.0 \\
+ &  & Rot.-Axis & 0.567 & 86.0 / 56.5 & 40.6 \\
 \cmidrule(lr){2-6}
- & \multirow{4}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.618 & 0.907 / 0.766 & 48.0 \\
- &  & Arc & 0.803 & 0.857 / 0.444 & 41.6 \\
- &  & Serpentine & 0.615 & 0.892 / 0.741 & 47.5 \\
- &  & Rot.-Axis & 0.601 & 0.894 / 0.703 & 46.2 \\
+ & \multirow{4}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.618 & 90.7 / 76.6 & 48.0 \\
+ &  & Arc & 0.803 & 85.7 / 44.4 & 41.6 \\
+ &  & Serpentine & 0.615 & 89.2 / 74.1 & 47.5 \\
+ &  & Rot.-Axis & 0.601 & 89.4 / 70.3 & 46.2 \\
 \cmidrule(lr){2-6}
- & \multirow{4}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.621 & 0.911 / 0.776 & 48.6 \\
- &  & Arc & 0.807 & 0.860 / 0.450 & 42.3 \\
- &  & Serpentine & 0.615 & 0.893 / 0.742 & 47.4 \\
- &  & Rot.-Axis & 0.604 & 0.898 / 0.718 & 46.5 \\
+ & \multirow{4}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.621 & 91.1 / 77.6 & 48.6 \\
+ &  & Arc & 0.807 & 86.0 / 45.0 & 42.3 \\
+ &  & Serpentine & 0.615 & 89.3 / 74.2 & 47.4 \\
+ &  & Rot.-Axis & 0.604 & 89.8 / 71.8 & 46.5 \\
 \midrule
-\multirow{4}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{\textbf{Learned Selector (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.638}} & \limebox{\textbf{0.940 / 0.920}} & \limebox{\textbf{69.1}} \\
- &  & \textbf{Arc} & \limebox{\textbf{0.848}} & \limebox{\textbf{0.889 / 0.513}} & \limebox{\textbf{57.8}} \\
- &  & \textbf{Serpentine} & \limebox{\textbf{0.631}} & \limebox{\textbf{0.921 / 0.883}} & \limebox{\textbf{67.1}} \\
- &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.624}} & \limebox{\textbf{0.930 / 0.879}} & \limebox{\textbf{66.0}} \\
+\multirow{4}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{\textbf{Learned Selector (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.638}} & \limebox{\textbf{94.0 / 92.0}} & \limebox{\textbf{69.1}} \\
+ &  & \textbf{Arc} & \limebox{\textbf{0.848}} & \limebox{\textbf{88.9 / 51.3}} & \limebox{\textbf{57.8}} \\
+ &  & \textbf{Serpentine} & \limebox{\textbf{0.631}} & \limebox{\textbf{92.1 / 88.3}} & \limebox{\textbf{67.1}} \\
+ &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.624}} & \limebox{\textbf{93.0 / 87.9}} & \limebox{\textbf{66.0}} \\
 \midrule
-\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.681 & 0.984 / 0.982 & 100.0 \\
- &  & Arc & 1.056 & 0.975 / 0.976 & 100.0 \\
- &  & Serpentine & 0.681 & 0.971 / 0.944 & 100.0 \\
- &  & Rot.-Axis & 0.673 & 0.983 / 0.979 & 100.0 \\
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.681 & 98.4 / 98.2 & 100.0 \\
+ &  & Arc & 1.056 & 97.5 / 97.6 & 100.0 \\
+ &  & Serpentine & 0.681 & 97.1 / 94.4 & 100.0 \\
+ &  & Rot.-Axis & 0.673 & 98.3 / 97.9 & 100.0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
 \item[Note 1] All methods rank the same candidate pool and use the same
 motion-generation controller. Ratio is the per-task ratio of the achieved
 stroke to the task's pointwise-reachable length $\ell^{\mathrm{pw}}$,
-reported as mean / p10. Near-Oracle Tasks denotes the percentage of tasks
+reported in percent as mean / p10. Near-Oracle Tasks denotes the percentage of tasks
 whose achieved stroke is within $1$\,cm of the within-pool oracle stroke.
 \end{tablenotes}
 \end{threeparttable}
@@ -986,8 +986,8 @@ Table~\ref{tab:ablate_seed} distinguish unseen in-distribution tasks
 rotating-axis families that are absent from training. The results show that the achieved Ratio is governed by path curvature
 rather than by training membership: the OOD rotating-axis family, whose
 centerline is straight, matches the in-distribution straight family
-($0.930$ vs $0.940$ in mean Ratio), and the OOD serpentine family even
-exceeds the in-distribution arc family ($0.921$ vs $0.889$). On every family the learned
+($93.0\%$ vs $94.0\%$ in mean Ratio), and the OOD serpentine family even
+exceeds the in-distribution arc family ($92.1\%$ vs $88.9\%$). On every family the learned
 selector remains the strongest non-oracle ranking rule.
 
 
@@ -1003,9 +1003,9 @@ arm. The Cobotta is excluded because its null-space dimension is $m=3$.
 Table~\ref{tab:crossarm} reports the executed stroke and the mean per-task
 ratio to the classical controller of the test manipulator.
 
-The FR3-trained critic reaches a mean Ratio of $0.818$ on the xArm7,
-against $0.821$ for the native critic; in the reverse direction, the xArm7-trained
-critic reaches $0.817$ on the FR3 against $0.866$ natively. For reference,
+The FR3-trained critic reaches a mean Ratio of $81.8\%$ on the xArm7,
+against $82.1\%$ for the native critic; in the reverse direction, the xArm7-trained
+critic reaches $81.7\%$ on the FR3 against $86.6\%$ natively. For reference,
 transferring the reactive policy head instead loses a larger share of the
 native improvement in both directions.
 This asymmetry is consistent with the division adopted by the framework:
@@ -1024,26 +1024,26 @@ by its own kinematic model.
  & \multicolumn{2}{c}{Test on xArm7} \\
 \cmidrule(lr){3-4} \cmidrule(lr){5-6}
 Train & Family
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio\\mean / p10} \\
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
 \multirow{4}{*}{FR3}
-& Straight   & 0.563 & 0.866 / 0.583 & 0.460 & 0.818 / 0.445 \\
-& Arc        & 0.733 & 0.798 / 0.319 & 0.574 & 0.793 / 0.353 \\
-& Serpentine & 0.557 & 0.832 / 0.461 & 0.458 & 0.796 / 0.400 \\
-& Rot.-Axis  & 0.554 & 0.844 / 0.482 & 0.460 & 0.818 / 0.439 \\
+& Straight   & 0.563 & 86.6 / 58.3 & 0.460 & 81.8 / 44.5 \\
+& Arc        & 0.733 & 79.8 / 31.9 & 0.574 & 79.3 / 35.3 \\
+& Serpentine & 0.557 & 83.2 / 46.1 & 0.458 & 79.6 / 40.0 \\
+& Rot.-Axis  & 0.554 & 84.4 / 48.2 & 0.460 & 81.8 / 43.9 \\
 \midrule
 \multirow{4}{*}{xArm7}
-& Straight   & 0.525 & 0.817 / 0.430 & 0.462 & 0.821 / 0.455 \\
-& Arc        & 0.662 & 0.746 / 0.254 & 0.584 & 0.799 / 0.374 \\
-& Serpentine & 0.521 & 0.786 / 0.384 & 0.461 & 0.799 / 0.418 \\
-& Rot.-Axis  & 0.509 & 0.786 / 0.367 & 0.463 & 0.821 / 0.452 \\
+& Straight   & 0.525 & 81.7 / 43.0 & 0.462 & 82.1 / 45.5 \\
+& Arc        & 0.662 & 74.6 / 25.4 & 0.584 & 79.9 / 37.4 \\
+& Serpentine & 0.521 & 78.6 / 38.4 & 0.461 & 79.9 / 41.8 \\
+& Rot.-Axis  & 0.509 & 78.6 / 36.7 & 0.463 & 82.1 / 45.2 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] Ratio is the per-task stroke over the task's
-    $\ell^{\mathrm{pw}}$ on the test manipulator, reported as
-    mean / p10. The test manipulator always uses
+    $\ell^{\mathrm{pw}}$ on the test manipulator, reported in percent
+    as mean / p10. The test manipulator always uses
     its own kinematic model in the value controller of
     Eq.~\ref{eq:value-law}; only the critic is transferred. Diagonal
     entries are the native results of Table~\ref{tab:mainresult}. The

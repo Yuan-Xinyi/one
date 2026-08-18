@@ -77,10 +77,11 @@ class EnvConfig:
     q7_reset_uniform: float = 0.0
     # Basis scaling: False = orthonormal columns (unit joint speed per
     # action unit, the published pipeline); True = keep each objective
-    # column at its RAW projected-gradient magnitude, so |a_k|=1 commands
-    # the physically attainable component of that objective (the free
-    # residual direction e3 stays unit).
-    basis_raw_scale: bool = False
+    # column at its RAW projected-gradient magnitude times this gain, so
+    # |a_k|=1 commands gain x the physically attainable component of that
+    # objective (the free residual direction e3 stays unit). 0 disables
+    # (orthonormal columns), 1 = raw magnitude, 10 = ten-fold.
+    basis_raw_scale: float = 0.0
     # Terminal penalties (unified to 0; lifetime alone reflects performance)
     r_collision: float = 0.0
     r_cone: float = 0.0
@@ -153,7 +154,7 @@ def build_task_aligned_basis(
     lam_w_u: float,
     eps_abs: float = 1e-8,
     eps_rel: float = 1e-3,
-    raw_scale: bool = False,
+    raw_scale: float = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Task-aligned modified Gram-Schmidt nullspace basis.
 
@@ -266,8 +267,9 @@ def build_task_aligned_basis(
         cols.append(e3)
 
     if raw_scale:
+        g = float(raw_scale)
         for k, sc in enumerate(col_scales):
-            cols[k] = cols[k] * sc.unsqueeze(-1)
+            cols[k] = cols[k] * (g * sc).unsqueeze(-1)
     B_basis = torch.stack(cols, dim=-1).to(dtype)
     fb_mask = torch.stack(fb_flags, dim=-1)
     return B_basis, fb_mask

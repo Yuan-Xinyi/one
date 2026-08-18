@@ -75,6 +75,12 @@ class EnvConfig:
     # critic to the full q7 range; 0 disables, x>0 draws uniformly within
     # the central x-fraction of the joint range.
     q7_reset_uniform: float = 0.0
+    # Basis scaling: False = orthonormal columns (unit joint speed per
+    # action unit, the published pipeline); True = keep each objective
+    # column at its RAW projected-gradient magnitude, so |a_k|=1 commands
+    # the physically attainable component of that objective (the free
+    # residual direction e3 stays unit).
+    basis_raw_scale: bool = False
     # Terminal penalties (unified to 0; lifetime alone reflects performance)
     r_collision: float = 0.0
     r_cone: float = 0.0
@@ -147,6 +153,7 @@ def build_task_aligned_basis(
     lam_w_u: float,
     eps_abs: float = 1e-8,
     eps_rel: float = 1e-3,
+    raw_scale: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Task-aligned modified Gram-Schmidt nullspace basis.
 
@@ -207,6 +214,7 @@ def build_task_aligned_basis(
     used = torch.zeros((B_size, m), dtype=torch.bool, device=device)
     arange_m = torch.arange(m, device=device).view(1, -1)
     fb_flags: list[torch.Tensor] = []
+    col_scales: list[torch.Tensor] = []
 
     def _gs(p, prev, gi, g_raw):
         nonlocal used
@@ -233,6 +241,7 @@ def build_task_aligned_basis(
         e = torch.where(ok.unsqueeze(-1), e_main, e_fb)
         used = used | ((~ok).unsqueeze(-1) & (arange_m == fb_idx.view(-1, 1)))
         fb_flags.append(~ok)
+        col_scales.append(norm_v)
         return e
 
     e0 = _gs(p1, [], 0, g1d)
@@ -256,6 +265,9 @@ def build_task_aligned_basis(
         used = used | (arange_m == fb_idx.view(-1, 1))
         cols.append(e3)
 
+    if raw_scale:
+        for k, sc in enumerate(col_scales):
+            cols[k] = cols[k] * sc.unsqueeze(-1)
     B_basis = torch.stack(cols, dim=-1).to(dtype)
     fb_mask = torch.stack(fb_flags, dim=-1)
     return B_basis, fb_mask
@@ -439,7 +451,8 @@ class NSRLBatchedEnv:
         g_phi = w[:, :1] * g_jl + w[:, 1:] * g_cone
         B_basis, _ = build_task_aligned_basis(
             self.kin, q, self.line_dir, self.n_target,
-            self.kin.q_mid, self.q_half, self.cfg.manip_damping)
+            self.kin.q_mid, self.q_half, self.cfg.manip_damping,
+            raw_scale=self.cfg.basis_raw_scale)
         sigma = torch.einsum('bij,bi->bj', B_basis, g_phi)
         return sigma @ self._prior_verts.T
 
@@ -603,7 +616,7 @@ class NSRLBatchedEnv:
         B_basis, fb_mask = build_task_aligned_basis(
             self.kin, self.q, self.line_dir, self.n_target,
             self.kin.q_mid, self.q_half, self.cfg.manip_damping,
-        )
+            raw_scale=self.cfg.basis_raw_scale)
 
         # Task-space command: feed-forward along the instantaneous tangent
         # plus proportional feedback on the distance to the path. On a

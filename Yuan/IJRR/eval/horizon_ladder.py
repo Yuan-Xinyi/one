@@ -85,7 +85,8 @@ class StraightModel:
                                     self.cfg.sigma_thr)
             B, _ = build_task_aligned_basis(
                 self.kin, q, d, n, self.kin.q_mid, self.q_half,
-                self.cfg.manip_damping)
+                self.cfg.manip_damping,
+                raw_scale=getattr(self.cfg, 'basis_raw_scale', False))
             x_dot = (self.cfg.v * d).unsqueeze(-1)
             qdot = (J_plus @ x_dot).squeeze(-1) \
                 + (B @ (self.cfg.a_max * a).unsqueeze(-1)).squeeze(-1)
@@ -183,7 +184,8 @@ def make_sgngrad(model):
             g, = torch.autograd.grad(phi.sum(), q)
         B, _ = build_task_aligned_basis(
             env.kin, env.q, env.line_dir, env.n_target,
-            env.kin.q_mid, env.q_half, env.cfg.manip_damping)
+            env.kin.q_mid, env.q_half, env.cfg.manip_damping,
+            raw_scale=getattr(env.cfg, 'basis_raw_scale', False))
         sigma = torch.einsum('bij,bi->bj', B, g)
         s = torch.sign(sigma)
         return torch.where(s == 0, torch.ones_like(s), s)
@@ -539,7 +541,8 @@ def make_learnedW(env):
             g, = torch.autograd.grad(w.sum(), q)
         B, _ = build_task_aligned_basis(
             env_.kin, env_.q, env_.line_dir, env_.n_target,
-            env_.kin.q_mid, env_.q_half, env_.cfg.manip_damping)
+            env_.kin.q_mid, env_.q_half, env_.cfg.manip_damping,
+            raw_scale=getattr(env_.cfg, 'basis_raw_scale', False))
         s = torch.sign(torch.einsum('bij,bi->bj', B, g))
         return torch.where(s == 0, torch.ones_like(s), s)
     return fn

@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate one
+cd /home/lqin/one/Yuan/IJRR/.claude/worktrees/vigilant-hertz-799b05
+FU=/home/lqin/one/Yuan/IJRR/runs/paper_fill/fam_unify
+until [ -f "$FU/dirfrac_train.done" ]; do sleep 120; done
+if [ ! -f Yuan/IJRR/runs/rl_cont_dirfrac_v2_30M/agent.pt ]; then
+  python -m Yuan.IJRR.stage2_traj.train \
+    --config Yuan/IJRR/stage2_traj/config_line_cont_dirfrac_v2.yaml \
+    --out-dir Yuan/IJRR/runs/rl_cont_dirfrac_v2_30M > "$FU/train_dirfrac2.log" 2>&1
+fi
+touch "$FU/dirfrac2_train.done"

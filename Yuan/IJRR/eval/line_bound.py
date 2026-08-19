@@ -85,11 +85,11 @@ def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
     dev, dt = env.device, env.kin.dtype
     P = pts.shape[0]
     ok = np.zeros(P, bool)
-    q_out = np.full((P, 7), np.nan, np.float32)
+    q_out = np.full((P, int(env.kin.lmt_lo.shape[0])), np.nan, np.float32)
     hint = torch.tensor([1.0, 0.0, 0.0], dtype=dt, device=dev)
     Tpos, Tzax, Tq, Tji = T["pos"], T["zax"], T["q"], T["jinv6"]
 
-    cand = np.empty((P, n_try, 7), np.float32)
+    cand = np.empty((P, n_try, int(env.kin.lmt_lo.shape[0])), np.float32)
     for lo in range(0, P, chunk):
         hi = min(lo + chunk, P)
         feat = np.concatenate([pts[lo:hi] * POS_SCALE, zs[lo:hi]], 1).astype(np.float32)
@@ -165,8 +165,10 @@ def witness_rows(env, qw, pts, n_refs, cos_lim, tube):
     return fine.cpu().numpy()
 
 
-def build_env(device, collision, chunk):
-    with open(REPO / ENV_YAML) as f:
+def build_env(device, collision, chunk, robot="fr3"):
+    from Yuan.IJRR.eval.horizon_ladder import ROBOTS as _R
+    cfg_path = ENV_YAML if robot == "fr3" else _R[robot][0]
+    with open(REPO / cfg_path) as f:
         y = yaml.safe_load(f)
     keys = {fl.name for fl in dataclasses.fields(EnvConfig)}
     kw = {k: v for k, v in y["env"].items() if k in keys}
@@ -184,6 +186,11 @@ def build_env(device, collision, chunk):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tasks", default=TASKS)
+    ap.add_argument("--robot", default="fr3", choices=["fr3","xarm7","cobotta"],
+                    help="env config per eval.horizon_ladder.ROBOTS")
+    ap.add_argument("--table", default=None,
+                    help="warm-start table npz (pos, zax, q, jinv6); "
+                         "defaults to the FR3 CVT table")
     ap.add_argument("--n-tasks", type=int, default=500)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--step", type=float, default=0.02)
@@ -237,8 +244,9 @@ def main():
     n_t /= np.linalg.norm(n_t, axis=1, keepdims=True)
     N = len(sel)
 
-    env = build_env(dev, a.collision, a.chunk)
-    T = np.load(REPO / TABLE)
+    env = build_env(dev, a.collision, a.chunk, robot=a.robot)
+    NJ = int(env.kin.lmt_lo.shape[0])
+    T = np.load(a.table) if a.table else np.load(REPO / TABLE)
     tree = cKDTree(np.concatenate(
         [T["pos"] * POS_SCALE, T["zax"]], 1).astype(np.float32))
     cos_lim = math.cos(math.radians(a.cone_deg))
@@ -266,17 +274,56 @@ def main():
         pool[0] = n_t[i]
         dirs[i] = pool[:M]
 
+    PATH_PTS = PATH_AXES = None
+    if "path_pts" in t.files:
+        PATH_PTS = t["path_pts"][sel].astype(np.float32)
+        PATH_AXES = t["path_axes"][sel].astype(np.float32)
+        print(f"[bound] per-task path tables: {PATH_PTS.shape}")
+        # canonical cone directions around +z, rotated to the local axis
+        rngc = np.random.default_rng(a.seed)
+        zc = np.zeros((a.dir_pool, 3), np.float32); zc[:, 2] = 1.0
+        angc = rngc.uniform(0, math.radians(a.cone_deg * 0.8), a.dir_pool)
+        azc = rngc.uniform(0, 2 * math.pi, a.dir_pool)
+        zc[:, 0] = np.sin(angc) * np.cos(azc)
+        zc[:, 1] = np.sin(angc) * np.sin(azc)
+        zc[:, 2] = np.cos(angc)
+        zc[0] = (0.0, 0.0, 1.0)
+        CDIRS = zc[:M]
+
+        def _rot_to(axis_rows):
+            z = np.array([0.0, 0.0, 1.0], np.float32)
+            v = np.cross(np.broadcast_to(z, axis_rows.shape), axis_rows)
+            c = axis_rows[:, 2:3]
+            vn = np.linalg.norm(v, axis=1, keepdims=True)
+            out = np.empty((axis_rows.shape[0], 3, 3), np.float32)
+            for i in range(axis_rows.shape[0]):
+                if vn[i, 0] < 1e-8:
+                    out[i] = np.eye(3, dtype=np.float32) * (1 if c[i, 0] > 0 else -1)
+                    if c[i, 0] < 0:
+                        out[i][2, 2] = 1.0  # degenerate; rare
+                    continue
+                vv = v[i] / vn[i, 0]
+                K = np.array([[0, -vv[2], vv[1]],
+                              [vv[2], 0, -vv[0]],
+                              [-vv[1], vv[0], 0]], np.float32)
+                th = math.acos(max(-1.0, min(1.0, float(c[i, 0]))))
+                out[i] = np.eye(3, dtype=np.float32) + math.sin(th) * K \
+                    + (1 - math.cos(th)) * (K @ K)
+            return out
+
     n_steps = int(round(a.max_len / a.step))
+    if PATH_PTS is not None:
+        n_steps = min(n_steps, PATH_PTS.shape[1] - 1)
     first_bad = np.full(N, -1, np.int64)
     alive = np.arange(N)
-    q_prev = np.full((N, 7), np.nan, np.float32)
+    q_prev = np.full((N, NJ), np.nan, np.float32)
     seeded = False
     if a.start_q0:
         if "cs_q0" not in t.files:
             raise SystemExit("--start-q0 needs cs_q0 in the tasks npz")
         q_prev[:] = t["cs_q0"][sel].astype(np.float32)
         seeded = True
-    witness = (np.full((N, n_steps + 1, 7), np.nan, np.float32)
+    witness = (np.full((N, n_steps + 1, NJ), np.nan, np.float32)
                if a.save_witness else None)
     Wit = None
     if a.witness:
@@ -302,6 +349,9 @@ def main():
         if not len(alive):
             break
         s = r * a.step
+        if PATH_PTS is not None:
+            cur_pts = PATH_PTS[:, r]
+            cur_axes = PATH_AXES[:, r]
         certified = np.zeros(N, bool)
         if Wit is not None and r < Wit.shape[1]:
             w = Wit[alive, r]
@@ -312,23 +362,32 @@ def main():
                 for c_lo in range(0, len(rows), a.chunk):
                     rr = rows[c_lo:c_lo + a.chunk]
                     ww = wq[c_lo:c_lo + a.chunk]
-                    fine = witness_rows(env, ww, p0[rr] + d[rr] * s,
-                                        n_t[rr], cos_lim, tube)
+                    ptsw = (cur_pts[rr] if PATH_PTS is not None
+                            else p0[rr] + d[rr] * s)
+                    nrfw = (cur_axes[rr] if PATH_PTS is not None
+                            else n_t[rr])
+                    fine = witness_rows(env, ww, ptsw, nrfw, cos_lim, tube)
                     certified[rr[fine]] = True
                     q_prev[rr[fine]] = ww[fine]
                     n_wcert += int(fine.sum())
         search = alive[~certified[alive]]
         if len(search):
-            pts = np.repeat(p0[search] + d[search] * s, M, axis=0)
-            zs = dirs[search].reshape(-1, 3)
-            nrf = np.repeat(n_t[search], M, axis=0)
+            if PATH_PTS is not None:
+                pts = np.repeat(cur_pts[search], M, axis=0)
+                Rrot = _rot_to(cur_axes[search])
+                zs = np.einsum('nij,mj->nmi', Rrot, CDIRS).reshape(-1, 3)
+                nrf = np.repeat(cur_axes[search], M, axis=0)
+            else:
+                pts = np.repeat(p0[search] + d[search] * s, M, axis=0)
+                zs = dirs[search].reshape(-1, 3)
+                nrf = np.repeat(n_t[search], M, axis=0)
             hint = np.repeat(q_prev[search], M, axis=0)
             ok, q = feasible_rows(env, tree, T, pts, zs, nrf, cos_lim, tube,
                                   k_nn=a.k_nn, n_try=a.n_try,
                                   q_hint=None if (r == 0 and not seeded)
                                   else hint)
             ok = ok.reshape(len(search), M)
-            q = q.reshape(len(search), M, 7)
+            q = q.reshape(len(search), M, NJ)
             any_ok = ok.any(axis=1)
             pick = ok.argmax(axis=1)
             q_prev[search[any_ok]] = q[np.arange(len(search)), pick][any_ok]

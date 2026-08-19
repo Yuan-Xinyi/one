@@ -316,7 +316,7 @@ def train(cfg: PPOConfig, env, device: torch.device,
     dict logged via `log_fn`. `log_fn(dict)` is called after each update.
     """
     obs_dim = env.obs_dim
-    act_dim = env.act_dim
+    act_dim = getattr(env, 'act_dim_policy', env.act_dim)
     n_envs = env.n_envs
     batch_size = n_envs * cfg.n_steps
     minibatch_size = batch_size // cfg.n_minibatches

@@ -82,6 +82,17 @@ class EnvConfig:
     # objective (the free residual direction e3 stays unit). 0 disables
     # (orthonormal columns), 1 = raw magnitude, 10 = ten-fold.
     basis_raw_scale: float = 0.0
+    # Physically normalized continuous action ("dir-frac"): the policy
+    # outputs m+1 channels; the first m give a null-space DIRECTION (unit-
+    # normalized), the last a FRACTION rho in [0,1] of the physically
+    # available amplitude alpha_feas(q, dir), computed each substep from the
+    # true joint-velocity limits qd_limit. No a_max is involved.
+    dir_frac_action: bool = False
+    qd_limit: tuple = ()
+    # Append the three projected-gradient magnitudes s_k = |P_N g_k| of the
+    # basis objectives to the observation (one control period stale, like
+    # a_prev).
+    observe_proj_scales: bool = False
     # Terminal penalties (unified to 0; lifetime alone reflects performance)
     r_collision: float = 0.0
     r_cone: float = 0.0
@@ -155,6 +166,7 @@ def build_task_aligned_basis(
     eps_abs: float = 1e-8,
     eps_rel: float = 1e-3,
     raw_scale: float = 0.0,
+    return_scales: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Task-aligned modified Gram-Schmidt nullspace basis.
 
@@ -272,6 +284,9 @@ def build_task_aligned_basis(
             cols[k] = cols[k] * (g * sc).unsqueeze(-1)
     B_basis = torch.stack(cols, dim=-1).to(dtype)
     fb_mask = torch.stack(fb_flags, dim=-1)
+    if return_scales:
+        scales = torch.stack(col_scales, dim=-1).to(dtype)
+        return B_basis, fb_mask, scales
     return B_basis, fb_mask
 
 
@@ -320,8 +335,13 @@ class NSRLBatchedEnv:
                 robot, self.kin.n_joints + 1, device=self.device)
             self.n_joints = self.kin.n_joints
         self.act_dim = self.n_joints - 3
-        # 2n (q_norm, q_norm^2) + 13 task channels + a_prev (m); 31 for FR3.
-        self.obs_dim = (2 * self.n_joints + 13 + self.act_dim
+        # Policy-facing action dim: +1 fraction channel in dir-frac mode.
+        self.act_dim_policy = self.act_dim + (
+            1 if getattr(cfg, 'dir_frac_action', False) else 0)
+        # 2n (q_norm, q_norm^2) + 13 task channels + a_prev; 31 for FR3.
+        self.obs_dim = (2 * self.n_joints + 13 + self.act_dim_policy
+                        + (3 if getattr(cfg, 'observe_proj_scales', False)
+                           else 0)
                         + (1 if getattr(cfg, 'observe_curvature', False) else 0)
                         + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
                         + (2 ** self.act_dim
@@ -370,8 +390,16 @@ class NSRLBatchedEnv:
         self.n_rot_axis = torch.zeros((B, 3), device=self.device, dtype=d)
         self.n_rot_rate = torch.zeros((B,), device=self.device, dtype=d)
         self.t = torch.zeros((B,), device=self.device, dtype=torch.long)
-        self.a_prev = torch.zeros((B, self.act_dim), device=self.device,
+        self.a_prev = torch.zeros((B, self.act_dim_policy),
+                                  device=self.device,
                                   dtype=d)
+        self._proj_scales = torch.zeros((B, 3), device=self.device,
+                                        dtype=torch.float32)
+        if getattr(cfg, 'dir_frac_action', False):
+            assert cfg.qd_limit, 'dir_frac_action requires qd_limit'
+            self.qd_limit = torch.tensor(cfg.qd_limit, device=self.device,
+                                         dtype=self.kin.dtype)
+            assert self.qd_limit.shape[0] == self.n_joints
         # Potential of the margin-shaping term at the previous step.
         self.phi_prev = torch.zeros((B,), device=self.device, dtype=d)
         self.done_persistent = torch.zeros((B,), device=self.device, dtype=torch.bool)
@@ -404,8 +432,10 @@ class NSRLBatchedEnv:
             self.n_target,  # 3
             cos_angle,      # 1
             z_cross_n,      # 3
-            a_prev,         # 4
+            a_prev,         # m (+1 in dir-frac mode)
         ]
+        if getattr(self.cfg, 'observe_proj_scales', False):
+            obs_parts.append(self._proj_scales)   # 3, one period stale
         if getattr(self.cfg, "observe_curvature", False):
             kap = torch.where(
                 self.path_amp.abs() > 1e-6,
@@ -542,6 +572,7 @@ class NSRLBatchedEnv:
         self.arc_progress[mask] = 0.0
         self.t[mask] = 0
         self.a_prev[mask] = 0
+        self._proj_scales[mask] = 0
         self.done_persistent[mask] = False
         self.episode_reward[mask] = 0.0
         self.episode_steps[mask] = 0
@@ -594,6 +625,12 @@ class NSRLBatchedEnv:
         polls `env.done_persistent` to know when all envs have finished.
         """
         actions = actions.clamp(-1.0, 1.0).to(device=self.device, dtype=self.kin.dtype)
+        dir_frac = getattr(self.cfg, 'dir_frac_action', False)
+        if dir_frac:
+            raw_actions = actions                       # (B, m+1), for a_prev
+            u_dir = actions[:, :self.act_dim]
+            rho = 0.5 * (actions[:, self.act_dim] + 1.0)   # [0, 1]
+            actions = u_dir
         if self.cfg.speed_levels:
             speed_frac = actions[:, self.act_dim].clamp(
                 min(self.cfg.speed_levels), 1.0)
@@ -615,10 +652,16 @@ class NSRLBatchedEnv:
         self._refresh_n_target()
 
         J_plus, sigma_min = damped_pinv(J_p, self.cfg.lambda_0, self.cfg.sigma_thr)
-        B_basis, fb_mask = build_task_aligned_basis(
+        want_scales = getattr(self.cfg, 'observe_proj_scales', False)
+        _basis_out = build_task_aligned_basis(
             self.kin, self.q, self.line_dir, self.n_target,
             self.kin.q_mid, self.q_half, self.cfg.manip_damping,
-            raw_scale=self.cfg.basis_raw_scale)
+            raw_scale=self.cfg.basis_raw_scale, return_scales=want_scales)
+        if want_scales:
+            B_basis, fb_mask, _sc = _basis_out
+            self._proj_scales = _sc.float()
+        else:
+            B_basis, fb_mask = _basis_out
 
         # Task-space command: feed-forward along the instantaneous tangent
         # plus proportional feedback on the distance to the path. On a
@@ -634,7 +677,20 @@ class NSRLBatchedEnv:
         x_dot = (v_eff * self.line_dir
                  + self.cfg.k_lateral * lateral_vec).unsqueeze(-1)
         qdot_task = (J_plus @ x_dot).squeeze(-1)
-        qdot_null = (B_basis @ a_scaled.unsqueeze(-1)).squeeze(-1)
+        if dir_frac:
+            # unit direction in joint space (B orthonormal, u normalized)
+            un = actions / actions.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+            xi_dir = (B_basis @ un.unsqueeze(-1)).squeeze(-1)   # unit, kerJ
+            # max alpha >= 0 with |qdot_task + alpha*xi_dir| <= qd_limit
+            denom_pos = xi_dir.clamp_min(1e-9)
+            denom_neg = (-xi_dir).clamp_min(1e-9)
+            head = (self.qd_limit - qdot_task) / denom_pos
+            room = (self.qd_limit + qdot_task) / denom_neg
+            bound = torch.where(xi_dir >= 0, head, room)
+            alpha_feas = bound.amin(dim=-1).clamp_min(0.0)
+            qdot_null = (rho * alpha_feas).unsqueeze(-1) * xi_dir
+        else:
+            qdot_null = (B_basis @ a_scaled.unsqueeze(-1)).squeeze(-1)
         qdot = qdot_task + qdot_null
         q_new = self.q + qdot * self.dt
 
@@ -726,7 +782,8 @@ class NSRLBatchedEnv:
         # snapshot of obs at end-of-step (post-step q, this-step actions);
         # PPO bootstraps V(terminal_obs) for truncated episodes.
         terminal_obs = self._compute_obs(
-            p_new, R_new, q=q_new, a_prev=actions)
+            p_new, R_new, q=q_new,
+            a_prev=(raw_actions if dir_frac else actions))
 
         # Accumulate per-episode reward + step counter (before reset wipes them)
         ep_reward_finished = torch.zeros_like(reward)
@@ -736,7 +793,7 @@ class NSRLBatchedEnv:
         if auto_reset:
             self.q = q_new
             self.t = new_t
-            self.a_prev = actions
+            self.a_prev = raw_actions if dir_frac else actions
             self.episode_reward = self.episode_reward + reward
             self.episode_steps = self.episode_steps + 1
             self.arc_progress = self.arc_progress + arc_step

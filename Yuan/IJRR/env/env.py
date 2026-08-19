@@ -87,7 +87,10 @@ class EnvConfig:
     # normalized), the last a FRACTION rho in [0,1] of the physically
     # available amplitude alpha_feas(q, dir), computed each substep from the
     # true joint-velocity limits qd_limit. No a_max is involved.
-    dir_frac_action: bool = False
+    # 0 = off; 1 = direction in B-coordinates (m+1 channels, v1);
+    # 2 = direction in JOINT space, projected by the exact null projector
+    #     (n+1 channels, basis-free final form).
+    dir_frac_action: int = 0
     qd_limit: tuple = ()
     # Append the three projected-gradient magnitudes s_k = |P_N g_k| of the
     # basis objectives to the observation (one control period stale, like
@@ -220,6 +223,8 @@ def build_task_aligned_basis(
     p1 = (NNt @ g1d.unsqueeze(-1)).squeeze(-1)
     p2 = (NNt @ g2d.unsqueeze(-1)).squeeze(-1)
     p3 = (NNt @ g3d.unsqueeze(-1)).squeeze(-1)
+    proj_norms = torch.stack([p1.norm(dim=-1), p2.norm(dim=-1),
+                              p3.norm(dim=-1)], dim=-1)
     gnorm = torch.stack(
         [g1d.norm(dim=-1), g2d.norm(dim=-1), g3d.norm(dim=-1)],
         dim=-1).clamp_min(1e-20)
@@ -285,8 +290,9 @@ def build_task_aligned_basis(
     B_basis = torch.stack(cols, dim=-1).to(dtype)
     fb_mask = torch.stack(fb_flags, dim=-1)
     if return_scales:
+        # (residual MGS norms, order-free projected norms)
         scales = torch.stack(col_scales, dim=-1).to(dtype)
-        return B_basis, fb_mask, scales
+        return B_basis, fb_mask, scales, proj_norms.to(dtype)
     return B_basis, fb_mask
 
 
@@ -336,8 +342,10 @@ class NSRLBatchedEnv:
             self.n_joints = self.kin.n_joints
         self.act_dim = self.n_joints - 3
         # Policy-facing action dim: +1 fraction channel in dir-frac mode.
-        self.act_dim_policy = self.act_dim + (
-            1 if getattr(cfg, 'dir_frac_action', False) else 0)
+        _dfa = int(getattr(cfg, 'dir_frac_action', 0) or 0)
+        self.act_dim_policy = (self.act_dim + 1 if _dfa == 1 else
+                               self.n_joints + 1 if _dfa == 2 else
+                               self.act_dim)
         # 2n (q_norm, q_norm^2) + 13 task channels + a_prev; 31 for FR3.
         self.obs_dim = (2 * self.n_joints + 13 + self.act_dim_policy
                         + (3 if getattr(cfg, 'observe_proj_scales', False)
@@ -625,11 +633,12 @@ class NSRLBatchedEnv:
         polls `env.done_persistent` to know when all envs have finished.
         """
         actions = actions.clamp(-1.0, 1.0).to(device=self.device, dtype=self.kin.dtype)
-        dir_frac = getattr(self.cfg, 'dir_frac_action', False)
+        dir_frac = int(getattr(self.cfg, 'dir_frac_action', 0) or 0)
         if dir_frac:
-            raw_actions = actions                       # (B, m+1), for a_prev
-            u_dir = actions[:, :self.act_dim]
-            rho = 0.5 * (actions[:, self.act_dim] + 1.0)   # [0, 1]
+            raw_actions = actions                # (B, m+1) or (B, n+1)
+            nd = self.act_dim if dir_frac == 1 else self.n_joints
+            u_dir = actions[:, :nd]
+            rho = 0.5 * (actions[:, nd] + 1.0)   # [0, 1]
             actions = u_dir
         if self.cfg.speed_levels:
             speed_frac = actions[:, self.act_dim].clamp(
@@ -658,8 +667,11 @@ class NSRLBatchedEnv:
             self.kin.q_mid, self.q_half, self.cfg.manip_damping,
             raw_scale=self.cfg.basis_raw_scale, return_scales=want_scales)
         if want_scales:
-            B_basis, fb_mask, _sc = _basis_out
-            self._proj_scales = _sc.float()
+            B_basis, fb_mask, _sc_res, _sc_proj = _basis_out
+            self._proj_scales = (_sc_proj.float()
+                                 if int(getattr(self.cfg, 'dir_frac_action',
+                                                0) or 0) == 2
+                                 else _sc_res.float())
         else:
             B_basis, fb_mask = _basis_out
 
@@ -677,10 +689,19 @@ class NSRLBatchedEnv:
         x_dot = (v_eff * self.line_dir
                  + self.cfg.k_lateral * lateral_vec).unsqueeze(-1)
         qdot_task = (J_plus @ x_dot).squeeze(-1)
-        if dir_frac:
-            # unit direction in joint space (B orthonormal, u normalized)
+        if dir_frac == 1:
+            # v1: unit direction via the B chart
             un = actions / actions.norm(dim=-1, keepdim=True).clamp_min(1e-6)
             xi_dir = (B_basis @ un.unsqueeze(-1)).squeeze(-1)   # unit, kerJ
+        elif dir_frac == 2:
+            # v2 (basis-free): joint-space output, exact null projection
+            _, _, Vh_n = torch.linalg.svd(J_p.double(), full_matrices=True)
+            Nn = Vh_n.transpose(-1, -2)[..., 3:]
+            xi_dir = (Nn @ (Nn.transpose(-1, -2)
+                            @ actions.double().unsqueeze(-1))).squeeze(-1)
+            xi_dir = (xi_dir / xi_dir.norm(dim=-1, keepdim=True)
+                      .clamp_min(1e-6)).to(self.kin.dtype)
+        if dir_frac:
             # max alpha >= 0 with |qdot_task + alpha*xi_dir| <= qd_limit
             denom_pos = xi_dir.clamp_min(1e-9)
             denom_neg = (-xi_dir).clamp_min(1e-9)

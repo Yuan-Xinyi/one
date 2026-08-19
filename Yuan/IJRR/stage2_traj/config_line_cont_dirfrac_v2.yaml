@@ -1,5 +1,5 @@
 env:
-  dir_frac_action: 1
+  dir_frac_action: 2
   observe_proj_scales: true
   qd_limit: [2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61]
   n_envs: 128

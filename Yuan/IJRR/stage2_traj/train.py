@@ -34,6 +34,7 @@ from Yuan.IJRR.env.line_distribution import LineDistribution
 from Yuan.IJRR.stage2_traj.ppo import PPOConfig, train as ppo_train, Agent
 from Yuan.IJRR.stage2_traj.vertex_agent import (VertexAgent, PriorVertexAgent, LSTMVertexAgent, TransformerVertexAgent)
 from Yuan.IJRR.stage2_traj.history_env import HistoryStackEnv
+from Yuan.IJRR.stage2_traj.ppo import TransformerContAgent
 
 
 def _resolve_log_path(out_dir: Path) -> Path:
@@ -190,7 +191,7 @@ def main():
 
 
     kind_early = cfg_yaml.get("agent", {}).get("kind")
-    if kind_early in ("vertex_lstm", "vertex_tf"):
+    if kind_early in ("vertex_lstm", "vertex_tf", "cont_tf"):
         k_hist = int(cfg_yaml.get("agent", {}).get("history", 8))
         train_env = HistoryStackEnv(train_env, k_hist)
         eval_env = HistoryStackEnv(eval_env, k_hist)
@@ -209,6 +210,14 @@ def main():
                                 act_dim=train_env.act_dim,
                                 hidden_dim=ppo_cfg.hidden_dim).to(device)
         print(f"[train] vertex action space: {agent_obj.n_actions} actions")
+    elif kind == "cont_tf":
+        agent_obj = TransformerContAgent(
+            obs_dim=train_env.obs_dim, act_dim=train_env.act_dim,
+            hidden_dim=ppo_cfg.hidden_dim,
+            init_log_std=ppo_cfg.init_log_std,
+            squashed_entropy=ppo_cfg.squashed_entropy,
+            history=int(cfg_yaml["agent"].get("history", 8))).to(device)
+        print("[train] Transformer continuous agent")
     elif kind == "vertex_lstm":
         agent_obj = LSTMVertexAgent(obs_dim=train_env.obs_dim,
                                     act_dim=train_env.act_dim,

@@ -243,6 +243,58 @@ class Agent(nn.Module):
         return action, log_prob, entropy, self.critic(x).squeeze(-1), log_std
 
 
+class TransformerContAgent(Agent):
+    """Continuous tanh-Gaussian agent with a Transformer backbone over a
+    K-step observation window (HistoryStackEnv). Same interface as Agent;
+    only the trunks differ."""
+
+    def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 512,
+                 init_log_std: float = -0.5, squashed_entropy: bool = True,
+                 history: int = 8, d_model: int = 128, nhead: int = 4,
+                 n_layers: int = 2, **kw):
+        assert obs_dim % history == 0, (obs_dim, history)
+        base_dim = obs_dim // history
+        super().__init__(obs_dim, act_dim, hidden_dim=hidden_dim,
+                         init_log_std=init_log_std,
+                         squashed_entropy=squashed_entropy, **kw)
+        self.history = history
+        self.base_dim = base_dim
+
+        def make_backbone():
+            layer = nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=nhead, dim_feedforward=4 * d_model,
+                batch_first=True, dropout=0.0, norm_first=True)
+            return nn.ModuleDict({
+                'embed': _layer_init(nn.Linear(base_dim, d_model)),
+                'enc': nn.TransformerEncoder(layer, num_layers=n_layers),
+                'head': nn.Sequential(
+                    _layer_init(nn.Linear(d_model, hidden_dim)), nn.ReLU()),
+            })
+
+        self._tf_actor = make_backbone()
+        self._tf_critic = make_backbone()
+        self._pos = nn.Parameter(torch.zeros(1, history, d_model))
+        # replace the MLP trunks: route through the transformers
+        self._actor_trunk = self._TrunkShim(self, self._tf_actor)
+        self.critic = nn.Sequential(
+            self._TrunkShim(self, self._tf_critic),
+            _layer_init(nn.Linear(hidden_dim, 1), std=1.0))
+
+    class _TrunkShim(nn.Module):
+        def __init__(self, owner, backbone):
+            super().__init__()
+            self._owner = [owner]          # hide from Module registry
+            self.backbone = backbone
+
+        def forward(self, x):
+            o = self._owner[0]
+            B = x.shape[0]
+            seq = self.backbone['embed'](
+                x.view(B, o.history, o.base_dim)) + o._pos
+            return self.backbone['head'](
+                self.backbone['enc'](seq)[:, -1])
+
+
 def train(cfg: PPOConfig, env, device: torch.device,
           eval_fn=None, eval_every: int = 10_000,
           log_fn=None, ckpt_path: str | None = None,

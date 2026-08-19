@@ -92,6 +92,22 @@ class EnvConfig:
     #     (n+1 channels, basis-free final form).
     dir_frac_action: int = 0
     qd_limit: tuple = ()
+    # a_prev stores the EXECUTED physical motion (qdot_null / qd_limit,
+    # 2 rho - 1) instead of the raw network output. Raw u is
+    # non-identifiable: u, 2u and u + r with r in row(J_p) all execute the
+    # same physical direction after projection. dir_frac_action == 2 only.
+    a_prev_executed: bool = False
+    # Append per-joint actuator headroom AFTER the task term claims its
+    # share: r+ = (qd_lim - qdot_task)/qd_lim and r- = (qd_lim +
+    # qdot_task)/qd_lim (2n channels, one control period stale like
+    # proj_scales; 1.0 at reset). Complements proj_scales: those report
+    # geometric leverage, these report actuator budget.
+    observe_headroom: bool = False
+    # Fold the next-step joint-POSITION limits into alpha_feas:
+    # |q + dt (qdot_task + alpha xi) - q_mid| <= q_half, still a per-joint
+    # closed-form bound (no optimizer). alpha_safe = min(alpha_vel,
+    # alpha_joint).
+    alpha_joint: bool = False
     # Append the three projected-gradient magnitudes s_k = |P_N g_k| of the
     # basis objectives to the observation (one control period stale, like
     # a_prev).
@@ -350,6 +366,8 @@ class NSRLBatchedEnv:
         self.obs_dim = (2 * self.n_joints + 13 + self.act_dim_policy
                         + (3 if getattr(cfg, 'observe_proj_scales', False)
                            else 0)
+                        + (2 * self.n_joints
+                           if getattr(cfg, 'observe_headroom', False) else 0)
                         + (1 if getattr(cfg, 'observe_curvature', False) else 0)
                         + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
                         + (2 ** self.act_dim
@@ -403,11 +421,16 @@ class NSRLBatchedEnv:
                                   dtype=d)
         self._proj_scales = torch.zeros((B, 3), device=self.device,
                                         dtype=torch.float32)
-        if getattr(cfg, 'dir_frac_action', False):
+        if (getattr(cfg, 'dir_frac_action', False)
+                or getattr(cfg, 'observe_headroom', False)):
             assert cfg.qd_limit, 'dir_frac_action requires qd_limit'
             self.qd_limit = torch.tensor(cfg.qd_limit, device=self.device,
                                          dtype=self.kin.dtype)
             assert self.qd_limit.shape[0] == self.n_joints
+        if getattr(cfg, 'a_prev_executed', False):
+            assert _dfa == 2, 'a_prev_executed requires dir_frac_action == 2'
+        self._headroom = torch.ones((B, 2 * self.n_joints),
+                                    device=self.device, dtype=d)
         # Potential of the margin-shaping term at the previous step.
         self.phi_prev = torch.zeros((B,), device=self.device, dtype=d)
         self.done_persistent = torch.zeros((B,), device=self.device, dtype=torch.bool)
@@ -444,6 +467,8 @@ class NSRLBatchedEnv:
         ]
         if getattr(self.cfg, 'observe_proj_scales', False):
             obs_parts.append(self._proj_scales)   # 3, one period stale
+        if getattr(self.cfg, 'observe_headroom', False):
+            obs_parts.append(self._headroom)      # 2n, one period stale
         if getattr(self.cfg, "observe_curvature", False):
             kap = torch.where(
                 self.path_amp.abs() > 1e-6,
@@ -581,6 +606,7 @@ class NSRLBatchedEnv:
         self.t[mask] = 0
         self.a_prev[mask] = 0
         self._proj_scales[mask] = 0
+        self._headroom[mask] = 1.0
         self.done_persistent[mask] = False
         self.episode_reward[mask] = 0.0
         self.episode_steps[mask] = 0
@@ -689,6 +715,12 @@ class NSRLBatchedEnv:
         x_dot = (v_eff * self.line_dir
                  + self.cfg.k_lateral * lateral_vec).unsqueeze(-1)
         qdot_task = (J_plus @ x_dot).squeeze(-1)
+        if getattr(self.cfg, 'observe_headroom', False):
+            _hr = torch.cat(
+                [(self.qd_limit - qdot_task) / self.qd_limit,
+                 (self.qd_limit + qdot_task) / self.qd_limit], dim=-1)
+            self._headroom = torch.where(active.unsqueeze(-1), _hr,
+                                         self._headroom)
         if dir_frac == 1:
             # v1: unit direction via the B chart
             un = actions / actions.norm(dim=-1, keepdim=True).clamp_min(1e-6)
@@ -708,8 +740,22 @@ class NSRLBatchedEnv:
             head = (self.qd_limit - qdot_task) / denom_pos
             room = (self.qd_limit + qdot_task) / denom_neg
             bound = torch.where(xi_dir >= 0, head, room)
+            if getattr(self.cfg, 'alpha_joint', False):
+                # next-step joint-position limits, same per-joint linear
+                # form: lmt_lo <= q + dt (qdot_task + alpha xi) <= lmt_up
+                up_num = self.lmt_up - self.q - self.dt * qdot_task
+                lo_num = self.q + self.dt * qdot_task - self.lmt_lo
+                bj = torch.where(
+                    xi_dir >= 0,
+                    up_num / (self.dt * xi_dir.clamp_min(1e-9)),
+                    lo_num / (self.dt * (-xi_dir).clamp_min(1e-9)))
+                bound = torch.minimum(bound, bj)
             alpha_feas = bound.amin(dim=-1).clamp_min(0.0)
             qdot_null = (rho * alpha_feas).unsqueeze(-1) * xi_dir
+            if getattr(self.cfg, 'a_prev_executed', False):
+                raw_actions = torch.cat(
+                    [qdot_null / self.qd_limit,
+                     (2.0 * rho - 1.0).unsqueeze(-1)], dim=-1)
         else:
             qdot_null = (B_basis @ a_scaled.unsqueeze(-1)).squeeze(-1)
         qdot = qdot_task + qdot_null

@@ -819,7 +819,9 @@ class NSRLBatchedEnv:
 
             self.q = torch.where(active.unsqueeze(-1), q_new, self.q)
             self.t = torch.where(active, new_t, self.t)
-            self.a_prev = torch.where(active.unsqueeze(-1), actions, self.a_prev)
+            self.a_prev = torch.where(
+            active.unsqueeze(-1),
+            (raw_actions if dir_frac else actions), self.a_prev)
             self.episode_reward = torch.where(active, self.episode_reward + reward,
                                               self.episode_reward)
             self.episode_steps = torch.where(active, self.episode_steps + 1,

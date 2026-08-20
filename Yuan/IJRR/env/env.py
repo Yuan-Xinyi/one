@@ -107,6 +107,25 @@ class EnvConfig:
     # single frame). K > 1 appends the K-1 older frames after a_prev,
     # newest first; frames are whatever a_prev records (raw or executed).
     a_prev_stack: int = 1
+    # Metric used by the null projection that turns the actor's 7-dim
+    # output into a direction. 0 = Euclidean joint metric (v2 mainline).
+    # 1 = static velocity-limit metric D = diag(qd_limit): the actor picks
+    #     the direction in "fraction of each joint's speed limit" space.
+    # 2 = state-dependent headroom metric D = diag(qd_limit - |qdot_task|):
+    #     direction picked in "fraction of remaining budget" space.
+    # Either way the executed direction is D z / |D z| with z the projection
+    # of u in the scaled coordinates, so ker J_p membership is exact.
+    dv_metric: int = 0
+    # Drop the separate rho channel: the fraction is carried by the norm
+    # of the 7-dim output itself, rho = min(1, |P_N u|). Direction stays
+    # the normalized projection. dir_frac_action == 2 only.
+    rho_from_norm: bool = False
+    # Append the four normalized CURRENT-state constraint margins
+    # (jl, cone, corridor, collision) to the observation. Class-0
+    # information: analytics of the current configuration, no forward
+    # simulation. Refreshed in step() for the post-step state; 1.0 right
+    # after reset (exact for corridor, approximate for the rest).
+    observe_margins: bool = False
     # Fold the next-step joint-POSITION limits into alpha_feas:
     # |q + dt (qdot_task + alpha xi) - q_mid| <= q_half, still a per-joint
     # closed-form bound (no optimizer). alpha_safe = min(alpha_vel,
@@ -363,9 +382,15 @@ class NSRLBatchedEnv:
         self.act_dim = self.n_joints - 3
         # Policy-facing action dim: +1 fraction channel in dir-frac mode.
         _dfa = int(getattr(cfg, 'dir_frac_action', 0) or 0)
+        _rfn = getattr(cfg, 'rho_from_norm', False)
+        if _rfn:
+            assert _dfa == 2, 'rho_from_norm requires dir_frac_action == 2'
         self.act_dim_policy = (self.act_dim + 1 if _dfa == 1 else
-                               self.n_joints + 1 if _dfa == 2 else
+                               self.n_joints + (0 if _rfn else 1)
+                               if _dfa == 2 else
                                self.act_dim)
+        if _dfa == 2 and cfg.speed_levels:
+            self.act_dim_policy += 1          # trailing speed channel
         # 2n (q_norm, q_norm^2) + 13 task channels + a_prev; 31 for FR3.
         self.obs_dim = (2 * self.n_joints + 13 + self.act_dim_policy
                         + (3 if getattr(cfg, 'observe_proj_scales', False)
@@ -374,6 +399,8 @@ class NSRLBatchedEnv:
                            if getattr(cfg, 'observe_headroom', False) else 0)
                         + (int(getattr(cfg, 'a_prev_stack', 1) or 1) - 1)
                         * self.act_dim_policy
+                        + (4 if getattr(cfg, 'observe_margins', False)
+                           else 0)
                         + (1 if getattr(cfg, 'observe_curvature', False) else 0)
                         + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
                         + (2 ** self.act_dim
@@ -441,6 +468,7 @@ class NSRLBatchedEnv:
         self._a_hist = torch.zeros(
             (B, (self._ap_k - 1) * self.act_dim_policy),
             device=self.device, dtype=d)
+        self._mg_obs = torch.ones((B, 4), device=self.device, dtype=d)
         # Potential of the margin-shaping term at the previous step.
         self.phi_prev = torch.zeros((B,), device=self.device, dtype=d)
         self.done_persistent = torch.zeros((B,), device=self.device, dtype=torch.bool)
@@ -477,6 +505,8 @@ class NSRLBatchedEnv:
         ]
         if self._ap_k > 1:
             obs_parts.append(self._a_hist)        # (K-1) older a_prev frames
+        if getattr(self.cfg, 'observe_margins', False):
+            obs_parts.append(self._mg_obs)        # 4 current-state margins
         if getattr(self.cfg, 'observe_proj_scales', False):
             obs_parts.append(self._proj_scales)   # 3, one period stale
         if getattr(self.cfg, 'observe_headroom', False):
@@ -620,6 +650,7 @@ class NSRLBatchedEnv:
         self._proj_scales[mask] = 0
         self._headroom[mask] = 1.0
         self._a_hist[mask] = 0
+        self._mg_obs[mask] = 1.0
         self.done_persistent[mask] = False
         self.episode_reward[mask] = 0.0
         self.episode_steps[mask] = 0
@@ -677,9 +708,18 @@ class NSRLBatchedEnv:
             raw_actions = actions                # (B, m+1) or (B, n+1)
             nd = self.act_dim if dir_frac == 1 else self.n_joints
             u_dir = actions[:, :nd]
-            rho = 0.5 * (actions[:, nd] + 1.0)   # [0, 1]
+            if getattr(self.cfg, 'rho_from_norm', False):
+                rho = None                       # set after projection
+                _sp_col = nd
+            else:
+                rho = 0.5 * (actions[:, nd] + 1.0)   # [0, 1]
+                _sp_col = nd + 1
+            # dir-frac + speed: one extra trailing channel.
+            speed_frac = (actions[:, _sp_col].clamp(
+                min(self.cfg.speed_levels), 1.0)
+                if self.cfg.speed_levels else None)
             actions = u_dir
-        if self.cfg.speed_levels:
+        elif self.cfg.speed_levels:
             speed_frac = actions[:, self.act_dim].clamp(
                 min(self.cfg.speed_levels), 1.0)
             actions = actions[:, :self.act_dim]
@@ -742,10 +782,25 @@ class NSRLBatchedEnv:
             # v2 (basis-free): joint-space output, exact null projection
             _, _, Vh_n = torch.linalg.svd(J_p.double(), full_matrices=True)
             Nn = Vh_n.transpose(-1, -2)[..., 3:]
-            xi_dir = (Nn @ (Nn.transpose(-1, -2)
+            _dvm = int(getattr(self.cfg, 'dv_metric', 0) or 0)
+            if _dvm:
+                _Dv = (self.qd_limit.expand_as(qdot_task) if _dvm == 1 else
+                       (self.qd_limit - qdot_task.abs()).clamp_min(
+                           0.05 * self.qd_limit))
+                _Js = (J_p * _Dv.unsqueeze(1)).double()   # column scaling
+                _, _, Vh_n = torch.linalg.svd(_Js, full_matrices=True)
+                Nn = Vh_n.transpose(-1, -2)[..., 3:]
+                _z = (Nn @ (Nn.transpose(-1, -2)
                             @ actions.double().unsqueeze(-1))).squeeze(-1)
-            xi_dir = (xi_dir / xi_dir.norm(dim=-1, keepdim=True)
-                      .clamp_min(1e-6)).to(self.kin.dtype)
+                xi_dir = _Dv.double() * _z
+            else:
+                xi_dir = (Nn @ (Nn.transpose(-1, -2)
+                                @ actions.double().unsqueeze(-1))
+                          ).squeeze(-1)
+            _xi_nrm = xi_dir.norm(dim=-1, keepdim=True)
+            xi_dir = (xi_dir / _xi_nrm.clamp_min(1e-6)).to(self.kin.dtype)
+            if rho is None:                      # rho_from_norm
+                rho = _xi_nrm.squeeze(-1).clamp(max=1.0).to(self.kin.dtype)
         if dir_frac:
             # max alpha >= 0 with |qdot_task + alpha*xi_dir| <= qd_limit
             denom_pos = xi_dir.clamp_min(1e-9)
@@ -766,9 +821,12 @@ class NSRLBatchedEnv:
             alpha_feas = bound.amin(dim=-1).clamp_min(0.0)
             qdot_null = (rho * alpha_feas).unsqueeze(-1) * xi_dir
             if getattr(self.cfg, 'a_prev_executed', False):
-                raw_actions = torch.cat(
-                    [qdot_null / self.qd_limit,
-                     (2.0 * rho - 1.0).unsqueeze(-1)], dim=-1)
+                _parts = [qdot_null / self.qd_limit]
+                if not getattr(self.cfg, 'rho_from_norm', False):
+                    _parts.append((2.0 * rho - 1.0).unsqueeze(-1))
+                if speed_frac is not None:
+                    _parts.append((2.0 * speed_frac - 1.0).unsqueeze(-1))
+                raw_actions = torch.cat(_parts, dim=-1)
         else:
             qdot_null = (B_basis @ a_scaled.unsqueeze(-1)).squeeze(-1)
         qdot = qdot_task + qdot_null
@@ -791,6 +849,17 @@ class NSRLBatchedEnv:
         # terminate only — the k_lateral feedback keeps this far below the cap.
         tangent_new, lateral_vec_new, lateral_err = self._path_frame(p_new)
         lateral_viol = lateral_err > LATERAL_SAFETY_NET
+
+        if getattr(self.cfg, 'observe_margins', False):
+            _m_jl = ((self.q_half - (q_new - self.q_mid).abs())
+                     / self.q_half).amin(dim=-1)
+            _m_cone = (cos_angle - self.cos_cone) / (1.0 - self.cos_cone)
+            _m_lat = ((LATERAL_SAFETY_NET - lateral_err)
+                      / LATERAL_SAFETY_NET)
+            _m_coll = self.collision.min_margin(link_tfs) / 0.05
+            _mg = torch.stack([_m_jl, _m_cone, _m_lat, _m_coll], dim=-1)
+            self._mg_obs = torch.where(active.unsqueeze(-1), _mg,
+                                       self._mg_obs)
 
         new_t = self.t + 1
         truncated = new_t >= self.max_steps

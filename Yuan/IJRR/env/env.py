@@ -103,6 +103,10 @@ class EnvConfig:
     # proj_scales; 1.0 at reset). Complements proj_scales: those report
     # geometric leverage, these report actuator budget.
     observe_headroom: bool = False
+    # Number of a_prev frames in the observation (1 = the historical
+    # single frame). K > 1 appends the K-1 older frames after a_prev,
+    # newest first; frames are whatever a_prev records (raw or executed).
+    a_prev_stack: int = 1
     # Fold the next-step joint-POSITION limits into alpha_feas:
     # |q + dt (qdot_task + alpha xi) - q_mid| <= q_half, still a per-joint
     # closed-form bound (no optimizer). alpha_safe = min(alpha_vel,
@@ -368,6 +372,8 @@ class NSRLBatchedEnv:
                            else 0)
                         + (2 * self.n_joints
                            if getattr(cfg, 'observe_headroom', False) else 0)
+                        + (int(getattr(cfg, 'a_prev_stack', 1) or 1) - 1)
+                        * self.act_dim_policy
                         + (1 if getattr(cfg, 'observe_curvature', False) else 0)
                         + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
                         + (2 ** self.act_dim
@@ -431,6 +437,10 @@ class NSRLBatchedEnv:
             assert _dfa == 2, 'a_prev_executed requires dir_frac_action == 2'
         self._headroom = torch.ones((B, 2 * self.n_joints),
                                     device=self.device, dtype=d)
+        self._ap_k = int(getattr(cfg, 'a_prev_stack', 1) or 1)
+        self._a_hist = torch.zeros(
+            (B, (self._ap_k - 1) * self.act_dim_policy),
+            device=self.device, dtype=d)
         # Potential of the margin-shaping term at the previous step.
         self.phi_prev = torch.zeros((B,), device=self.device, dtype=d)
         self.done_persistent = torch.zeros((B,), device=self.device, dtype=torch.bool)
@@ -465,6 +475,8 @@ class NSRLBatchedEnv:
             z_cross_n,      # 3
             a_prev,         # m (+1 in dir-frac mode)
         ]
+        if self._ap_k > 1:
+            obs_parts.append(self._a_hist)        # (K-1) older a_prev frames
         if getattr(self.cfg, 'observe_proj_scales', False):
             obs_parts.append(self._proj_scales)   # 3, one period stale
         if getattr(self.cfg, 'observe_headroom', False):
@@ -607,6 +619,7 @@ class NSRLBatchedEnv:
         self.a_prev[mask] = 0
         self._proj_scales[mask] = 0
         self._headroom[mask] = 1.0
+        self._a_hist[mask] = 0
         self.done_persistent[mask] = False
         self.episode_reward[mask] = 0.0
         self.episode_steps[mask] = 0
@@ -845,6 +858,15 @@ class NSRLBatchedEnv:
         # envs (auto_reset=False, already done) keep their last tangent.
         self.line_dir = torch.where(active.unsqueeze(-1), tangent_new,
                                     self.line_dir)
+
+        # Shift the a_prev history (newest first) before the post-step
+        # snapshot so terminal_obs sees [a_t, a_{t-1}, ...] consistently.
+        if self._ap_k > 1:
+            _A = self.act_dim_policy
+            _shifted = (torch.cat([self.a_prev, self._a_hist[:, :-_A]], -1)
+                        if self._ap_k > 2 else self.a_prev)
+            self._a_hist = torch.where(active.unsqueeze(-1), _shifted,
+                                       self._a_hist)
 
         # snapshot of obs at end-of-step (post-step q, this-step actions);
         # PPO bootstraps V(terminal_obs) for truncated episodes.

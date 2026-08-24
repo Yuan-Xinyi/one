@@ -308,13 +308,13 @@ constraints of Section~III, and define the exit time
 \inf\{t\geq 0:\mathbf{q}(t)\notin\Omega\}.
 \end{equation}
 For a fixed task condition $\mathbf{c}$, let $v$ denote the commanded
-progress rate along the prescribed path. We define the discounted exit-time
-value as
+progress rate along the prescribed path. We define the discounted
+exit-time objective as
 \begin{equation}
 \label{eq:value}
 V(\mathbf{q}_{0};\mathbf{c})
 =
-\sup_{\mathbf{a}(\cdot)}
+\sup_{\boldsymbol{\xi}(\cdot)}
 \int_{0}^{\tau_{\mathrm{exit}}}
 e^{-\beta t}
 v\,\mathrm{d}t,
@@ -328,8 +328,8 @@ and therefore to maximizing the executed stroke.
 
 This formulation also connects the two stages of the framework. Initial
 configuration selection compares the future stroke attainable from
-candidate start states, whereas motion generation compares the future
-stroke attainable from candidate successor states.
+candidate start states, whereas motion generation maximizes the same
+objective along the executed trajectory.
 
 \subsection{Initial Joint Configuration Selection}
 \label{sec:select}

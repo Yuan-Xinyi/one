@@ -684,8 +684,11 @@ manipulator; on the curved families every learned method runs zero-shot.
 Classical gradient resolution provides only a modest improvement over
 zero null-space motion, and the classical takeover patch of the hybrid
 adds a few points over its underlying policy. The proposed controller
-leads every row on the densest benchmark: $89.8\%$ mean Ratio with a
-10th percentile of $63.3\%$ on FR3 straight tasks.
+leads every row on the densest benchmark---$89.8\%$ mean Ratio with a
+10th percentile of $63.3\%$ on FR3 straight tasks---and the lead carries
+over zero-shot to the curved families it never saw during training
+($83.1$, $87.7$, and $88.4$ mean Ratio on the FR3 arc, serpentine, and
+rotating-axis sets).
 
 The Continuous PPO and DirFrac rows share the same learning algorithm,
 reward, and training distribution; they differ only in the action and
@@ -732,14 +735,14 @@ Type
  &  & Rot.-Axis & 0.411 & 68.4 / 17.4 & 0.344 & 66.9 / 17.2 & 0.199 & 71.0 / 30.9 \\
 \cmidrule(lr){2-9}
  & \multirow{4}{*}{\shortstack[l]{PPO + Classical}} & Straight & 0.458 & 75.7 / 23.6 & \limebox{0.374} & \limebox{71.5 / 20.9} & \limebox{0.207} & \limebox{74.1 / 33.8} \\
- &  & Arc & \limebox{0.516} & \limebox{67.4 / 16.7} & \limebox{0.422} & \limebox{67.0 / 17.4} & \limebox{0.213} & \limebox{74.0 / 34.7} \\
- &  & Serpentine & \limebox{0.457} & \limebox{73.0 / 21.4} & \limebox{0.370} & \limebox{69.2 / 19.6} & \limebox{0.202} & \limebox{71.2 / 31.3} \\
- &  & Rot.-Axis & \limebox{0.458} & \limebox{74.4 / 23.3} & \limebox{0.374} & \limebox{71.3 / 20.5} & \limebox{0.209} & \limebox{74.2 / 35.2} \\
+ &  & Arc & 0.516 & 67.4 / 16.7 & \limebox{0.422} & \limebox{67.0 / 17.4} & \limebox{0.213} & \limebox{74.0 / 34.7} \\
+ &  & Serpentine & 0.457 & 73.0 / 21.4 & \limebox{0.370} & \limebox{69.2 / 19.6} & \limebox{0.202} & \limebox{71.2 / 31.3} \\
+ &  & Rot.-Axis & 0.458 & 74.4 / 23.3 & \limebox{0.374} & \limebox{71.3 / 20.5} & \limebox{0.209} & \limebox{74.2 / 35.2} \\
 \cmidrule(lr){2-9}
  & \multirow{4}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.598}} & \limebox{\textbf{89.8 / 63.3}} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
- &  & \textbf{Arc} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
- &  & \textbf{Serpentine} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
- &  & \textbf{Rot.-Axis} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
+ &  & \textbf{Arc} & \limebox{\textbf{0.764}} & \limebox{\textbf{83.1 / 35.6}} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
+ &  & \textbf{Serpentine} & \limebox{\textbf{0.600}} & \limebox{\textbf{87.7 / 58.3}} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
+ &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.589}} & \limebox{\textbf{88.4 / 54.5}} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}

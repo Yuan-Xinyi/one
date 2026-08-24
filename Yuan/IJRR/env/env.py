@@ -107,6 +107,11 @@ class EnvConfig:
     # single frame). K > 1 appends the K-1 older frames after a_prev,
     # newest first; frames are whatever a_prev records (raw or executed).
     a_prev_stack: int = 1
+    # Observation components to omit, for leave-one-out ablations.
+    # Supported keys: 'q_sq' (squared joint config), 'z_cross_n',
+    # 'cos_angle', 'a_prev' (drops the executed-motion channel from the
+    # observation only; the env still tracks it internally).
+    obs_drop: tuple = ()
     # Metric used by the null projection that turns the actor's 7-dim
     # output into a direction. 0 = Euclidean joint metric (v2 mainline).
     # 1 = static velocity-limit metric D = diag(qd_limit): the actor picks
@@ -391,8 +396,14 @@ class NSRLBatchedEnv:
                                self.act_dim)
         if _dfa == 2 and cfg.speed_levels:
             self.act_dim_policy += 1          # trailing speed channel
+        _od = set(getattr(cfg, 'obs_drop', ()) or ())
+        assert _od <= {'q_sq', 'z_cross_n', 'cos_angle', 'a_prev'}, _od
         # 2n (q_norm, q_norm^2) + 13 task channels + a_prev; 31 for FR3.
         self.obs_dim = (2 * self.n_joints + 13 + self.act_dim_policy
+                        - (self.n_joints if 'q_sq' in _od else 0)
+                        - (3 if 'z_cross_n' in _od else 0)
+                        - (1 if 'cos_angle' in _od else 0)
+                        - (self.act_dim_policy if 'a_prev' in _od else 0)
                         + (3 if getattr(cfg, 'observe_proj_scales', False)
                            else 0)
                         + (2 * self.n_joints
@@ -493,15 +504,16 @@ class NSRLBatchedEnv:
         cos_angle = (z_tool * self.n_target).sum(-1, keepdim=True)
         z_cross_n = torch.linalg.cross(z_tool, self.n_target, dim=-1)
         q_norm_sq = q_norm * q_norm
+        _od = set(getattr(self.cfg, 'obs_drop', ()) or ())
         obs_parts = [
             q_norm,         # 7
-            q_norm_sq,      # 7
+            *([] if 'q_sq' in _od else [q_norm_sq]),      # 7
             self.line_dir,  # 3, u_hat
             z_tool,         # 3
             self.n_target,  # 3
-            cos_angle,      # 1
-            z_cross_n,      # 3
-            a_prev,         # m (+1 in dir-frac mode)
+            *([] if 'cos_angle' in _od else [cos_angle]),  # 1
+            *([] if 'z_cross_n' in _od else [z_cross_n]),  # 3
+            *([] if 'a_prev' in _od else [a_prev]),  # m (+1 dir-frac)
         ]
         if self._ap_k > 1:
             obs_parts.append(self._a_hist)        # (K-1) older a_prev frames

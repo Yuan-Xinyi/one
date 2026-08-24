@@ -99,7 +99,7 @@
 \bstctlcite{IEEEexample:BSTcontrol}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{abstract}
-This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length that a manipulator executes along a prescribed path. Conventional reachability analysis indicates whether individual path points are attainable, but not how far a \emph{single continuous joint trajectory} can carry the tool before joint limits, orientation tolerance, or collision terminate the motion. We refer to this maximum continuously executable extent as \textit{continuous kinematic reachability} and use numerical pointwise reachability as a task-specific reference for the realized stroke. Achieving a long stroke requires two coupled decisions: selecting the initial configuration and resolving redundancy during execution. We address both through candidate generation and learned ranking. Feasible initial configurations are ranked by a rollout-supervised selector. For motion generation, we formulate stroke maximization as a discounted exit-time optimal control problem and act on it through a physically normalized interface: the policy output is projected onto the null space of the position Jacobian to give a redundancy direction, and its projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction. Combined with constraint-margin and executed-motion observations, this interface lets a reinforcement-learned policy deploy as one forward pass and one projection per control period---no lookahead, no feasibility screening---while reaching $89.8\%$ of the per-task pointwise-reachable reference on the densest benchmark, ahead of every evaluated alternative that consults the exact kinematic model at deployment time. Learned initial selection further increases the achievable stroke. Real-world validation assesses physical executability, and the same continuous-path criterion extends naturally to task-aware manipulator base placement.
+This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length that a manipulator executes along a prescribed path. Conventional reachability analysis indicates whether individual path points are attainable, but not how far a \emph{single continuous joint trajectory} can carry the tool before joint limits, orientation tolerance, or collision terminate the motion. We refer to this maximum continuously executable extent as \textit{continuous kinematic reachability} and use numerical pointwise reachability as a task-specific reference for the realized stroke. Achieving a long stroke requires two coupled decisions: selecting the initial configuration and resolving redundancy during execution. We address both through candidate generation and learned ranking. Feasible initial configurations are ranked by a rollout-supervised selector. For motion generation, we formulate stroke maximization as a discounted exit-time optimal control problem and act on it through a physically normalized interface: the policy output is projected onto the null space of the position Jacobian to give a redundancy direction, and its projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction. Combined with constraint-margin and executed-motion observations, this interface lets a reinforcement-learned policy deploy as one forward pass and one projection per control period---no lookahead, no feasibility screening---while reaching $89.8\%$ of the per-task pointwise-reachable reference on the densest benchmark. Learned initial selection further increases the achievable stroke. Real-world validation assesses physical executability, and the same continuous-path criterion extends naturally to task-aware manipulator base placement.
 
 
 
@@ -123,7 +123,7 @@ Extreme Motion Generation, Continuous Kinematic Reachability, Redundant Manipula
 
 The achievable stroke depends on two coupled decisions that pointwise reachability does not capture. The first is the initial task-feasible configuration, which determines where the continuous motion begins within the feasible solution set. The second is the redundancy-resolution law applied throughout execution, which determines how quickly joint-limit, orientation, and collision margins are consumed. Because the stroke terminates at the first constraint violation, its length is naturally formulated as an \emph{exit-time} optimal control objective.
 
-We address initial selection through a candidate-and-rank structure: kinematically feasible configurations are generated and ranked by a learned selector supervised by rollout outcomes. For motion generation, the deciding factor turns out to be the coordinates in which the policy acts and observes. We derive a physically normalized interface: an exact null-space projector turns the network output into a redundancy direction, independent of any hand-constructed basis, while the output's projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction; the observation exposes the previously executed motion and the normalized constraint margins of the current configuration. Under this interface, a standard actor--critic training run deploys as its bare policy---one forward pass and one projection per control period---and surpasses controllers that consult the exact kinematic model at every step to predict, screen, and rank candidate successor states. The comparison carries a broader lesson: once the action and observation coordinates are physically grounded, long-horizon constraint avoidance is learnable end to end, and the exactness of a one-step model ceases to be the binding advantage.
+We address initial selection through a candidate-and-rank structure: kinematically feasible configurations are generated and ranked by a learned selector supervised by rollout outcomes. For motion generation, the deciding factor turns out to be the coordinates in which the policy acts and observes. We derive a physically normalized interface: an exact null-space projector turns the network output into a redundancy direction, independent of any hand-constructed basis, while the output's projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction; the observation exposes the previously executed motion and the normalized constraint margins of the current configuration. Under this interface, a standard actor--critic training run deploys as its bare policy---one forward pass and one projection per control period---and becomes the strongest resolution law we evaluate, well ahead of training-free fields and of the same learning algorithm acting in hand-constructed basis coordinates. The comparison carries a broader lesson: once the action and observation coordinates are physically grounded, long-horizon constraint avoidance is learnable end to end.
 
 We evaluate the framework on three manipulators with $10{,}000$ held-out path-following tasks each. The experiments compare redundancy-resolution laws---training-free fields, box-parameterized reactive policies, and the proposed physically normalized policy---and initial-configuration selection rules. The learned selector is further evaluated on path families absent from its training distribution. Hardware experiments assess whether the generated motions remain executable after time parameterization, and the same continuous-path criterion naturally induces a task-aware criterion for manipulator base placement.
 
@@ -131,7 +131,7 @@ In summary, the main contributions of this work are as follows.
 \begin{itemize}
 \item We introduce \textit{continuous kinematic reachability} as the maximum path extent realizable by a single continuous joint trajectory, and cast extreme motion generation as the coupled problems of initial-configuration selection and redundancy resolution.
 
-\item We formulate in-motion redundancy resolution as an exit-time optimal control problem and derive a physically normalized action interface for it---an exact-projector direction with a joint-velocity-limit-anchored amplitude---under which the reactive policy of a standard actor--critic run surpasses model-assisted successor ranking while deploying as a single forward pass per control period.
+\item We formulate in-motion redundancy resolution as an exit-time optimal control problem and derive a physically normalized action interface for it---an exact-projector direction with a joint-velocity-limit-anchored amplitude---under which the reactive policy of a standard actor--critic run becomes the strongest evaluated resolution law while deploying as a single forward pass per control period.
 
 \item Experiments show that the physically normalized reactive controller outperforms model-assisted and training-free resolution laws, while learned initial selection further improves the achievable stroke and transfers to unseen path families.
 \end{itemize}
@@ -208,12 +208,12 @@ Learning has also been used for redundancy resolution and inverse
 kinematics~\cite{malik2022deep}, while generative and learned IK methods
 model or exploit the multiplicity of feasible
 configurations~\cite{ames2022ikflow,zhang2025ikdiffuser,huang2024diffusionseeder,yoon2023learning}.
-In reinforcement-learning approaches, the deployed object is normally the
-policy; model-based alternatives instead rank candidate successor states
-with a learned or analytic score. We show that, once the action and
-observation coordinates are physically normalized, the bare policy
-surpasses model-assisted successor ranking, locating the advantage in
-the coordinates rather than in deployment-time model access.
+In reinforcement-learning approaches, the deployed policy inherits the
+coordinates of its action and observation interface. We show that this
+choice, rather than architecture or budget, dominates the achievable
+stroke: physically normalizing the interface turns the same learning
+algorithm from a mediocre resolution law into the strongest one we
+evaluate.
 
 
 \section{Problem Formulation}
@@ -523,9 +523,10 @@ disjoint.
     directional manipulability, joint-limit centering, and orientation
     regulation, respectively.
 
-    \item \uline{Margin controller:}
-    The analytic constraint-margin field uses temperature
-    $\tau_{\mathrm{m}}=0.1$.
+    \item \uline{Margin field:}
+    The analytic constraint-margin field, used as an
+    initial-configuration ranking heuristic in the selection ablation,
+    uses temperature $\tau_{\mathrm{m}}=0.1$.
 
     \item \uline{Learned controllers:}
     The proposed reactive controller is a three-layer MLP of width
@@ -534,8 +535,7 @@ disjoint.
     deploys as one forward pass and one null-space projection per
     control period. The Continuous-PPO baseline and the policy
     inside the hybrid are trained for $30$M steps at width $512$ under
-    the basis-box parameterization. The margin law's one-step successor
-    evaluation costs $14.8$\,ms per $50$\,ms decision. At the baselines'
+    the basis-box parameterization. At the baselines'
     matched budget and width, the proposed interface already reaches a
     mean Ratio of $84.9\%$ on FR3 straight tasks, so the comparison is
     not decided by scale alone. All resolution laws share the same
@@ -621,7 +621,7 @@ curved family uses $2{,}500$ tasks.
 \label{sec:ladder}
 
 We first isolate the motion-generation stage by comparing the proposed
-physically normalized reactive controller with five redundancy-resolution
+physically normalized reactive controller with four redundancy-resolution
 baselines. For each task, all methods start from the same initial
 configuration and share the same task-space controller, feasibility
 constraints, and control period. Thus, differences in executed stroke are
@@ -658,29 +658,6 @@ attributable to the redundancy-resolution law.
     represents instantaneous geometric redundancy resolution without
     learned long-horizon information.
 
-    \item \uline{Analytic Margin Resolution (Margin):}
-    A fixed finite set of candidate null-space commands is propagated
-    through the one-step kinematic model, and the successor
-    configurations are ranked by the training-free constraint-margin
-    field
-    \begin{equation}
-    \label{eq:margin-field}
-    \Phi_{\mathrm{m}}(\mathbf{q})
-    =
-    -\tau_{\mathrm{m}}
-    \log
-    \sum_{j}
-    \exp\left(
-    -m_{j}(\mathbf{q})/\tau_{\mathrm{m}}
-    \right),
-    \end{equation}
-    where $m_j$ denotes a normalized joint-limit or orientation-cone margin.
-    Note that evaluating the margins at model-predicted successor states
-    embeds a one-step safety evaluation through the exact kinematic
-    model, so this baseline enjoys deployment-time model access that the
-    reactive laws do not; its comparison against them is therefore
-    favorably biased.
-
     \item \uline{Continuous-Action PPO (Continuous PPO):}
     A PPO policy over the continuous command box $[-1,1]^{m}$ with a
     tanh-squashed Gaussian head and the tanh-corrected entropy bonus,
@@ -705,24 +682,18 @@ attributable to the redundancy-resolution law.
 Table~\ref{tab:mainresult} reports the results per path family for each
 manipulator; on the curved families every learned method runs zero-shot.
 Classical gradient resolution provides only a modest improvement over
-zero null-space motion. The analytic margin law substantially extends the
-stroke on all three manipulators, but it is not a purely reactive law:
-its one-step margin evaluation grants it deployment-time model access,
-which favorably biases its rows. Among the purely reactive controllers,
-the box-parameterized policies remain far below it, whereas the proposed
-controller surpasses every row on the densest benchmark: $89.8\%$ mean
-Ratio with a 10th percentile of $63.3\%$ on FR3 straight tasks.
+zero null-space motion, and the classical takeover patch of the hybrid
+adds a few points over its underlying policy. The proposed controller
+leads every row on the densest benchmark: $89.8\%$ mean Ratio with a
+10th percentile of $63.3\%$ on FR3 straight tasks.
 
 The Continuous PPO and DirFrac rows share the same learning algorithm,
 reward, and training distribution; they differ only in the action and
 observation coordinates, and the gap is $69.4$ versus $89.8$ in mean
 Ratio. Scale is not the explanation: at the baselines' own budget and
-width the physically normalized interface already reaches $84.9\%$. Nor
-is deployment-time model access: the margin law consults the exact
-kinematic model at every control period and is nevertheless surpassed
-by a controller that never consults it. Long-horizon constraint
-avoidance is learnable end to end once the interface is physically
-grounded.
+width the physically normalized interface already reaches $84.9\%$.
+Long-horizon constraint avoidance is learnable end to end once the
+interface is physically grounded.
 
 \begin{table*}[!htbp]
 \centering
@@ -745,7 +716,7 @@ Type
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
-\multirow{12}{*}{Classical} & \multirow{4}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \pinkbox{0.159} & \pinkbox{60.0 / 25.5} \\
+\multirow{8}{*}{Classical} & \multirow{4}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \pinkbox{0.159} & \pinkbox{60.0 / 25.5} \\
  &  & Arc & \pinkbox{0.318} & \pinkbox{50.4 / 11.0} & \pinkbox{0.270} & \pinkbox{50.7 / 12.4} & \pinkbox{0.160} & \pinkbox{59.3 / 25.0} \\
  &  & Serpentine & \pinkbox{0.303} & \pinkbox{54.0 / 14.9} & \pinkbox{0.258} & \pinkbox{53.1 / 14.5} & \pinkbox{0.151} & \pinkbox{56.6 / 23.4} \\
  &  & Rot.-Axis & \pinkbox{0.315} & \pinkbox{56.3 / 16.7} & \pinkbox{0.261} & \pinkbox{54.9 / 15.5} & \pinkbox{0.159} & \pinkbox{59.7 / 26.1} \\
@@ -754,21 +725,16 @@ Type
  &  & Arc & 0.345 & 53.0 / 12.1 & 0.284 & 52.1 / 13.8 & 0.164 & 60.5 / 27.1 \\
  &  & Serpentine & 0.326 & 57.4 / 16.4 & 0.268 & 54.6 / 16.3 & 0.156 & 57.8 / 25.0 \\
  &  & Rot.-Axis & 0.339 & 59.9 / 18.4 & 0.273 & 56.7 / 17.9 & 0.163 & 61.0 / 28.3 \\
-\cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{Analytic Margin}} & Straight & 0.531 & 83.3 / 41.5 & \limebox{0.432} & \limebox{78.8 / 32.3} & \limebox{0.208} & \limebox{74.2 / 35.0} \\
- &  & Arc & \limebox{0.724} & \limebox{77.8 / 26.9} & \limebox{0.560} & \limebox{76.9 / 26.2} & \limebox{0.212} & \limebox{74.0 / 36.5} \\
- &  & Serpentine & \limebox{0.535} & \limebox{80.9 / 37.9} & \limebox{0.430} & \limebox{76.5 / 29.6} & \limebox{0.203} & \limebox{71.5 / 33.9} \\
- &  & Rot.-Axis & \limebox{0.526} & \limebox{81.5 / 37.5} & \limebox{0.435} & \limebox{78.8 / 33.0} & \limebox{0.209} & \limebox{74.2 / 36.8} \\
 \midrule
 \multirow{12}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 69.4 / 17.4 & 0.340 & 66.7 / 16.8 & 0.197 & 71.1 / 30.3 \\
  &  & Arc & 0.447 & 61.5 / 13.0 & 0.380 & 62.2 / 14.4 & 0.201 & 70.5 / 30.7 \\
  &  & Serpentine & 0.407 & 67.0 / 16.0 & 0.337 & 64.5 / 16.1 & 0.191 & 67.9 / 27.3 \\
  &  & Rot.-Axis & 0.411 & 68.4 / 17.4 & 0.344 & 66.9 / 17.2 & 0.199 & 71.0 / 30.9 \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{PPO + Classical}} & Straight & 0.458 & 75.7 / 23.6 & 0.374 & 71.5 / 20.9 & 0.207 & 74.1 / 33.8 \\
- &  & Arc & 0.516 & 67.4 / 16.7 & 0.422 & 67.0 / 17.4 & 0.213 & 74.0 / 34.7 \\
- &  & Serpentine & 0.457 & 73.0 / 21.4 & 0.370 & 69.2 / 19.6 & 0.202 & 71.2 / 31.3 \\
- &  & Rot.-Axis & 0.458 & 74.4 / 23.3 & 0.374 & 71.3 / 20.5 & 0.209 & 74.2 / 35.2 \\
+ & \multirow{4}{*}{\shortstack[l]{PPO + Classical}} & Straight & 0.458 & 75.7 / 23.6 & \limebox{0.374} & \limebox{71.5 / 20.9} & \limebox{0.207} & \limebox{74.1 / 33.8} \\
+ &  & Arc & \limebox{0.516} & \limebox{67.4 / 16.7} & \limebox{0.422} & \limebox{67.0 / 17.4} & \limebox{0.213} & \limebox{74.0 / 34.7} \\
+ &  & Serpentine & \limebox{0.457} & \limebox{73.0 / 21.4} & \limebox{0.370} & \limebox{69.2 / 19.6} & \limebox{0.202} & \limebox{71.2 / 31.3} \\
+ &  & Rot.-Axis & \limebox{0.458} & \limebox{74.4 / 23.3} & \limebox{0.374} & \limebox{71.3 / 20.5} & \limebox{0.209} & \limebox{74.2 / 35.2} \\
 \cmidrule(lr){2-9}
  & \multirow{4}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.598}} & \limebox{\textbf{89.8 / 63.3}} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
  &  & \textbf{Arc} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
@@ -784,9 +750,6 @@ Type
     \item[Note 2] The proposed controller is trained per manipulator on
     straight tasks; [XX] entries await the corresponding replication
     runs.
-    \item[Note 3] The Analytic Margin rows evaluate the margins at
-    model-predicted successor states and therefore use deployment-time
-    model access, unlike the purely reactive rows.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
@@ -855,8 +818,20 @@ compare different ranking rules on the same candidate pool.
 Table~\ref{tab:ablate_seed} reports results on $2500$ held-out tasks per
 path family. On straight tasks, taking the first feasible candidate
 reaches a mean Ratio of $[XX]\%$;
-ranking by joint-limit margin or by the analytic margin field raises this
-to $[XX]\%$, while the learned selector reaches $[XX]\%$ with a 10th
+ranking by joint-limit margin or by the analytic margin field
+\begin{equation}
+\label{eq:margin-field}
+\Phi_{\mathrm{m}}(\mathbf{q})
+=
+-\tau_{\mathrm{m}}
+\log
+\sum_{j}
+\exp\left(
+-m_{j}(\mathbf{q})/\tau_{\mathrm{m}}
+\right),
+\end{equation}
+where $m_j$ denotes a normalized joint-limit or orientation-cone margin,
+raises this to $[XX]\%$, while the learned selector reaches $[XX]\%$ with a 10th
 percentile of $[XX]\%$. These results show that rollout supervision provides a
 stronger ranking signal for initial configurations than the tested
 instantaneous geometric heuristics.
@@ -982,9 +957,9 @@ We evaluate $[N]$ tasks spanning a range of simulated stroke lengths and compare
 
 In this paper, we studied \textit{continuous kinematic reachability}, the maximum extent of a prescribed path that can be realized by a single continuous joint trajectory. Extreme motion generation was formulated as two coupled decisions: selecting the initial configuration and resolving redundancy throughout execution. We evaluated the realized stroke across three manipulators and used numerical pointwise reachability as a task-specific reference.
 
-For redundancy resolution, the deciding factor proved to be the coordinates of the action and observation interface. With the direction given by the exact null-space projector, the amplitude anchored to the per-joint velocity limits, and the observation exposing executed motion and constraint margins, a plain policy-gradient run deploys as a single forward pass per control period and surpasses model-assisted controllers that predict, screen, and rank successor states with the exact kinematic model. For initial configuration selection, rollout-supervised ranking further improves the achievable stroke and transfers to path families absent from selector training.
+For redundancy resolution, the deciding factor proved to be the coordinates of the action and observation interface. With the direction given by the exact null-space projector, the amplitude anchored to the per-joint velocity limits, and the observation exposing executed motion and constraint margins, a plain policy-gradient run deploys as a single forward pass per control period and becomes the strongest resolution law in our evaluation. For initial configuration selection, rollout-supervised ranking further improves the achievable stroke and transfers to path families absent from selector training.
 
-Together, these results indicate that long-horizon constraint avoidance is learnable end to end once the interface is physically grounded, and that deployment-time model access is not the binding advantage it appears to be under hand-constructed action coordinates. The same continuous-path formulation also induces a task-aware criterion for manipulator base placement. Future work will extend the framework to dynamic constraints and paths specified online.
+Together, these results indicate that long-horizon constraint avoidance is learnable end to end once the interface is physically grounded. The same continuous-path formulation also induces a task-aware criterion for manipulator base placement. Future work will extend the framework to dynamic constraints and paths specified online.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

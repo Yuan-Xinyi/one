@@ -776,29 +776,27 @@ candidate ranking; the same ordering holds on every curved family.
 \begin{threeparttable}
 \begin{tabular}{llcc}
 \toprule
-Family & Initial configuration
+Initial configuration & Family
 & \shortstack{Stroke\\(m)}
 & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
-\multirow{3}{*}{Straight}
-& Random candidate & 0 & 0 / 0 \\
-& \textbf{Learned selector (ours)} & \textbf{0} & \textbf{0 / 0} \\
-& Within-pool oracle ($K$ rollouts) & 0 & 0 / 0 \\
+\multirow{4}{*}{Random candidate}
+& Straight   & 0& 0 / 0 \\
+& Arc        & 0& 0 / 0 \\
+& Serpentine & 0& 0 / 0 \\
+& Rot.-Axis  & 0& 0 / 0 \\
 \midrule
-\multirow{3}{*}{Arc}
-& Random candidate & 0 & 0 / 0 \\
-& \textbf{Learned selector (ours)} & \textbf{0} & \textbf{0 / 0} \\
-& Within-pool oracle ($K$ rollouts) & 0 & 0 / 0 \\
+\multirow{4}{*}{\textbf{Learned selector (ours)}}
+& \textbf{Straight}   & \textbf{0}& \textbf{0 / 0} \\
+& \textbf{Arc}        & \textbf{0}& \textbf{0 / 0} \\
+& \textbf{Serpentine} & \textbf{0}& \textbf{0 / 0} \\
+& \textbf{Rot.-Axis}  & \textbf{0}& \textbf{0 / 0} \\
 \midrule
-\multirow{3}{*}{Serpentine}
-& Random candidate & 0 & 0 / 0 \\
-& \textbf{Learned selector (ours)} & \textbf{0} & \textbf{0 / 0} \\
-& Within-pool oracle ($K$ rollouts) & 0 & 0 / 0 \\
-\midrule
-\multirow{3}{*}{Rot.-Axis}
-& Random candidate & 0 & 0 / 0 \\
-& \textbf{Learned selector (ours)} & \textbf{0} & \textbf{0 / 0} \\
-& Within-pool oracle ($K$ rollouts) & 0 & 0 / 0 \\
+\multirow{4}{*}{Within-pool oracle ($K$ rollouts)}
+& Straight   & 0& 0 / 0 \\
+& Arc        & 0& 0 / 0 \\
+& Serpentine & 0& 0 / 0 \\
+& Rot.-Axis  & 0& 0 / 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -849,52 +847,54 @@ Held-Out FR3 Tasks per Path Family}
 \begin{threeparttable}
 \footnotesize
 \setlength{\tabcolsep}{4.5pt}
-\begin{tabular}{llccc}
+\begin{tabular}{lllccc}
 \toprule
-Family & Candidate Ranking Rule
+Type
+& Candidate Ranking Rule
+& Family
 & \shortstack{Stroke\\(m)}
 & \shortstack{Ratio (\%)\\mean / p10}
 & \shortstack{Near-Oracle\\Tasks (\%)} \\
 \midrule
-\multirow{8}{*}{Straight}
-& First Feasible Candidate & 0 & 0 / 0 & 0 \\
-& Random Valid Candidate & 0 & 0 / 0 & 0 \\
-& Max Directional Manipulability & 0 & 0 / 0 & 0 \\
-& Max Orientation Margin & 0 & 0 / 0 & 0 \\
-& Max Joint-Limit Margin & 0 & 0 / 0 & 0 \\
-& Margin Field $\Phi_{\mathrm{m}}$ & 0 & 0 / 0 & 0 \\
-& \textbf{Learned Selector (Ours)} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
-& Within-Pool Oracle ($K$ Rollouts) & 0 & 0 / 0 & 0 \\
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \midrule
-\multirow{8}{*}{Arc}
-& First Feasible Candidate & 0 & 0 / 0 & 0 \\
-& Random Valid Candidate & 0 & 0 / 0 & 0 \\
-& Max Directional Manipulability & 0 & 0 / 0 & 0 \\
-& Max Orientation Margin & 0 & 0 / 0 & 0 \\
-& Max Joint-Limit Margin & 0 & 0 / 0 & 0 \\
-& Margin Field $\Phi_{\mathrm{m}}$ & 0 & 0 / 0 & 0 \\
-& \textbf{Learned Selector (Ours)} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
-& Within-Pool Oracle ($K$ Rollouts) & 0 & 0 / 0 & 0 \\
+\multirow{4}{*}{Random} & \multirow{4}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \midrule
-\multirow{8}{*}{Serpentine}
-& First Feasible Candidate & 0 & 0 / 0 & 0 \\
-& Random Valid Candidate & 0 & 0 / 0 & 0 \\
-& Max Directional Manipulability & 0 & 0 / 0 & 0 \\
-& Max Orientation Margin & 0 & 0 / 0 & 0 \\
-& Max Joint-Limit Margin & 0 & 0 / 0 & 0 \\
-& Margin Field $\Phi_{\mathrm{m}}$ & 0 & 0 / 0 & 0 \\
-& \textbf{Learned Selector (Ours)} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
-& Within-Pool Oracle ($K$ Rollouts) & 0 & 0 / 0 & 0 \\
+\multirow{16}{*}{Heuristic} & \multirow{4}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
+\cmidrule(lr){2-6}
+ & \multirow{4}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
+\cmidrule(lr){2-6}
+ & \multirow{4}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
+\cmidrule(lr){2-6}
+ & \multirow{4}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \midrule
-\multirow{8}{*}{Rot.-Axis}
-& First Feasible Candidate & 0 & 0 / 0 & 0 \\
-& Random Valid Candidate & 0 & 0 / 0 & 0 \\
-& Max Directional Manipulability & 0 & 0 / 0 & 0 \\
-& Max Orientation Margin & 0 & 0 / 0 & 0 \\
-& Max Joint-Limit Margin & 0 & 0 / 0 & 0 \\
-& Margin Field $\Phi_{\mathrm{m}}$ & 0 & 0 / 0 & 0 \\
-& \textbf{Learned Selector (Ours)} & \textbf{0} & \textbf{0 / 0} & \textbf{0} \\
-& Within-Pool Oracle ($K$ Rollouts) & 0 & 0 / 0 & 0 \\
+\multirow{4}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{\textbf{Learned Selector (Ours)}}} & \textbf{Straight} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
+ &  & \textbf{Arc} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
+ &  & \textbf{Serpentine} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
+ &  & \textbf{Rot.-Axis} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
+\midrule
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}

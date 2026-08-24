@@ -73,7 +73,7 @@
 
 %new colors
 \definecolor{darkorange}{rgb}{1.0, 0.55, 0.0}
-\newcommand{\xinyi}[1]{{\color{babyblue}\begin{CJK*}{UTF8}{gkai}#1\end{CJK*}}}
+\newcommand{\xinyi}[1]{{\color{darkorange}\begin{CJK*}{UTF8}{gkai}#1\end{CJK*}}}
 \newcommand{\xinyitodo}[1]{{\color{darkgreen}\begin{CJK*}{UTF8}{gkai}#1\end{CJK*}}}
 % Text written in this revision pass; existing prose is left untouched.
 \newcommand{\new}[1]{\textcolor{red}{#1}}
@@ -82,7 +82,9 @@
 
 \begin{document}
 % \title{Extreme Motion Generation via Hybrid Null-Space Control for Straight-Line Path Following}
-\title{Exploiting Continuous Kinematic Reachability \\for Generating Extreme Linear Motion in Workspace}
+% Exploiting Continuous Kinematic Reachability \\for Generating Extreme Linear Motion in Workspace
+\title{Extreme Motion Generation via \\Velocity-Limited Null-Space Actions}
+
 % two-dimensional manifolds
 % \author{Yu Tang$^{1}$, Weiwei Wan$^{*1}$, Hao Chen$^{2}$, Masaki Matsushita$^{3}$, Jun Takahashi$^{3}$, Takeyuki Kotaka$^{3}$, Kensuke Harada$^{1}$
 % \thanks{1. Graduate School of Engineering Science, Osaka University, Japan. 2. College of Computer and Information Sciences, Fujian Agriculture and Forestry University, China. 3. H.U. Group Research Institute G.K., Japan}
@@ -99,20 +101,17 @@
 \bstctlcite{IEEEexample:BSTcontrol}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{abstract}
-This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length that a manipulator executes along a prescribed path. Conventional reachability analysis indicates whether individual path points are attainable, but not how far a \emph{single continuous joint trajectory} can carry the tool before joint limits, orientation tolerance, or collision terminate the motion. We refer to this maximum continuously executable extent as \textit{continuous kinematic reachability} and use numerical pointwise reachability as a task-specific reference for the realized stroke. Achieving a long stroke requires two coupled decisions: selecting the initial configuration and resolving redundancy during execution. We address both through candidate generation and learned ranking. Feasible initial configurations are ranked by a rollout-supervised selector. For motion generation, we formulate stroke maximization as a discounted exit-time optimal control problem and act on it through a physically normalized interface: the policy output is projected onto the null space of the position Jacobian to give a redundancy direction, and its projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction. Combined with constraint-margin and executed-motion observations, this interface lets a reinforcement-learned policy deploy as one forward pass and one projection per control period---no lookahead, no feasibility screening---while reaching $89.8\%$ of the per-task pointwise-reachable reference on the densest benchmark. Learned initial selection further increases the achievable stroke. Real-world validation assesses physical executability, and the same continuous-path criterion extends naturally to task-aware manipulator base placement.
-
+This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length along a pre-defined trajectory within the manipulator's workspace. Conventional reachability analysis focuses on pointwise attainability, without considering whether the start and goal can be connected by a continuous, constraint-satisfying trajectory in the workspace. This objective is particularly important for industrial tasks such as welding and surface coating, which require long, uninterrupted strokes. However, this objective is challenging for both classical and learning-based approaches, as maximizing future returns may require deliberately approaching the safety boundary for more favorable future configurations. Accordingly, we leverage reinforcement learning for long-horizon decision-making and define the action space in terms of velocity-limited null-space motions. The initial joint configuration is selected through supervised learning from CVT-based candidate batches. We evaluate the proposed framework across three manipulators on four spatial path-following tasks in simulation and real-world experiments. Relative to the pointwise-reachable reference, the proposed method recovers X\% of the reference path length and consistently outperforms classical baselines. The method further provides practical guidance for task-aware base placement.
 
 
 \end{abstract}
 
 \begin{IEEEkeywords}
-Extreme Motion Generation, Continuous Kinematic Reachability, Redundant Manipulators, Optimal Control
+Extreme Motion Generation, Kinematic Reachability, Reinforcement Learning
 \end{IEEEkeywords}
 
 %==============================================================================================================================
 \section{Introduction}
-
-\IEEEPARstart{C}{onsider} a compact, fixed-base manipulator executing coating or welding over a large work surface. Reachable workspace indicates where the end-effector can be placed, but not how far it can move along a prescribed path through a \emph{single continuous joint trajectory}. In practice, joint limits, tool-orientation tolerance, or collision may terminate the motion well before the workspace boundary is reached. We refer to the problem of maximizing this continuous Cartesian path length as \textit{extreme motion generation}, and to the maximum continuously executable extent as \textit{continuous kinematic reachability}. This distinction is particularly relevant in industrial automation, where a longer continuous stroke directly enlarges the effective working range without scaling up the manipulator or repeatedly relocating its base\footnote{The project website and related videos of this paper can be found at \url{https://yuan-xinyi.github.io/extreme-motion-generation/}.}.
 
 \begin{figure*}[!tbp]
 \centering
@@ -121,20 +120,27 @@ Extreme Motion Generation, Continuous Kinematic Reachability, Redundant Manipula
 \label{fig:pwgap}
 \end{figure*}
 
-The achievable stroke depends on two coupled decisions that pointwise reachability does not capture. The first is the initial task-feasible configuration, which determines where the continuous motion begins within the feasible solution set. The second is the redundancy-resolution law applied throughout execution, which determines how quickly joint-limit, orientation, and collision margins are consumed. Because the stroke terminates at the first constraint violation, its length is naturally formulated as an \emph{exit-time} optimal control objective.
+\IEEEPARstart{C}{onsider} a compact, fixed-base manipulator executing a coating or welding operation over a large work surface. Given a starting position and a motion direction, intuition would suggest that the maximum reachable point is determined by the reachable workspace. However, the motion is continuous and strictly constrained by safety boundaries such as joint limits and tool-orientation tolerance along each waypoint. Therefore, the practical bottleneck is that one of those safety constraints is violated and causes termination long before the end-effector approaches the edge of the reachable workspace. Consequently, the practically achievable path length is bounded by the maximum pointwise-reachable length, depending on how long boundary violation can be deferred during the motion execution. We refer to this problem as \textit{extreme motion generation} that maximizes the Cartesian path length along a pre-defined trajectory within the manipulator's workspace. This is particularly important in industrial automation, where the length of a single continuous motion directly limits the area a manipulator can process in one setup. Rather than scaling up the manipulator or repeatedly relocating the base, simply exploiting the extreme motion offers a solution to enlarge the effective working range.
 
-We address initial selection through a candidate-and-rank structure: kinematically feasible configurations are generated and ranked by a learned selector supervised by rollout outcomes. For motion generation, the deciding factor turns out to be the coordinates in which the policy acts and observes. We derive a physically normalized interface: an exact null-space projector turns the network output into a redundancy direction, independent of any hand-constructed basis, while the output's projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction; the observation exposes the previously executed motion and the normalized constraint margins of the current configuration. Under this interface, a standard actor--critic training run deploys as its bare policy---one forward pass and one projection per control period---and becomes the strongest resolution law we evaluate, well ahead of training-free fields and of the same learning algorithm acting in hand-constructed basis coordinates. The comparison carries a broader lesson: once the action and observation coordinates are physically grounded, long-horizon constraint avoidance is learnable end to end.
+However, extreme motion generation, especially under task-constrained path-following, is challenging in practice. A joint motion feasible at the current step may gradually steer the subsequent motion toward a safety boundary and lead to termination due to the cumulative effect. Therefore, resolving this issue requires long-horizon decision-making, potentially requiring deliberate approaches to safety boundaries in exchange for greater future returns. However, existing motion generation methods struggle to balance such long-horizon exploitation with robust constraint adherence. Classical controllers optimize instantaneous secondary objectives while realizing the desired end-effector motion. Although robust and predictable near boundaries, they are inherently myopic and overlook long-horizon consequences through local optimization. In contrast, learning-based methods can capture complex state-action distributions, but their performance deteriorates sharply near safety boundaries due to sparse data coverage.
 
-We evaluate the framework on three manipulators with $10{,}000$ held-out path-following tasks each. The experiments compare redundancy-resolution laws---training-free fields, box-parameterized reactive policies, and the proposed physically normalized policy---and initial-configuration selection rules. The learned selector is further evaluated on path families absent from its training distribution. Hardware experiments assess whether the generated motions remain executable after time parameterization, and the same continuous-path criterion naturally induces a task-aware criterion for manipulator base placement.
+We carefully investigate extreme motion generation and identify two factors that determine the maximum stroke length: initial joint configuration selection and real-time redundancy resolution. The former is a one-time decision that can be learned through supervised learning, whereas the latter is more challenging due to the aforementioned dilemma between instantaneous margins and long-horizon foresight. Therefore, we formulate real-time redundancy resolution as an exit-time optimal control problem and leverage reinforcement learning for long-horizon decision-making. Specifically, we restrict the policy to the null space of the position Jacobian, isolating redundancy resolution from task-space tracking. Meanwhile, we constrain the output action by the residual joint velocity after accounting for task-space motion, thereby ensuring physical feasibility. More importantly, the reward function is aligned directly with the exit-time objective, without shaping terms that may induce greedy behavior.
+
+The proposed framework has been evaluated across three manipulators on $10{,}000$ unseen straight-line path-following tasks and $7{,}500$ unseen and Out-Of-Distribution curve tasks.\xinyi{写到这里了。}
+
+We evaluate the proposed framework on a large set of straight-line path-following tasks for a 7-DoF Franka FR3, measuring performance as the achieved path length relative to a per-task reference length. The contribution of each component is then analyzed through the seed-by-controller protocol. For the initial joint configuration, the diffusion-based selection is compared against several hand-designed heuristic seeds; for the controller, the hybrid framework is compared against the classical and the learning-based controllers in isolation. We further conduct ablation studies on the guidance scale, the number of diffusion sampling steps, and the hysteresis switching thresholds, providing practical insights into the effect of each design choice.
 
 In summary, the main contributions of this work are as follows.
+
+\xinyi{
 \begin{itemize}
-\item We introduce \textit{continuous kinematic reachability} as the maximum path extent realizable by a single continuous joint trajectory, and cast extreme motion generation as the coupled problems of initial-configuration selection and redundancy resolution.
+\item We formulate extreme motion generation as an exit-time optimal control problem that maximizes the length of a straight-line workspace trajectory subject to task constraints.
 
-\item We formulate in-motion redundancy resolution as an exit-time optimal control problem and derive a physically normalized action interface for it---an exact-projector direction with a joint-velocity-limit-anchored amplitude---under which the reactive policy of a standard actor--critic run becomes the strongest evaluated resolution law while deploying as a single forward pass per control period.
+\item We conclude that the maximum stroke depends on both initial configuration selection and real-time redundancy resolution. The proposed framework addresses these two factors through supervised learning and reinforcement learning, respectively.
 
-\item Experiments show that the physically normalized reactive controller outperforms the training-free and hand-coordinate learned resolution laws, while learned initial selection further improves the achievable stroke and transfers to unseen path families.
+\item The proposed framework exhibits superior performance across three manipulators on four spatial path-following tasks, generating trajectories that remain within joint-position and joint-velocity limits throughout the motion.
 \end{itemize}
+}
 
 The rest of this article is organized as follows. Section~II reviews related work. Section~III formulates the problem. Section~IV presents the framework. Section~V reports the experiments, and Section~VI concludes the paper.
 

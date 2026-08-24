@@ -99,7 +99,7 @@
 \bstctlcite{IEEEexample:BSTcontrol}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{abstract}
-This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length that a manipulator executes along a prescribed path. Conventional reachability analysis indicates whether individual path points are attainable, but not how far a \emph{single continuous joint trajectory} can carry the tool before joint limits, orientation tolerance, or collision terminate the motion. We refer to this maximum continuously executable extent as \textit{continuous kinematic reachability} and use numerical pointwise reachability as a task-specific reference for the realized stroke. Achieving a long stroke requires two coupled decisions: selecting the initial configuration and resolving redundancy during execution. We address both through candidate generation and learned ranking. Feasible initial configurations are ranked by a rollout-supervised selector. For motion generation, we formulate stroke maximization as a discounted exit-time optimal control problem and show that pointwise Hamiltonian maximization admits vertex-valued null-space commands. A kinematic one-step model generates feasible successor states under these commands, which are ranked by a learned critic. Across three manipulators and 10,000 simulation tasks per manipulator, the critic-guided controller consistently outperforms the corresponding policy head and training-free baselines, while learned initial selection further increases the achievable stroke. Real-world validation assesses physical executability, and the same continuous-path criterion extends naturally to task-aware manipulator base placement.
+This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length that a manipulator executes along a prescribed path. Conventional reachability analysis indicates whether individual path points are attainable, but not how far a \emph{single continuous joint trajectory} can carry the tool before joint limits, orientation tolerance, or collision terminate the motion. We refer to this maximum continuously executable extent as \textit{continuous kinematic reachability} and use numerical pointwise reachability as a task-specific reference for the realized stroke. Achieving a long stroke requires two coupled decisions: selecting the initial configuration and resolving redundancy during execution. We address both through candidate generation and learned ranking. Feasible initial configurations are ranked by a rollout-supervised selector. For motion generation, we formulate stroke maximization as a discounted exit-time optimal control problem and act on it through a physically normalized interface: the policy output is projected onto the null space of the position Jacobian to give a redundancy direction, and its projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction. Combined with constraint-margin and executed-motion observations, this interface lets a reinforcement-learned policy deploy as one forward pass and one projection per control period---no lookahead, no feasibility screening---while reaching $89.8\%$ of the per-task pointwise-reachable reference on the densest benchmark, surpassing model-assisted controllers that enumerate and rank successor states with the exact kinematic model ($86.0\%$). Learned initial selection further increases the achievable stroke. Real-world validation assesses physical executability, and the same continuous-path criterion extends naturally to task-aware manipulator base placement.
 
 
 
@@ -123,17 +123,17 @@ Extreme Motion Generation, Continuous Kinematic Reachability, Redundant Manipula
 
 The achievable stroke depends on two coupled decisions that pointwise reachability does not capture. The first is the initial task-feasible configuration, which determines where the continuous motion begins within the feasible solution set. The second is the redundancy-resolution law applied throughout execution, which determines how quickly joint-limit, orientation, and collision margins are consumed. Because the stroke terminates at the first constraint violation, its length is naturally formulated as an \emph{exit-time} optimal control objective.
 
-We address these two decisions through a common candidate-and-rank structure. For initial selection, kinematically feasible configurations are generated and ranked by a learned selector supervised by rollout outcomes. For motion generation, the exit-time formulation yields a value-based redundancy-resolution structure: pointwise Hamiltonian maximization over the bounded null-space command admits a vertex-valued solution. A known kinematic model therefore generates feasible one-step successors under the vertex commands, which can be ranked by either an analytic constraint-margin field or a learned critic. In particular, using the critic from the same actor--critic training run to rank successor states substantially outperforms deploying its policy head directly. This comparison suggests a useful division of labor: learning provides long-horizon state evaluation, while the kinematic model performs local action discrimination.
+We address initial selection through a candidate-and-rank structure: kinematically feasible configurations are generated and ranked by a learned selector supervised by rollout outcomes. For motion generation, the deciding factor turns out to be the coordinates in which the policy acts and observes. We derive a physically normalized interface: an exact null-space projector turns the network output into a redundancy direction, independent of any hand-constructed basis, while the output's projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction; the observation exposes the previously executed motion and the normalized constraint margins of the current configuration. Under this interface, a standard actor--critic training run deploys as its bare policy---one forward pass and one projection per control period---and surpasses controllers that consult the exact kinematic model at every step to enumerate, screen, and rank candidate successors. The comparison carries a broader lesson: once the action and observation coordinates are physically grounded, long-horizon constraint avoidance is learnable end to end, and the exactness of a one-step model ceases to be the binding advantage.
 
-We evaluate the framework on three manipulators with $10{,}000$ held-out path-following tasks each. The experiments compare redundancy-resolution laws, including continuous- and vertex-action reactive policies, and initial-configuration selection rules. The learned selector is further evaluated on path families absent from its training distribution. Hardware experiments assess whether the generated motions remain executable after time parameterization, and the same continuous-path criterion naturally induces a task-aware criterion for manipulator base placement.
+We evaluate the framework on three manipulators with $10{,}000$ held-out path-following tasks each. The experiments compare redundancy-resolution laws---training-free fields, box-parameterized reactive policies, model-assisted value ranking, and the proposed physically normalized policy---and initial-configuration selection rules. The learned selector is further evaluated on path families absent from its training distribution. Hardware experiments assess whether the generated motions remain executable after time parameterization, and the same continuous-path criterion naturally induces a task-aware criterion for manipulator base placement.
 
 In summary, the main contributions of this work are as follows.
 \begin{itemize}
 \item We introduce \textit{continuous kinematic reachability} as the maximum path extent realizable by a single continuous joint trajectory, and cast extreme motion generation as the coupled problems of initial-configuration selection and redundancy resolution.
 
-\item We formulate in-motion redundancy resolution as an exit-time optimal control problem and show that its pointwise Hamiltonian maximization admits vertex-valued null-space commands, enabling model-generated successors to be ranked by an analytic field or a learned critic.
+\item We formulate in-motion redundancy resolution as an exit-time optimal control problem and derive a physically normalized action interface for it---an exact-projector direction with a joint-velocity-limit-anchored amplitude---under which the reactive policy of a standard actor--critic run surpasses model-assisted successor ranking while deploying as a single forward pass per control period.
 
-\item Experiments on three manipulators show that critic-guided resolution consistently outperforms the corresponding policy head and training-free baselines, while learned initial selection further improves the achievable stroke and transfers to unseen path families.
+\item Experiments show that the physically normalized reactive controller outperforms model-assisted and training-free resolution laws, while learned initial selection further improves the achievable stroke and transfers to unseen path families.
 \end{itemize}
 
 The rest of this article is organized as follows. Section~II reviews related work. Section~III formulates the problem. Section~IV presents the framework. Section~V reports the experiments, and Section~VI concludes the paper.
@@ -198,22 +198,24 @@ than an instantaneous secondary objective, it naturally admits an optimal
 control formulation. Classical time-optimal path-following methods show
 that control-affine systems with bounded inputs often yield
 boundary-valued optimal controls, except on singular
-arcs~\cite{bobrow1985time,shin1985minimum}. Our exit-time formulation
-leads to an analogous structure in null-space control: pointwise
-Hamiltonian maximization over a box-bounded command admits a
-vertex-valued solution.
+arcs~\cite{bobrow1985time,shin1985minimum}. Boundary-valued structure,
+however, is a property of a hand-chosen command box. We parameterize the
+null-space command by the exact projector and the manipulator's own
+joint-velocity limits, so no such box exists: the amplitude semantics
+follow the actuation envelope of the robot rather than a tuned bound.
 
 Learning has also been used for redundancy resolution and inverse
 kinematics~\cite{malik2022deep}, while generative and learned IK methods
 model or exploit the multiplicity of feasible
 configurations~\cite{ames2022ikflow,zhang2025ikdiffuser,huang2024diffusionseeder,yoon2023learning}.
-In reinforcement-learning approaches, the policy is normally the object
-deployed for action selection. In contrast, we use the critic learned in
-the same actor--critic run to evaluate model-generated successor states.
-The kinematic model generates and screens candidate vertex commands,
-while the critic supplies long-horizon state evaluation. This separation
-allows the learned value and the corresponding reactive policy to be
-compared directly within the same training run.
+In reinforcement-learning approaches, the deployed object is normally the
+policy; model-based alternatives instead rank candidate successor states
+with a learned value function. We evaluate both consumption modes within
+the same training run: under a conventional basis-box action space, the
+model-assisted value ranking dominates the policy head, whereas under the
+proposed physically normalized interface the bare policy overtakes the
+model-assisted controller. The comparison locates the advantage in the
+coordinates rather than in deployment-time model access.
 
 
 \section{Problem Formulation}
@@ -264,46 +266,36 @@ Because only the $3$-DoF position is tracked, the manipulator retains a null spa
 +
 (\mathbf{I}-\mathbf{J}^{+}\mathbf{J})\,\boldsymbol{\xi},
 \end{equation}
-where $\mathbf{J}^{+}$ is the pseudoinverse of the position Jacobian and $\boldsymbol{\xi}$ denotes the secondary joint-space command. We parameterize this command as
-\begin{equation}
-\boldsymbol{\xi}
-=
-\mathbf{B}(\mathbf{q})\mathbf{a},
-\qquad
-\mathbf{J}\mathbf{B}(\mathbf{q})=\mathbf{0},
-\quad
-\mathbf{B}(\mathbf{q})^{\top}\mathbf{B}(\mathbf{q})=\mathbf{I},
-\end{equation}
-where $\mathbf{B}(\mathbf{q})\in\mathbb{R}^{n\times m}$ is an orthonormal basis of the null space of $\mathbf{J}$ and $\mathbf{a}\in\mathbb{R}^{m}$ contains the null-space coordinates. Thus, all controllers share the same task-space motion and differ only in how the null-space command $\mathbf{a}$ is selected.
+where $\mathbf{J}^{+}$ is the pseudoinverse of the position Jacobian and $\boldsymbol{\xi}\in\ker\mathbf{J}$ denotes the secondary joint-space command. Thus, all controllers share the same task-space motion and differ only in how $\boldsymbol{\xi}$ is selected at each control period.
 
-We bound the null-space command as
+The physical envelope of this command is set by the manipulator's own actuation. Writing $\dot{\mathbf{q}}^{\lim}$ for the per-joint velocity limits, the total command must satisfy the limits componentwise, so the admissible null-space set is
 \begin{equation}
-\mathbf{a}\in\mathcal{A}:=[-a_{\max},a_{\max}]^{m},
-\end{equation}
-where $m=n-3$ for a full-row-rank position Jacobian. Since $\mathbf{B}(\mathbf{q})$ lies in the null space of $\mathbf{J}$, the resulting kinematics can be written as
-\begin{equation}
-\label{eq:affine}
-\dot{\mathbf{q}}
+\label{eq:uq}
+\mathcal{U}(\mathbf{q})
 =
-\mathbf{J}^{+}\dot{\mathbf{x}}
-+
-\mathbf{B}(\mathbf{q})\mathbf{a}.
+\left\{
+\boldsymbol{\xi}\in\ker\mathbf{J}:
+\left|\mathbf{J}^{+}\dot{\mathbf{x}}+\boldsymbol{\xi}\right|
+\preceq
+\dot{\mathbf{q}}^{\lim}
+\right\},
 \end{equation}
+a polytope: the axis-aligned velocity box, shifted by the task-tracking term and intersected with the null space. Its extent depends on the configuration and on the direction of $\boldsymbol{\xi}$; the proposed interface exposes this dependence to the policy in closed form (Section~\ref{sec:traj}). Several baselines instead use a conventional parameterization $\boldsymbol{\xi}=\mathbf{B}(\mathbf{q})\mathbf{a}$, where $\mathbf{B}(\mathbf{q})\in\mathbb{R}^{n\times m}$ ($m=n-3$) is an orthonormal task-aligned null-space basis and the coordinate command is box-bounded, $\mathbf{a}\in[-a_{\max},a_{\max}]^{m}$; this construction is specified with the respective controllers in Section~\ref{sec:setup}.
 
-Equation~(\ref{eq:ckr}) therefore contains the two decisions addressed by the proposed framework: selecting the initial configuration $\mathbf{q}_{0}$ and selecting the bounded null-space command $\mathbf{a}$ throughout the resulting continuous motion.
+Equation~(\ref{eq:ckr}) therefore contains the two decisions addressed by the proposed framework: selecting the initial configuration $\mathbf{q}_{0}$ and selecting the admissible null-space command $\boldsymbol{\xi}\in\mathcal{U}(\mathbf{q})$ throughout the resulting continuous motion.
 
 
 
 \section{Extreme Motion Generation}
-\label{sec:hjb}
+\label{sec:emg}
 
 Extreme motion generation contains two coupled decisions. Before execution,
 an initial task-feasible configuration must be selected; during execution,
-the redundancy must be resolved at every increment. We address both through
-a candidate-and-rank structure. The first stage generates feasible initial
-configurations and learns to rank them from rollout outcomes. The second
-stage generates candidate null-space motions from the kinematic model and
-ranks their successor states using a scalar value estimate.
+the redundancy must be resolved at every increment. The first stage
+generates feasible initial configurations and learns to rank them from
+rollout outcomes. The second stage learns a reactive resolution policy
+over a physically normalized action interface and deploys it directly,
+with no model queries at run time.
 
 \subsection{Exit-Time Optimal Control Formulation}
 
@@ -330,8 +322,8 @@ e^{-\beta t}
 v\,\mathrm{d}t,
 \end{equation}
 where $\beta>0$ is the continuous-time discount rate and the supremum is
-taken over measurable commands $\mathbf{a}(\cdot)$ satisfying
-$\mathbf{a}(t)\in\mathcal{A}$. Under the fixed path-advance rate used in this
+taken over measurable commands $\boldsymbol{\xi}(\cdot)$ satisfying
+$\boldsymbol{\xi}(t)\in\mathcal{U}(\mathbf{q}(t))$. Under the fixed path-advance rate used in this
 work, $v$ is constant while the trajectory remains feasible. Hence maximizing
 Eq.~(\ref{eq:value}) is equivalent to delaying the first constraint violation
 and therefore to maximizing the executed stroke.
@@ -370,113 +362,98 @@ mean-pooled set context. The score is additionally conditioned on a
 upcoming path every $10$\,cm of arc length up to $1.2$\,m ahead. At deployment, selection requires only candidate generation,
 one network evaluation, and refinement; no rollout is performed online.
 
-\subsection{Value-Guided Motion Generation}
+\subsection{Physically Normalized Reactive Motion Generation}
 \label{sec:traj}
 
 After the initial configuration is selected, the trajectory is generated
 incrementally. At every control interval, the task-space controller
 advances the end-effector along the prescribed path, while the remaining
-motion is generated in the null space of the position Jacobian.
+motion is generated in the null space of the position Jacobian. The
+policy's network output must be translated into a physical null-space
+velocity, and this interface determines what the learning is asked to
+accomplish. We design it around two requirements: the direction should be
+free of arbitrary coordinates, and the amplitude should be measured in
+units the robot itself defines.
 
-All compared controllers use the same orthonormal null-space basis
-$\mathbf{B}(\mathbf{q})$. To obtain a task-aligned parameterization,
-directions associated with directional manipulability, joint-limit
-centering, and orientation margin are projected into the null space and
-orthonormalized; the remaining orthogonal directions complete the basis.
-Thus, the controllers differ only in how the null-space command
-$\mathbf{a}$ in Eq.~(\ref{eq:affine}) is selected.
-
-The exit-time formulation provides a structured rule for this selection.
-At points where $V$ is differentiable, the Hamilton--Jacobi--Bellman
-equation associated with Eq.~(\ref{eq:value}) is
+\subsubsection{Direction by exact projection}
+The policy outputs a joint-space vector
+$\mathbf{u}\in(-1,1)^{n}$. Its physical direction is obtained by the
+orthogonal projector onto $\ker\mathbf{J}$,
 \begin{equation}
-\label{eq:hjb}
-\begin{aligned}
-\beta V
-&=
-v
-+
-\nabla_{\mathbf{q}}V^{\top}\mathbf{J}^{+}\dot{\mathbf{x}}
-+
-\sup_{\mathbf{a}\in\mathcal{A}}
-\left(
-\mathbf{B}(\mathbf{q})^{\top}\nabla_{\mathbf{q}}V
-\right)^{\top}\mathbf{a},
-\\
-V&=0 \quad \text{outside } \Omega .
-\end{aligned}
-\end{equation}
-Because $v$ and $\mathbf{J}^{+}\dot{\mathbf{x}}$ are independent of
-$\mathbf{a}$, the command appears linearly in the final term. Define
-\begin{equation}
-\label{eq:sigma}
-\boldsymbol{\sigma}(\mathbf{q})
+\label{eq:dirproj}
+\hat{\boldsymbol{\xi}}(\mathbf{q},\mathbf{u})
 =
-\mathbf{B}(\mathbf{q})^{\top}
-\nabla_{\mathbf{q}}V(\mathbf{q})
-\in\mathbb{R}^{m}.
+\frac{\mathbf{P}_{N}(\mathbf{q})\,\mathbf{u}}
+     {\left\|\mathbf{P}_{N}(\mathbf{q})\,\mathbf{u}\right\|},
+\qquad
+\mathbf{P}_{N}=\mathbf{N}\mathbf{N}^{\top},
 \end{equation}
-For the box-bounded command set
-$\mathcal{A}=[-a_{\max},a_{\max}]^{m}$, the pointwise Hamiltonian
-maximization is attained by a vertex command.
+where the columns of $\mathbf{N}$ span $\ker\mathbf{J}$ (computed by
+singular value decomposition). The projector is unique regardless of how
+the null-space basis is chosen, so the direction representation carries no
+hand-constructed chart: outputs that differ only by row-space components
+or by scale execute the same physical direction.
 
-\begin{proposition}
-\label{prop:vertex}
-Let $W:\Omega\rightarrow\mathbb{R}$ be differentiable and define
+\subsubsection{Amplitude by the actuation envelope}
+The largest step admissible along $\hat{\boldsymbol{\xi}}$ follows from
+the per-joint velocity limits in Eq.~(\ref{eq:uq}),
 \begin{equation}
-\boldsymbol{\sigma}_{W}(\mathbf{q})
+\label{eq:alphafeas}
+\alpha_{\mathrm{feas}}(\mathbf{q},\hat{\boldsymbol{\xi}})
 =
-\mathbf{B}(\mathbf{q})^{\top}\nabla_{\mathbf{q}}W(\mathbf{q}).
+\max
+\left\{
+\alpha\geq 0:
+\left|
+\dot{\mathbf{q}}_{\mathrm{task}}+\alpha\hat{\boldsymbol{\xi}}
+\right|
+\preceq
+\dot{\mathbf{q}}^{\lim}
+\right\},
 \end{equation}
-Then
+where $\dot{\mathbf{q}}_{\mathrm{task}}=\mathbf{J}^{+}\dot{\mathbf{x}}$.
+Each joint contributes one linear bound, so
+$\alpha_{\mathrm{feas}}$ is the minimum of $n$ closed-form ratios; no
+iterative optimization is involved. The commanded fraction of this
+envelope is carried by the magnitude of the projected output,
 \begin{equation}
-\label{eq:prop}
-\max_{\mathbf{a}\in[-a_{\max},a_{\max}]^{m}}
-\boldsymbol{\sigma}_{W}^{\top}\mathbf{a}
+\label{eq:rho}
+\rho
 =
-\max_{\mathbf{a}\in\{-a_{\max},a_{\max}\}^{m}}
-\boldsymbol{\sigma}_{W}^{\top}\mathbf{a}
+\min\left(1,\left\|\mathbf{P}_{N}\mathbf{u}\right\|\right),
+\qquad
+\boldsymbol{\xi}
 =
-a_{\max}\|\boldsymbol{\sigma}_{W}\|_{1}.
+\rho\,
+\alpha_{\mathrm{feas}}(\mathbf{q},\hat{\boldsymbol{\xi}})\,
+\hat{\boldsymbol{\xi}}.
 \end{equation}
-An optimizer can be chosen as
-$\mathbf{a}=a_{\max}\operatorname{sgn}(\boldsymbol{\sigma}_{W})$, with arbitrary
-vertex values on components for which $\sigma_{W,i}=0$.
-\end{proposition}
+Below saturation the executed command is simply
+$\alpha_{\mathrm{feas}}\mathbf{P}_{N}\mathbf{u}$: the projected network
+output itself, measured in units of the feasible maximum. No tuned
+amplitude bound appears anywhere in the interface; the semantics transfer
+across manipulators through $\dot{\mathbf{q}}^{\lim}$ alone. Coupling the
+amplitude to the output magnitude also ties commanded authority to the
+policy's confidence: where the squashed output is drawn toward zero, the
+commanded motion shrinks with it.
 
-\begin{IEEEproof}
-For $\mathbf{a}\in[-a_{\max},a_{\max}]^{m}$,
-\begin{equation}
-\boldsymbol{\sigma}_{W}^{\top}\mathbf{a}
-=
-\sum_{i}\sigma_{W,i}a_{i}
-\leq
-a_{\max}\sum_{i}|\sigma_{W,i}|.
-\end{equation}
-Equality is attained by choosing
-$a_i=a_{\max}\operatorname{sgn}(\sigma_{W,i})$ whenever
-$\sigma_{W,i}\neq 0$, which is a vertex-valued command.
-\end{IEEEproof}
-
-\begin{remark}[Scope]
-\label{rem:bangbang}
-Proposition~\ref{prop:vertex} concerns the pointwise Hamiltonian
-maximization. It does not by itself establish equality between the
-continuous box-constrained and vertex-constrained optimal-control
-problems. When a switching component vanishes, an optimal vertex-valued
-choice exists but is not unique. The result is derived in continuous time;
-the finite-rate controller below uses its one-step counterpart.
-\end{remark}
-
-We estimate long-horizon state value using a standard actor--critic
-training run. Proximal Policy Optimization (PPO) trains a stochastic
-vertex policy
-$\pi_{\theta}(\mathbf{a}\mid\mathbf{o})$
-together with a critic
-$\widehat{V}_{\phi}(\mathbf{o})$.
+\subsubsection{Observation}
 The observation $\mathbf{o}$ contains the normalized joint configuration
 and its square, task vectors $\mathbf{d}$ and $\mathbf{n}$, tool-axis
-features, and the previous command. The per-step reward is normalized path
+features, the four normalized constraint margins of the current
+configuration (joint-limit, orientation-cone, corridor, and collision
+clearance, each available in closed form), three projected-gradient
+magnitudes describing the local null-space leverage of the task-aligned
+objectives, and the \emph{executed} previous motion
+$\boldsymbol{\xi}_{t-1}/\dot{\mathbf{q}}^{\lim}$. Recording the executed
+motion rather than the raw network output removes the aliasing introduced
+by the projection: many outputs execute identically, and what the policy
+did is otherwise unrecoverable from the current configuration alone.
+
+\subsubsection{Training and deployment}
+Proximal Policy Optimization (PPO) trains the stochastic policy
+$\pi_{\theta}(\mathbf{u}\mid\mathbf{o})$ together with a critic
+$\widehat{V}_{\phi}(\mathbf{o})$. The per-step reward is normalized path
 progress,
 \begin{equation}
 \label{eq:reward}
@@ -491,17 +468,23 @@ v\Delta t
 0,1
 \right),
 \end{equation}
-with no terminal penalty. Its discounted return is the discrete-time
-counterpart of the exit-time objective in Eq.~(\ref{eq:value}).
+with no terminal penalty, no shaping, and no action masking; its
+discounted return is the discrete-time counterpart of the exit-time
+objective in Eq.~(\ref{eq:value}). The critic is used only during
+training. At deployment the controller executes one network forward pass,
+one null-space projection, and the $n$ scalar bounds of
+Eq.~(\ref{eq:alphafeas}) per control period; no successor state is
+predicted, no feasibility of the commanded action is checked, and no
+candidate set is enumerated.
 
-Direct deployment of $\pi_{\theta}$ serves as the reactive-policy
-baseline. Our controller instead uses the critic to rank the successor
-states generated by the vertex commands. Let
+\subsubsection{Model-assisted comparator}
+To quantify what deployment-time model access is worth, we also evaluate
+a value-ranking controller built from a vertex-action training run over
+the basis-box parameterization of Section~III. Let
 $F(\mathbf{q},\mathbf{a})$ denote the one-step kinematic transition under
-a held command, and let
-$\mathbf{o}^{+}(\mathbf{q},\mathbf{c},\mathbf{a})$
-denote the corresponding successor observation, with $\mathbf{a}$ placed
-in its previous-command component. The deployed value controller is
+a held command and
+$\mathbf{o}^{+}(\mathbf{q},\mathbf{c},\mathbf{a})$ the corresponding
+successor observation. The controller
 \begin{equation}
 \label{eq:value-law}
 \mathbf{a}_{V}(\mathbf{q})
@@ -515,22 +498,15 @@ F(\mathbf{q},\mathbf{a})\in\Omega
 \widehat{V}_{\phi}
 \left(
 \mathbf{o}^{+}(\mathbf{q},\mathbf{c},\mathbf{a})
-\right).
+\right)
 \end{equation}
-Thus, the continuous-time HJB analysis supplies the vertex candidate set,
-while the finite-rate implementation compares the learned values of the
-corresponding successor observations. Because the task-space controller
-commands the same nominal path increment for all feasible vertices, we rank
-them by successor value in the finite-rate implementation. With an
-approximate learned critic, Eq.~(\ref{eq:value-law}) is a model-based
-value-ranking rule rather than an exact policy-improvement guarantee.
-
-This construction avoids differentiating the learned critic directly.
-Instead, the known kinematic model maps each candidate command to a
-distinct successor state, and the critic is used only for long-horizon
-ranking. The same candidate-ranking structure can also consume analytic
-scalar fields, including the constraint-margin field used as a
-training-free baseline in Section~V.
+enumerates all $2^{m}$ vertex commands, discards those whose
+model-predicted successor violates a constraint, and executes the
+survivor with the highest critic value. The same ranking structure can
+also consume analytic scalar fields, including the constraint-margin
+field used as a training-free baseline in Section~V. These controllers
+consult the exact kinematic model at every period; Section~V measures the
+proposed reactive controller against them.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -557,10 +533,13 @@ disjoint.
     Unless otherwise specified, the orientation-cone half-angle is
     $\theta_{\max}=30^{\circ}$, the position tolerance is
     $\epsilon_{\mathrm{pos}}=20$\,mm, the commanded speed is
-    $v=0.2$\,m/s, the control period is $\Delta t=50$\,ms, and the
-    null-space authority is $a_{\max}=0.5$\,rad/s. All compared
-    controllers share the same task-space tracking, joint-limit,
-    orientation, and collision constraints.
+    $v=0.2$\,m/s, and the control period is $\Delta t=50$\,ms. The
+    proposed controller bounds its amplitude by the per-joint velocity
+    limits $\dot{\mathbf{q}}^{\lim}$ (FR3: $2.175$\,rad/s for joints 1--4
+    and $2.61$\,rad/s for joints 5--7); box-parameterized baselines use
+    $a_{\max}=0.5$\,rad/s. All compared controllers share the same
+    task-space tracking, joint-limit, orientation, and collision
+    constraints.
 
     \item \uline{Initial configurations:}
     For the full-framework and selection experiments, the candidate pool
@@ -581,14 +560,20 @@ disjoint.
     $\tau_{\mathrm{m}}=0.1$.
 
     \item \uline{Learned controllers:}
-    Vertex-PPO is trained for $30$M environment steps separately for each
-    manipulator, with discount $\gamma=0.99$ and $128$ parallel
-    environments (about $1.75$\,h per manipulator on one RTX~4090). The
-    proposed value controller uses the critic from the same training run
-    to rank model-generated successor states, at a deployment latency of
-    $15.5$\,ms per $50$\,ms decision ($14.8$\,ms for the margin law). All
-    resolution laws share the same task-space controller and null-space
-    parameterization.
+    The proposed reactive controller is a three-layer MLP of width
+    $2048$ trained with PPO for $240$M environment steps
+    ($\gamma=0.99$, $128$ parallel environments) on straight tasks; it
+    deploys as one forward pass and one null-space projection per
+    control period. The Vertex-PPO and Continuous-PPO baselines are
+    trained for $30$M steps at width $512$ under the basis-box
+    parameterization; the model-assisted value controller ranks
+    model-generated successors with the critic of the vertex run, at a
+    deployment latency of $15.5$\,ms per $50$\,ms decision ($14.8$\,ms
+    for the margin law). At the baselines' matched budget and width, the
+    proposed interface already reaches a mean Ratio of $84.9\%$ on FR3
+    straight tasks, so the comparison is not decided by scale alone. All
+    resolution laws share the same task-space controller and constraint
+    set.
 
     \item \uline{Evaluation metrics:}
     All performance is reported as the executed stroke and \emph{Ratio},
@@ -670,11 +655,11 @@ curved family uses $2{,}500$ tasks.
 \label{sec:ladder}
 
 We first isolate the motion-generation stage by comparing the proposed
-critic-guided value law with five redundancy-resolution baselines. For
-each task, all methods start from the same initial configuration and share
-the same task-space controller, feasibility constraints, null-space
-parameterization, and control period. Thus, differences in executed stroke
-are attributable to the redundancy-resolution law.
+physically normalized reactive controller with six redundancy-resolution
+alternatives. For each task, all methods start from the same initial
+configuration and share the same task-space controller, feasibility
+constraints, and control period. Thus, differences in executed stroke are
+attributable to the redundancy-resolution law.
 
 \begin{itemize}[leftmargin=1em]
 \renewcommand{\labelitemi}{$\triangleright$}
@@ -708,9 +693,9 @@ are attributable to the redundancy-resolution law.
     learned long-horizon information.
 
     \item \uline{Analytic Margin Resolution (Margin):}
-    The same one-step vertex-selection structure as the proposed controller
-    is used, but successor configurations are ranked by the training-free
-    constraint-margin field
+    The same one-step vertex-selection structure as the model-assisted
+    value controller is used, but successor configurations are ranked by
+    the training-free constraint-margin field
     \begin{equation}
     \label{eq:margin-field}
     \Phi_{\mathrm{m}}(\mathbf{q})
@@ -734,8 +719,9 @@ are attributable to the redundancy-resolution law.
     direct reactive learning achieves without the vertex restriction.
 
     \item \uline{Reactive Vertex Policy (Vertex PPO):}
-    The vertex-valued PPO policy of Section~\ref{sec:traj} directly maps the
-    current observation to a null-space command.
+    A PPO policy over the vertex commands
+    $\{-a_{\max},a_{\max}\}^{m}$ of the basis-box parameterization,
+    directly mapping the current observation to a null-space command.
 
     \item \uline{Hybrid Reactive Policy (Vertex PPO+Classical):}
     The same vertex-PPO policy is used away from the joint-limit boundary, while
@@ -743,32 +729,45 @@ are attributable to the redundancy-resolution law.
     defined by normalized joint-limit distance, with hysteresis thresholds
     $0.98/0.94$.
 
-    \item \uline{Critic-Guided Value Resolution (Value, Ours):}
-    The proposed controller of Eq.~\ref{eq:value-law} uses the critic from
-    the same vertex-PPO training run to rank feasible successor observations
+    \item \uline{Model-Assisted Value Ranking (Value):}
+    The controller of Eq.~\ref{eq:value-law} uses the critic from the
+    vertex-PPO training run to rank feasible successor observations
     generated by the one-step kinematic model and selects the
-    highest-valued vertex command.
+    highest-valued vertex command. It represents the strongest use of
+    deployment-time model access in our study.
+
+    \item \uline{Physically Normalized Reactive Policy (DirFrac, Ours):}
+    The controller of Section~\ref{sec:traj}, deployed as its bare
+    policy: one forward pass, one null-space projection, and the
+    closed-form amplitude bound per control period. No model rollout,
+    feasibility screening, or candidate enumeration is performed at
+    deployment.
 \end{itemize}
 
 Table~\ref{tab:mainresult} reports the results per path family for each
 manipulator; on the curved families every learned method runs zero-shot.
-Classical gradient resolution provides only a modest
-improvement over zero null-space motion, whereas the analytic margin law
-substantially extends the stroke on all three manipulators. Direct
-deployment of the vertex-PPO policy remains below the margin law, while the
-critic-guided value controller achieves the longest mean stroke on every
-manipulator and every path family, although all learned methods are
-trained on straight tasks only.
+Classical gradient resolution provides only a modest improvement over
+zero null-space motion, whereas the analytic margin law substantially
+extends the stroke on all three manipulators. Under the basis-box action
+space, direct deployment of the vertex-PPO policy remains below the
+margin law, and the model-assisted value ranking leads that group on
+every manipulator and family. The proposed reactive controller surpasses
+all of them on the densest benchmark: $89.8\%$ mean Ratio with a 10th
+percentile of $63.3\%$ on FR3 straight tasks, against $86.3/57.9$ for
+value ranking, with only $4.0\%$ of tasks worse in a per-task pairing.
 
-The Vertex PPO and Value rows are particularly informative because they use the
-policy and critic obtained from the same actor--critic training run. Their
-comparison therefore isolates two ways of consuming the learned
-information: direct reactive action prediction through the policy, and
-successor-state ranking through the critic combined with the kinematic
-model. The consistently stronger performance of the latter supports the
-division adopted by our motion-generation stage: the critic provides
-long-horizon state evaluation, while the model performs local candidate
-generation and discrimination.
+The Vertex PPO, Value, and DirFrac rows together locate where this
+advantage comes from. Vertex PPO and Value share one training run; in box
+coordinates, consuming the learned information through the critic and
+the one-step model dominates the policy head by a wide margin
+($86.3$ vs $72.3$ on FR3 straight), which would suggest that
+deployment-time model access is essential. The DirFrac row shows the gap
+is instead a property of the action and observation coordinates: at the
+baselines' own budget and width the physically normalized policy already
+reaches $84.9\%$, and at scale it overtakes the model-assisted
+controller while performing no model query at all. Long-horizon
+constraint avoidance is learnable end to end once the interface is
+physically grounded.
 
 \begin{table*}[!htbp]
 \centering
@@ -806,7 +805,7 @@ Type
  &  & Serpentine & 0.535 & 80.9 / 37.9 & 0.430 & 76.5 / 29.6 & 0.203 & 71.5 / 33.9 \\
  &  & Rot.-Axis & 0.526 & 81.5 / 37.5 & 0.435 & 78.8 / 33.0 & 0.209 & 74.2 / 36.8 \\
 \midrule
-\multirow{16}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 69.4 / 17.4 & 0.340 & 66.7 / 16.8 & 0.197 & 71.1 / 30.3 \\
+\multirow{20}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 69.4 / 17.4 & 0.340 & 66.7 / 16.8 & 0.197 & 71.1 / 30.3 \\
  &  & Arc & 0.447 & 61.5 / 13.0 & 0.380 & 62.2 / 14.4 & 0.201 & 70.5 / 30.7 \\
  &  & Serpentine & 0.407 & 67.0 / 16.0 & 0.337 & 64.5 / 16.1 & 0.191 & 67.9 / 27.3 \\
  &  & Rot.-Axis & 0.411 & 68.4 / 17.4 & 0.344 & 66.9 / 17.2 & 0.199 & 71.0 / 30.9 \\
@@ -821,10 +820,15 @@ Type
  &  & Serpentine & 0.457 & 73.0 / 21.4 & 0.370 & 69.2 / 19.6 & 0.202 & 71.2 / 31.3 \\
  &  & Rot.-Axis & 0.458 & 74.4 / 23.3 & 0.374 & 71.3 / 20.5 & 0.209 & 74.2 / 35.2 \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{\textbf{Critic-Guided Value (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.563}} & \limebox{\textbf{86.3 / 57.9}} & \limebox{\textbf{0.462}} & \limebox{\textbf{82.1 / 45.5}} & \limebox{\textbf{0.225}} & \limebox{\textbf{79.2 / 40.6}} \\
- &  & \textbf{Arc} & \limebox{\textbf{0.733}} & \limebox{\textbf{79.8 / 31.9}} & \limebox{\textbf{0.584}} & \limebox{\textbf{79.9 / 37.4}} & \limebox{\textbf{0.229}} & \limebox{\textbf{78.8 / 41.5}} \\
- &  & \textbf{Serpentine} & \limebox{\textbf{0.557}} & \limebox{\textbf{83.0 / 45.5}} & \limebox{\textbf{0.461}} & \limebox{\textbf{79.9 / 41.8}} & \limebox{\textbf{0.219}} & \limebox{\textbf{76.1 / 38.3}} \\
- &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.554}} & \limebox{\textbf{84.3 / 48.2}} & \limebox{\textbf{0.463}} & \limebox{\textbf{82.1 / 45.2}} & \limebox{\textbf{0.225}} & \limebox{\textbf{78.8 / 42.8}} \\
+ & \multirow{4}{*}{\shortstack[l]{Model-Assisted Value}} & Straight & 0.563 & 86.3 / 57.9 & \limebox{0.462} & \limebox{82.1 / 45.5} & \limebox{0.225} & \limebox{79.2 / 40.6} \\
+ &  & Arc & \limebox{0.733} & \limebox{79.8 / 31.9} & \limebox{0.584} & \limebox{79.9 / 37.4} & \limebox{0.229} & \limebox{78.8 / 41.5} \\
+ &  & Serpentine & \limebox{0.557} & \limebox{83.0 / 45.5} & \limebox{0.461} & \limebox{79.9 / 41.8} & \limebox{0.219} & \limebox{76.1 / 38.3} \\
+ &  & Rot.-Axis & \limebox{0.554} & \limebox{84.3 / 48.2} & \limebox{0.463} & \limebox{82.1 / 45.2} & \limebox{0.225} & \limebox{78.8 / 42.8} \\
+\cmidrule(lr){2-9}
+ & \multirow{4}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.598}} & \limebox{\textbf{89.8 / 63.3}} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
+ &  & \textbf{Arc} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
+ &  & \textbf{Serpentine} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
+ &  & \textbf{Rot.-Axis} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} & \textbf{[XX]} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -832,13 +836,16 @@ Type
     Ratio is the per-task ratio of the executed stroke to the task's
     pointwise-reachable length $\ell^{\mathrm{pw}}$, reported in percent
     as mean / p10.
+    \item[Note 2] The proposed controller is trained per manipulator on
+    straight tasks; [XX] entries await the corresponding replication
+    runs.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
 
 \paragraph{Full framework.}
 We next combine the learned initial-configuration selector with the
-critic-guided value controller. Table~\ref{tab:framework} reports the
+model-assisted value controller. Table~\ref{tab:framework} reports the
 result on the FR3 evaluation sets of all four path families, with the
 value controller fixed across all rows so that only the initial
 configuration changes. On straight tasks, learned selection increases the
@@ -1013,10 +1020,11 @@ against $82.1\%$ for the native critic; in the reverse direction, the xArm7-trai
 critic reaches $81.5\%$ on the FR3 against $86.3\%$ natively. For reference,
 transferring the reactive policy head instead loses a larger share of the
 native improvement in both directions.
-This asymmetry is consistent with the division adopted by the framework:
-the transferable component is the smooth long-horizon state evaluation,
-while the fine action discrimination is recomputed on the test manipulator
-by its own kinematic model.
+This asymmetry is consistent with the information content of the two
+learned objects: the smooth long-horizon state evaluation transfers
+across kinematically similar arms, whereas fine action discrimination is
+manipulator-specific and is recomputed on the test manipulator by its own
+kinematic model.
 
 \begin{table}[!htbp]
 \centering
@@ -1075,7 +1083,7 @@ executable from those whose points are merely individually reachable.
 \subsection{Real-World Validation}
 \label{sec:real}
 
-Because the proposed framework is kinematic, the physical experiments are designed to assess whether the generated extreme motions remain executable after accounting for hardware motion limits. Trajectories are generated offline by the learned selector and critic-guided value controller, then time-parameterized using Ruckig~\cite{berscheid2021jerk} under the manufacturer's joint velocity and acceleration limits. The resulting trajectories are executed on a Franka Research 3 through its joint-position interface.
+Because the proposed framework is kinematic, the physical experiments are designed to assess whether the generated extreme motions remain executable after accounting for hardware motion limits. Trajectories are generated offline by the learned selector and the deployed motion-generation controller, then time-parameterized using Ruckig~\cite{berscheid2021jerk} under the manufacturer's joint velocity and acceleration limits. The resulting trajectories are executed on a Franka Research 3 through its joint-position interface.
 
 We evaluate $[N]$ tasks spanning a range of simulated stroke lengths and compare simulation and hardware in terms of completed stroke and Cartesian path-tracking error. The hardware reproduces $[XX]\%$ of the simulated stroke on average, with an RMS / maximum path deviation of $[XX]/[XX]$\,mm. These results show that the kinematically generated motions remain executable after time parameterization and can be reproduced on the physical robot while maintaining the prescribed Cartesian path.
 
@@ -1087,9 +1095,9 @@ We evaluate $[N]$ tasks spanning a range of simulated stroke lengths and compare
 
 In this paper, we studied \textit{continuous kinematic reachability}, the maximum extent of a prescribed path that can be realized by a single continuous joint trajectory. Extreme motion generation was formulated as two coupled decisions: selecting the initial configuration and resolving redundancy throughout execution. We evaluated the realized stroke across three manipulators and used numerical pointwise reachability as a task-specific reference.
 
-For redundancy resolution, the exit-time formulation and HJB analysis show that pointwise Hamiltonian maximization admits vertex-valued null-space commands. This structure enables a one-step kinematic model to generate candidate successor states that are ranked by a learned critic. Across all three manipulators, critic-guided resolution achieves longer strokes than the corresponding reactive policy and the training-free baselines. For initial configuration selection, rollout-supervised ranking further improves the achievable stroke and transfers to path families absent from selector training.
+For redundancy resolution, the deciding factor proved to be the coordinates of the action and observation interface. With the direction given by the exact null-space projector, the amplitude anchored to the per-joint velocity limits, and the observation exposing executed motion and constraint margins, a plain policy-gradient run deploys as a single forward pass per control period and surpasses model-assisted controllers that enumerate, screen, and rank successor states with the exact kinematic model. For initial configuration selection, rollout-supervised ranking further improves the achievable stroke and transfers to path families absent from selector training.
 
-Together, these results support a candidate-and-rank framework in which model-based candidate generation is combined with learned long-horizon evaluation. The same continuous-path formulation also induces a task-aware criterion for manipulator base placement. Future work will extend the framework to dynamic constraints and paths specified online.
+Together, these results indicate that long-horizon constraint avoidance is learnable end to end once the interface is physically grounded, and that deployment-time model access is not the binding advantage it appears to be under hand-constructed action coordinates. The same continuous-path formulation also induces a task-aware criterion for manipulator base placement. Future work will extend the framework to dynamic constraints and paths specified online.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

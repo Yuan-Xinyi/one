@@ -99,7 +99,7 @@
 \bstctlcite{IEEEexample:BSTcontrol}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{abstract}
-This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length that a manipulator executes along a prescribed path. Conventional reachability analysis indicates whether individual path points are attainable, but not how far a \emph{single continuous joint trajectory} can carry the tool before joint limits, orientation tolerance, or collision terminate the motion. We refer to this maximum continuously executable extent as \textit{continuous kinematic reachability} and use numerical pointwise reachability as a task-specific reference for the realized stroke. Achieving a long stroke requires two coupled decisions: selecting the initial configuration and resolving redundancy during execution. We address both through candidate generation and learned ranking. Feasible initial configurations are ranked by a rollout-supervised selector. For motion generation, we formulate stroke maximization as a discounted exit-time optimal control problem and act on it through a physically normalized interface: the policy output is projected onto the null space of the position Jacobian to give a redundancy direction, and its projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction. Combined with constraint-margin and executed-motion observations, this interface lets a reinforcement-learned policy deploy as one forward pass and one projection per control period---no lookahead, no feasibility screening---while reaching $89.8\%$ of the per-task pointwise-reachable reference on the densest benchmark, surpassing model-assisted controllers that enumerate and rank successor states with the exact kinematic model ($86.0\%$). Learned initial selection further increases the achievable stroke. Real-world validation assesses physical executability, and the same continuous-path criterion extends naturally to task-aware manipulator base placement.
+This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length that a manipulator executes along a prescribed path. Conventional reachability analysis indicates whether individual path points are attainable, but not how far a \emph{single continuous joint trajectory} can carry the tool before joint limits, orientation tolerance, or collision terminate the motion. We refer to this maximum continuously executable extent as \textit{continuous kinematic reachability} and use numerical pointwise reachability as a task-specific reference for the realized stroke. Achieving a long stroke requires two coupled decisions: selecting the initial configuration and resolving redundancy during execution. We address both through candidate generation and learned ranking. Feasible initial configurations are ranked by a rollout-supervised selector. For motion generation, we formulate stroke maximization as a discounted exit-time optimal control problem and act on it through a physically normalized interface: the policy output is projected onto the null space of the position Jacobian to give a redundancy direction, and its projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction. Combined with constraint-margin and executed-motion observations, this interface lets a reinforcement-learned policy deploy as one forward pass and one projection per control period---no lookahead, no feasibility screening---while reaching $89.8\%$ of the per-task pointwise-reachable reference on the densest benchmark, ahead of every evaluated alternative that consults the exact kinematic model at deployment time. Learned initial selection further increases the achievable stroke. Real-world validation assesses physical executability, and the same continuous-path criterion extends naturally to task-aware manipulator base placement.
 
 
 
@@ -125,7 +125,7 @@ The achievable stroke depends on two coupled decisions that pointwise reachabili
 
 We address initial selection through a candidate-and-rank structure: kinematically feasible configurations are generated and ranked by a learned selector supervised by rollout outcomes. For motion generation, the deciding factor turns out to be the coordinates in which the policy acts and observes. We derive a physically normalized interface: an exact null-space projector turns the network output into a redundancy direction, independent of any hand-constructed basis, while the output's projected magnitude commands a fraction of the largest amplitude the joint velocity limits admit along that direction; the observation exposes the previously executed motion and the normalized constraint margins of the current configuration. Under this interface, a standard actor--critic training run deploys as its bare policy---one forward pass and one projection per control period---and surpasses controllers that consult the exact kinematic model at every step to enumerate, screen, and rank candidate successors. The comparison carries a broader lesson: once the action and observation coordinates are physically grounded, long-horizon constraint avoidance is learnable end to end, and the exactness of a one-step model ceases to be the binding advantage.
 
-We evaluate the framework on three manipulators with $10{,}000$ held-out path-following tasks each. The experiments compare redundancy-resolution laws---training-free fields, box-parameterized reactive policies, model-assisted value ranking, and the proposed physically normalized policy---and initial-configuration selection rules. The learned selector is further evaluated on path families absent from its training distribution. Hardware experiments assess whether the generated motions remain executable after time parameterization, and the same continuous-path criterion naturally induces a task-aware criterion for manipulator base placement.
+We evaluate the framework on three manipulators with $10{,}000$ held-out path-following tasks each. The experiments compare redundancy-resolution laws---training-free fields, box-parameterized reactive policies, and the proposed physically normalized policy---and initial-configuration selection rules. The learned selector is further evaluated on path families absent from its training distribution. Hardware experiments assess whether the generated motions remain executable after time parameterization, and the same continuous-path criterion naturally induces a task-aware criterion for manipulator base placement.
 
 In summary, the main contributions of this work are as follows.
 \begin{itemize}
@@ -210,12 +210,10 @@ model or exploit the multiplicity of feasible
 configurations~\cite{ames2022ikflow,zhang2025ikdiffuser,huang2024diffusionseeder,yoon2023learning}.
 In reinforcement-learning approaches, the deployed object is normally the
 policy; model-based alternatives instead rank candidate successor states
-with a learned value function. We evaluate both consumption modes within
-the same training run: under a conventional basis-box action space, the
-model-assisted value ranking dominates the policy head, whereas under the
-proposed physically normalized interface the bare policy overtakes the
-model-assisted controller. The comparison locates the advantage in the
-coordinates rather than in deployment-time model access.
+with a learned or analytic score. We show that, once the action and
+observation coordinates are physically normalized, the bare policy
+surpasses model-assisted successor ranking, locating the advantage in
+the coordinates rather than in deployment-time model access.
 
 
 \section{Problem Formulation}
@@ -477,36 +475,6 @@ Eq.~(\ref{eq:alphafeas}) per control period; no successor state is
 predicted, no feasibility of the commanded action is checked, and no
 candidate set is enumerated.
 
-\subsubsection{Model-assisted comparator}
-To quantify what deployment-time model access is worth, we also evaluate
-a value-ranking controller built from a vertex-action training run over
-the basis-box parameterization of Section~III. Let
-$F(\mathbf{q},\mathbf{a})$ denote the one-step kinematic transition under
-a held command and
-$\mathbf{o}^{+}(\mathbf{q},\mathbf{c},\mathbf{a})$ the corresponding
-successor observation. The controller
-\begin{equation}
-\label{eq:value-law}
-\mathbf{a}_{V}(\mathbf{q})
-=
-\arg\max_{
-\substack{
-\mathbf{a}\in\{-a_{\max},a_{\max}\}^{m}\\
-F(\mathbf{q},\mathbf{a})\in\Omega
-}
-}
-\widehat{V}_{\phi}
-\left(
-\mathbf{o}^{+}(\mathbf{q},\mathbf{c},\mathbf{a})
-\right)
-\end{equation}
-enumerates all $2^{m}$ vertex commands, discards those whose
-model-predicted successor violates a constraint, and executes the
-survivor with the highest critic value. The same ranking structure can
-also consume analytic scalar fields, including the constraint-margin
-field used as a training-free baseline in Section~V. These controllers
-consult the exact kinematic model at every period; Section~V measures the
-proposed reactive controller against them.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -566,10 +534,8 @@ disjoint.
     deploys as one forward pass and one null-space projection per
     control period. The Continuous-PPO baseline and the vertex policy
     inside the hybrid are trained for $30$M steps at width $512$ under
-    the basis-box parameterization. The model-assisted value reference
-    quoted in the text ranks model-generated successors with the critic
-    of the vertex run, at a deployment latency of $15.5$\,ms per
-    $50$\,ms decision ($14.8$\,ms for the margin law). At the baselines'
+    the basis-box parameterization. The margin law's one-step successor
+    evaluation costs $14.8$\,ms per $50$\,ms decision. At the baselines'
     matched budget and width, the proposed interface already reaches a
     mean Ratio of $84.9\%$ on FR3 straight tasks, so the comparison is
     not decided by scale alone. All resolution laws share the same
@@ -693,9 +659,9 @@ attributable to the redundancy-resolution law.
     learned long-horizon information.
 
     \item \uline{Analytic Margin Resolution (Margin):}
-    The same one-step vertex-selection structure as the model-assisted
-    value controller is used, but successor configurations are ranked by
-    the training-free constraint-margin field
+    Successor configurations under the $2^{m}$ vertex commands of the
+    basis-box parameterization are generated by the one-step kinematic
+    model and ranked by the training-free constraint-margin field
     \begin{equation}
     \label{eq:margin-field}
     \Phi_{\mathrm{m}}(\mathbf{q})
@@ -753,11 +719,9 @@ reward, and training distribution; they differ only in the action and
 observation coordinates, and the gap is $69.4$ versus $89.8$ in mean
 Ratio. Scale is not the explanation: at the baselines' own budget and
 width the physically normalized interface already reaches $84.9\%$. Nor
-is deployment-time model access: the strongest model-assisted
-configuration we evaluated---vertex enumeration, feasibility screening,
-and critic ranking of successor states, Eq.~(\ref{eq:value-law})---reaches
-$86.3/57.9$ on the same benchmark and is likewise surpassed, at zero
-model queries against sixteen per period. Long-horizon constraint
+is deployment-time model access: the margin law consults the exact
+kinematic model sixteen times per period and is nevertheless surpassed
+by a controller that consults it zero times. Long-horizon constraint
 avoidance is learnable end to end once the interface is physically
 grounded.
 
@@ -829,20 +793,20 @@ Type
 \end{table*}
 
 \paragraph{Full framework.}
-We next combine the learned initial-configuration selector with the
-model-assisted value controller. Table~\ref{tab:framework} reports the
+We next combine the learned initial-configuration selector with a fixed
+motion-generation controller. Table~\ref{tab:framework} reports the
 result on the FR3 evaluation sets of all four path families, with the
-value controller fixed across all rows so that only the initial
+motion controller identical across all rows so that only the initial
 configuration changes. On straight tasks, learned selection increases the
-mean stroke from $0.617$\,m for a randomly chosen candidate to
-$0.678$\,m, reaching a mean Ratio of $94.9\%$ (10th percentile $92.5\%$),
+mean stroke from $[XX]$\,m for a randomly chosen candidate to
+$[XX]$\,m, reaching a mean Ratio of $[XX]\%$ (10th percentile $[XX]\%$),
 while the within-pool oracle indicates the remaining gap attributable to
 candidate ranking; the same ordering holds on every curved family.
 
 \begin{table}[!htbp]
 \centering
 \caption{Full-Framework Results on the FR3 Evaluation Sets
-(Value Controller Used for Motion Generation in All Rows)}
+(One Fixed Motion-Generation Controller in All Rows)}
 \label{tab:framework}
 \begin{threeparttable}
 \begin{tabular}{llcc}
@@ -852,22 +816,22 @@ Initial configuration & Family
 & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
 \multirow{4}{*}{Random candidate}
-& Straight   & 0.617 & 87.2 / 76.1 \\
-& Arc        & 0.736 & 80.8 / 49.5 \\
-& Serpentine & 0.579 & 85.1 / 71.3 \\
-& Rot.-Axis  & 0.567 & 85.5 / 69.3 \\
+& Straight   & 0& 0 / 0 \\
+& Arc        & 0& 0 / 0 \\
+& Serpentine & 0& 0 / 0 \\
+& Rot.-Axis  & 0& 0 / 0 \\
 \midrule
 \multirow{4}{*}{\textbf{Learned selector (ours)}}
-& \textbf{Straight}   & \textbf{0.678} & \textbf{94.9 / 92.5} \\
-& \textbf{Arc}        & \textbf{0.848} & \textbf{88.8 / 51.2} \\
-& \textbf{Serpentine} & \textbf{0.631} & \textbf{91.9 / 87.3} \\
-& \textbf{Rot.-Axis}  & \textbf{0.624} & \textbf{92.9 / 87.7} \\
+& \textbf{Straight}   & \textbf{0}& \textbf{0 / 0} \\
+& \textbf{Arc}        & \textbf{0}& \textbf{0 / 0} \\
+& \textbf{Serpentine} & \textbf{0}& \textbf{0 / 0} \\
+& \textbf{Rot.-Axis}  & \textbf{0}& \textbf{0 / 0} \\
 \midrule
 \multirow{4}{*}{Within-pool oracle ($K$ rollouts)}
-& Straight   & 0.706 & 98.0 / 96.1 \\
-& Arc        & 1.056 & 97.4 / 97.3 \\
-& Serpentine & 0.681 & 96.9 / 94.0 \\
-& Rot.-Axis  & 0.673 & 98.2 / 97.6 \\
+& Straight   & 0& 0 / 0 \\
+& Arc        & 0& 0 / 0 \\
+& Serpentine & 0& 0 / 0 \\
+& Rot.-Axis  & 0& 0 / 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -891,10 +855,10 @@ To isolate the selection stage, we fix the motion-generation controller and
 compare different ranking rules on the same candidate pool.
 Table~\ref{tab:ablate_seed} reports results on $2500$ held-out tasks per
 path family. On straight tasks, taking the first feasible candidate
-reaches a mean Ratio of $85.7\%$;
+reaches a mean Ratio of $[XX]\%$;
 ranking by joint-limit margin or by the analytic margin field raises this
-to $91.1\%$, while the learned selector reaches $94.0\%$ with a 10th
-percentile of $92.0\%$. These results show that rollout supervision provides a
+to $[XX]\%$, while the learned selector reaches $[XX]\%$ with a 10th
+percentile of $[XX]\%$. These results show that rollout supervision provides a
 stronger ranking signal for initial configurations than the tested
 instantaneous geometric heuristics.
 
@@ -915,45 +879,45 @@ Type
 & \shortstack{Ratio (\%)\\mean / p10}
 & \shortstack{Near-Oracle\\Tasks (\%)} \\
 \midrule
-\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & \pinkbox{0.571} & \pinkbox{85.7 / 57.2} & 37.8 \\
- &  & Arc & 0.733 & \pinkbox{79.7 / 31.9} & 32.5 \\
- &  & Serpentine & \pinkbox{0.557} & \pinkbox{83.0 / 45.5} & 36.7 \\
- &  & Rot.-Axis & \pinkbox{0.554} & \pinkbox{84.3 / 48.2} & 38.4 \\
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \midrule
-\multirow{4}{*}{Random} & \multirow{4}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & 0.584 & 86.8 / 72.7 & \pinkbox{8.0} \\
- &  & Arc & 0.736 & 80.8 / 49.5 & \pinkbox{6.6} \\
- &  & Serpentine & 0.579 & 85.1 / 71.3 & \pinkbox{7.6} \\
- &  & Rot.-Axis & 0.567 & 85.5 / 69.3 & \pinkbox{7.4} \\
+\multirow{4}{*}{Random} & \multirow{4}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \midrule
-\multirow{16}{*}{Heuristic} & \multirow{4}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.579 & 86.6 / 59.7 & 40.4 \\
- &  & Arc & 0.732 & 80.3 / 29.7 & 35.3 \\
- &  & Serpentine & 0.574 & 84.7 / 54.8 & 41.8 \\
- &  & Rot.-Axis & 0.558 & 84.8 / 49.6 & 39.9 \\
+\multirow{16}{*}{Heuristic} & \multirow{4}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \cmidrule(lr){2-6}
- & \multirow{4}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.580 & 86.7 / 60.9 & 40.3 \\
- &  & Arc & \pinkbox{0.731} & 80.9 / 31.6 & 35.6 \\
- &  & Serpentine & 0.582 & 85.7 / 58.3 & 41.0 \\
- &  & Rot.-Axis & 0.567 & 85.9 / 56.3 & 40.6 \\
+ & \multirow{4}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \cmidrule(lr){2-6}
- & \multirow{4}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.618 & 90.7 / 76.6 & 48.0 \\
- &  & Arc & 0.803 & 85.6 / 44.3 & 41.6 \\
- &  & Serpentine & 0.615 & 89.0 / 73.9 & 47.5 \\
- &  & Rot.-Axis & 0.601 & 89.3 / 70.2 & 46.2 \\
+ & \multirow{4}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \cmidrule(lr){2-6}
- & \multirow{4}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.621 & 91.1 / 77.6 & 48.6 \\
- &  & Arc & 0.807 & 85.9 / 44.9 & 42.3 \\
- &  & Serpentine & 0.615 & 89.1 / 74.1 & 47.4 \\
- &  & Rot.-Axis & 0.604 & 89.7 / 71.4 & 46.5 \\
+ & \multirow{4}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \midrule
-\multirow{4}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{\textbf{Learned Selector (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.638}} & \limebox{\textbf{94.0 / 92.0}} & \limebox{\textbf{69.1}} \\
- &  & \textbf{Arc} & \limebox{\textbf{0.848}} & \limebox{\textbf{88.8 / 51.2}} & \limebox{\textbf{57.8}} \\
- &  & \textbf{Serpentine} & \limebox{\textbf{0.631}} & \limebox{\textbf{91.9 / 87.3}} & \limebox{\textbf{67.1}} \\
- &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.624}} & \limebox{\textbf{92.9 / 87.7}} & \limebox{\textbf{66.0}} \\
+\multirow{4}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{\textbf{Learned Selector (Ours)}}} & \textbf{Straight} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
+ &  & \textbf{Arc} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
+ &  & \textbf{Serpentine} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
+ &  & \textbf{Rot.-Axis} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
 \midrule
-\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.681 & 98.4 / 98.2 & 100.0 \\
- &  & Arc & 1.056 & 97.4 / 97.3 & 100.0 \\
- &  & Serpentine & 0.681 & 96.9 / 94.0 & 100.0 \\
- &  & Rot.-Axis & 0.673 & 98.2 / 97.6 & 100.0 \\
+\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0& 0 / 0& 0 \\
+ &  & Arc & 0& 0 / 0& 0 \\
+ &  & Serpentine & 0& 0 / 0& 0 \\
+ &  & Rot.-Axis & 0& 0 / 0& 0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -983,72 +947,11 @@ Table~\ref{tab:ablate_seed} distinguish unseen in-distribution tasks
 rotating-axis families that are absent from training. The results show that the achieved Ratio is governed by path curvature
 rather than by training membership: the OOD rotating-axis family, whose
 centerline is straight, matches the in-distribution straight family
-($92.9\%$ vs $94.0\%$ in mean Ratio), and the OOD serpentine family even
-exceeds the in-distribution arc family ($91.9\%$ vs $88.8\%$). On every family the learned
+($[XX]\%$ vs $[XX]\%$ in mean Ratio), and the OOD serpentine family even
+exceeds the in-distribution arc family ($[XX]\%$ vs $[XX]\%$). On every family the learned
 selector remains the strongest non-oracle ranking rule.
 
 
-\subsubsection{Cross-Arm Transfer of the Learned Value}
-\label{sec:crossarm}
-
-We next evaluate how manipulator-specific the learned value is by
-transferring the \emph{critic} between the two 7-DoF manipulators without
-retraining. The test manipulator keeps its own kinematic model, task-space
-controller, constraints, and null-space basis; only the scalar field that
-ranks the successor states is replaced by the critic trained on the other
-arm. The Cobotta is excluded because its null-space dimension is $m=3$.
-Table~\ref{tab:crossarm} reports the executed stroke and the mean per-task
-ratio to the classical controller of the test manipulator.
-
-The FR3-trained critic reaches a mean Ratio of $81.8\%$ on the xArm7,
-against $82.1\%$ for the native critic; in the reverse direction, the xArm7-trained
-critic reaches $81.5\%$ on the FR3 against $86.3\%$ natively. For reference,
-transferring the reactive policy head instead loses a larger share of the
-native improvement in both directions.
-This asymmetry is consistent with the information content of the two
-learned objects: the smooth long-horizon state evaluation transfers
-across kinematically similar arms, whereas fine action discrimination is
-manipulator-specific and is recomputed on the test manipulator by its own
-kinematic model.
-
-\begin{table}[!htbp]
-\centering
-\caption{Cross-Arm Transfer of the Learned Value across Path Families}
-\label{tab:crossarm}
-\begin{threeparttable}
-\begin{tabular}{llcccc}
-\toprule
- & & \multicolumn{2}{c}{Test on FR3}
- & \multicolumn{2}{c}{Test on xArm7} \\
-\cmidrule(lr){3-4} \cmidrule(lr){5-6}
-Train & Family
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
-\midrule
-\multirow{4}{*}{FR3}
-& Straight   & 0.563 & 86.3 / 57.9 & 0.460 & 81.8 / 44.5 \\
-& Arc        & 0.733 & 79.8 / 31.9 & 0.574 & 79.3 / 35.3 \\
-& Serpentine & 0.557 & 83.0 / 45.5 & 0.458 & 79.6 / 40.0 \\
-& Rot.-Axis  & 0.554 & 84.3 / 48.2 & 0.460 & 81.8 / 43.9 \\
-\midrule
-\multirow{4}{*}{xArm7}
-& Straight   & 0.525 & 81.5 / 42.5 & 0.462 & 82.1 / 45.5 \\
-& Arc        & 0.662 & 74.5 / 25.5 & 0.584 & 79.9 / 37.4 \\
-& Serpentine & 0.521 & 78.4 / 38.1 & 0.461 & 79.9 / 41.8 \\
-& Rot.-Axis  & 0.509 & 78.5 / 36.8 & 0.463 & 82.1 / 45.2 \\
-\bottomrule
-\end{tabular}
-\begin{tablenotes}
-    \item[Note 1] Ratio is the per-task stroke over the task's
-    $\ell^{\mathrm{pw}}$ on the test manipulator, reported in percent
-    as mean / p10. The test manipulator always uses
-    its own kinematic model in the value controller of
-    Eq.~\ref{eq:value-law}; only the critic is transferred. Diagonal
-    entries are the corresponding native value-law results. The
-    6-DoF Cobotta is excluded because its null-space dimension differs.
-\end{tablenotes}
-\end{threeparttable}
-\end{table}
 
 
 \subsubsection{Implication for Manipulator Base Placement}

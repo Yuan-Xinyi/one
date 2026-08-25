@@ -769,8 +769,8 @@ motion-generation controller. Table~\ref{tab:framework} reports the
 result on the FR3 evaluation sets of all four path families, with the
 motion controller identical across all rows so that only the initial
 configuration changes. On straight tasks, learned selection increases the
-mean stroke from $[XX]$\,m for a randomly chosen candidate to
-$[XX]$\,m, reaching a mean Ratio of $[XX]\%$ (10th percentile $[XX]\%$),
+mean stroke from $0.642$\,m for a randomly chosen candidate to
+$0.682$\,m, reaching a mean Ratio of $95.6\%$ (10th percentile $95.2\%$),
 while the within-pool oracle indicates the remaining gap attributable to
 candidate ranking; the same ordering holds on every curved family.
 
@@ -787,22 +787,22 @@ Initial configuration & Family
 & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
 \multirow{4}{*}{Random candidate}
-& Straight   & 0& 0 / 0 \\
-& Arc        & 0& 0 / 0 \\
-& Serpentine & 0& 0 / 0 \\
-& Rot.-Axis  & 0& 0 / 0 \\
+& Straight   & 0.642 & 90.6 / 79.3 \\
+& Arc   & 0.783 & 84.7 / 55.5 \\
+& Serpentine   & 0.602 & 88.2 / 73.8 \\
+& Rot.-Axis   & 0.594 & 89.3 / 73.2 \\
 \midrule
 \multirow{4}{*}{\textbf{Learned selector (ours)}}
-& \textbf{Straight}   & \textbf{0}& \textbf{0 / 0} \\
-& \textbf{Arc}        & \textbf{0}& \textbf{0 / 0} \\
-& \textbf{Serpentine} & \textbf{0}& \textbf{0 / 0} \\
-& \textbf{Rot.-Axis}  & \textbf{0}& \textbf{0 / 0} \\
+& \textbf{Straight}   & \textbf{0.682} & \textbf{95.6 / 95.2} \\
+& \textbf{Arc}   & \textbf{0.876} & \textbf{89.9 / 50.8} \\
+& \textbf{Serpentine}   & \textbf{0.634} & \textbf{92.3 / 87.7} \\
+& \textbf{Rot.-Axis}   & \textbf{0.632} & \textbf{93.7 / 90.5} \\
 \midrule
 \multirow{4}{*}{Within-pool oracle ($K$ rollouts)}
-& Straight   & 0& 0 / 0 \\
-& Arc        & 0& 0 / 0 \\
-& Serpentine & 0& 0 / 0 \\
-& Rot.-Axis  & 0& 0 / 0 \\
+& Straight   & 0.714 & 98.9 / 98.2 \\
+& Arc   & 1.014 & 95.9 / 93.8 \\
+& Serpentine   & 0.684 & 97.1 / 94.4 \\
+& Rot.-Axis   & 0.680 & 98.5 / 98.0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -826,7 +826,7 @@ To isolate the selection stage, we fix the motion-generation controller and
 compare different ranking rules on the same candidate pool.
 Table~\ref{tab:ablate_seed} reports results on $2500$ held-out tasks per
 path family. On straight tasks, taking the first feasible candidate
-reaches a mean Ratio of $[XX]\%$;
+reaches a mean Ratio of $89.6\%$;
 ranking by joint-limit margin or by the analytic margin field
 \begin{equation}
 \label{eq:margin-field}
@@ -840,8 +840,8 @@ ranking by joint-limit margin or by the analytic margin field
 \right),
 \end{equation}
 where $m_j$ denotes a normalized joint-limit or orientation-cone margin,
-raises this to $[XX]\%$, while the learned selector reaches $[XX]\%$ with a 10th
-percentile of $[XX]\%$. These results show that rollout supervision provides a
+raises this to $94.3\%$, while the learned selector reaches $94.8\%$ with a 10th
+percentile of $93.4\%$. These results show that rollout supervision provides a
 stronger ranking signal for initial configurations than the tested
 instantaneous geometric heuristics.
 
@@ -862,45 +862,45 @@ Type
 & \shortstack{Ratio (\%)\\mean / p10}
 & \shortstack{Near-Oracle\\Tasks (\%)} \\
 \midrule
-\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & 0& 0 / 0& 0 \\
- &  & Arc & 0& 0 / 0& 0 \\
- &  & Serpentine & 0& 0 / 0& 0 \\
- &  & Rot.-Axis & 0& 0 / 0& 0 \\
+ \multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & \pinkbox{0.608} & \pinkbox{89.6 / 61.4} & 58.6 \\
+  &  & Arc & \pinkbox{0.764} & \pinkbox{83.2 / 35.7} & 55.0 \\
+  &  & Serpentine & \pinkbox{0.600} & \pinkbox{87.8 / 58.3} & 63.2 \\
+  &  & Rot.-Axis & \pinkbox{0.589} & \pinkbox{88.4 / 54.5} & 62.4 \\
 \midrule
-\multirow{4}{*}{Random} & \multirow{4}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & 0& 0 / 0& 0 \\
- &  & Arc & 0& 0 / 0& 0 \\
- &  & Serpentine & 0& 0 / 0& 0 \\
- &  & Rot.-Axis & 0& 0 / 0& 0 \\
+ \multirow{4}{*}{Random} & \multirow{4}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & 0.611 & 90.5 / 76.8 & \pinkbox{22.1} \\
+  &  & Arc & 0.783 & 84.7 / 55.5 & \pinkbox{19.7} \\
+  &  & Serpentine & 0.602 & 88.2 / 73.8 & \pinkbox{25.2} \\
+  &  & Rot.-Axis & 0.594 & 89.3 / 73.2 & \pinkbox{25.0} \\
 \midrule
-\multirow{16}{*}{Heuristic} & \multirow{4}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0& 0 / 0& 0 \\
- &  & Arc & 0& 0 / 0& 0 \\
- &  & Serpentine & 0& 0 / 0& 0 \\
- &  & Rot.-Axis & 0& 0 / 0& 0 \\
+ \multirow{16}{*}{Heuristic} & \multirow{4}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.616 & 90.4 / 66.9 & 60.6 \\
+  &  & Arc & 0.778 & 84.0 / 36.1 & 56.9 \\
+  &  & Serpentine & 0.602 & 87.8 / 58.7 & 64.6 \\
+  &  & Rot.-Axis & 0.600 & 89.4 / 60.0 & 64.8 \\
 \cmidrule(lr){2-6}
- & \multirow{4}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0& 0 / 0& 0 \\
- &  & Arc & 0& 0 / 0& 0 \\
- &  & Serpentine & 0& 0 / 0& 0 \\
- &  & Rot.-Axis & 0& 0 / 0& 0 \\
+  & \multirow{4}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.614 & 90.7 / 66.3 & 61.6 \\
+  &  & Arc & 0.791 & 84.8 / 39.0 & 57.8 \\
+  &  & Serpentine & 0.606 & 88.5 / 61.4 & 65.3 \\
+  &  & Rot.-Axis & 0.596 & 89.5 / 63.7 & 65.0 \\
 \cmidrule(lr){2-6}
- & \multirow{4}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0& 0 / 0& 0 \\
- &  & Arc & 0& 0 / 0& 0 \\
- &  & Serpentine & 0& 0 / 0& 0 \\
- &  & Rot.-Axis & 0& 0 / 0& 0 \\
+  & \multirow{4}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.643 & 94.1 / 87.0 & 69.9 \\
+  &  & Arc & 0.842 & 88.9 / 48.1 & 68.4 \\
+  &  & Serpentine & 0.637 & 92.3 / 82.6 & 75.7 \\
+  &  & Rot.-Axis & 0.629 & 93.3 / 82.4 & 75.0 \\
 \cmidrule(lr){2-6}
- & \multirow{4}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0& 0 / 0& 0 \\
- &  & Arc & 0& 0 / 0& 0 \\
- &  & Serpentine & 0& 0 / 0& 0 \\
- &  & Rot.-Axis & 0& 0 / 0& 0 \\
+  & \multirow{4}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.644 & 94.3 / 87.5 & 69.9 \\
+  &  & Arc & 0.844 & 89.1 / 50.1 & 68.8 \\
+  &  & Serpentine & \limebox{0.638} & \limebox{92.5 / 83.0} & 76.2 \\
+  &  & Rot.-Axis & 0.629 & 93.4 / 82.6 & 75.1 \\
 \midrule
-\multirow{4}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{\textbf{Learned Selector (Ours)}}} & \textbf{Straight} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
- &  & \textbf{Arc} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
- &  & \textbf{Serpentine} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
- &  & \textbf{Rot.-Axis} & \textbf{0}& \textbf{0 / 0}& \textbf{0} \\
+ \multirow{4}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{\textbf{Learned Selector (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.648}} & \limebox{\textbf{94.8 / 93.4}} & \limebox{\textbf{75.7}} \\
+  &  & \textbf{Arc} & \limebox{\textbf{0.876}} & \limebox{\textbf{89.9 / 50.8}} & \limebox{\textbf{72.9}} \\
+  &  & \textbf{Serpentine} & \textbf{0.634} & \textbf{92.3 / 87.7} & \limebox{\textbf{80.7}} \\
+  &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.632}} & \limebox{\textbf{93.7 / 90.5}} & \limebox{\textbf{80.6}} \\
 \midrule
-\multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0& 0 / 0& 0 \\
- &  & Arc & 0& 0 / 0& 0 \\
- &  & Serpentine & 0& 0 / 0& 0 \\
- &  & Rot.-Axis & 0& 0 / 0& 0 \\
+ \multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.687 & 98.5 / 98.6 & 100.0 \\
+  &  & Arc & 1.014 & 95.9 / 93.8 & 100.0 \\
+  &  & Serpentine & 0.684 & 97.1 / 94.4 & 100.0 \\
+  &  & Rot.-Axis & 0.680 & 98.5 / 98.0 & 100.0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -930,8 +930,8 @@ Table~\ref{tab:ablate_seed} distinguish unseen in-distribution tasks
 rotating-axis families that are absent from training. The results show that the achieved Ratio is governed by path curvature
 rather than by training membership: the OOD rotating-axis family, whose
 centerline is straight, matches the in-distribution straight family
-($[XX]\%$ vs $[XX]\%$ in mean Ratio), and the OOD serpentine family even
-exceeds the in-distribution arc family ($[XX]\%$ vs $[XX]\%$). On every family the learned
+($93.7\%$ vs $94.8\%$ in mean Ratio), and the OOD serpentine family even
+exceeds the in-distribution arc family ($92.3\%$ vs $89.9\%$). On every family the learned
 selector remains the strongest non-oracle ranking rule.
 
 

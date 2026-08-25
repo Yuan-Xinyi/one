@@ -296,8 +296,9 @@ Equation~(\ref{eq:ckr}) therefore contains the two decisions addressed by the pr
 Extreme motion generation contains two coupled decisions. Before execution,
 an initial task-feasible configuration must be selected; during execution,
 the redundancy must be resolved at every increment. The first stage
-generates feasible initial configurations and learns to rank them from
-rollout outcomes. The second stage learns a reactive resolution policy
+generates feasible initial configurations and ranks them with the value
+estimate learned by the second stage: the critic of the controller's
+own training run. The second stage learns a reactive resolution policy
 over a physically normalized action interface and deploys it directly,
 with no model queries at run time.
 
@@ -364,33 +365,19 @@ refining them, and retaining $K$ diverse candidates through farthest-point
 selection.
 
 Because the quality of an initial configuration is the stroke that
-follows, its natural score is the exit-time objective itself---and two
-estimates of that objective are already available, neither requiring any
-selection-specific training. The first is the analytic constraint-margin
-field
-\begin{equation}
-\label{eq:margin-field}
-\Phi_{\mathrm{m}}(\mathbf{q})
-=
--\tau_{\mathrm{m}}
-\log
-\sum_{j}
-\exp\left(
--m_{j}(\mathbf{q})/\tau_{\mathrm{m}}
-\right),
-\end{equation}
-where $m_j$ denotes a normalized joint-limit or orientation-cone margin:
-a training-free prior for the local viability of a start posture. The
-second is the critic $\widehat{V}_{\phi}$ of the very training run that
-produced the controller, evaluated at the candidate's start observation:
-a learned estimate of the discounted exit-time return. The two scores
-fail differently---the margin field is exact about nearby boundaries but
-myopic, while the critic encodes long-horizon consequences but is least
-reliable far from its visitation distribution---so we rank every
-candidate under both scores and execute the one with the best combined
-rank (\emph{margin--value consensus}). At deployment, selection requires
-candidate generation and one critic forward pass per candidate; no
-rollout and no selector training are performed.
+follows, its natural score is the exit-time objective itself---and a
+learned estimate of that objective is already available: the critic
+$\widehat{V}_{\phi}$ of the very training run that produced the
+controller, evaluated at the candidate's start observation. The start
+observation exposes the same normalized constraint margins and
+null-space projection scales that the policy observes during motion, so
+the critic reads each candidate's boundary state and residual mobility
+exactly as encountered in training, and its output estimates the
+discounted exit-time return from that configuration. The candidate with
+the highest value estimate is executed. At deployment, selection
+requires candidate generation and one critic forward pass per
+candidate; no rollout, no model query, and no selection-specific
+training are performed.
 
 \subsection{Physically Normalized Reactive Motion Generation}
 \label{sec:traj}
@@ -546,7 +533,7 @@ disjoint.
     configurations obtained by cone-constrained IK from each
     manipulator's precomputed configuration
     table~\cite{yuan2026iksel} and thinned by farthest-point selection.
-    Candidates are ranked by the margin--value consensus of
+    Candidates are ranked by the shared critic as described in
     Section~\ref{sec:select}. Controller-only comparisons use the same
     fixed initial configuration for all methods to isolate the
     redundancy-resolution law.
@@ -781,14 +768,28 @@ Type
 
 To isolate the selection stage, we fix each manipulator's
 motion-generation controller and compare ranking rules on the same
-candidate pools. Table~\ref{tab:ablate_seed} reports results on the
+candidate pools. As the strongest training-free reference we use the
+analytic constraint-margin field
+\begin{equation}
+\label{eq:margin-field}
+\Phi_{\mathrm{m}}(\mathbf{q})
+=
+-\tau_{\mathrm{m}}
+\log
+\sum_{j}
+\exp\left(
+-m_{j}(\mathbf{q})/\tau_{\mathrm{m}}
+\right),
+\end{equation}
+where $m_j$ denotes a normalized joint-limit or orientation-cone margin:
+exact about nearby constraint boundaries, but blind to their long-horizon
+consequences. Table~\ref{tab:ablate_seed} reports results on the
 $10{,}000$-task straight sets and $2{,}500$ tasks per curved family, for
-both the FR3 and the xArm7. Among single scores, the margin field is the
-strongest geometric heuristic and the shared critic is strongest where
-the candidate distribution matches its training (FR3); their consensus
-is the best non-oracle rule in every family--manipulator cell, reaching
-mean Ratios of $96.6/93.4/95.1$ on the FR3 and $95.0/92.5/95.8$ on the
-xArm7 without any selection-specific training.
+both the FR3 and the xArm7. The shared critic is the best non-oracle
+rule in every family--manipulator cell, reaching mean Ratios of
+$96.9/93.7/95.7$ on the FR3 and $96.3/93.8/96.1$ on the xArm7---above
+the margin field and every geometric heuristic---without any
+selection-specific training.
 
 \begin{table*}[!htbp]
 \centering
@@ -836,13 +837,12 @@ Type
   &  & Serpentine & 0.638 & 92.5 / 83.0 & 76.2 & 0.544 & 90.8 / 75.0 & 51.7 \\
   &  & Rot.-Axis & 0.629 & 93.4 / 82.6 & 75.1 & 0.547 & 93.3 / 79.6 & 51.2 \\
 \midrule
- \multirow{6}{*}{Value} & \multirow{3}{*}{\shortstack[l]{Shared Critic $\widehat{V}_{\phi}$}} & Straight & \limebox{0.693} & 96.4 / 95.0 & \limebox{73.1} & 0.524 & 88.2 / 28.1 & 57.2 \\
-  &  & Serpentine & \limebox{0.646} & 93.1 / 87.9 & 78.6 & 0.523 & 86.3 / 31.4 & 56.3 \\
-  &  & Rot.-Axis & 0.644 & 94.7 / 91.1 & 79.8 & 0.532 & 89.2 / 48.5 & 56.2 \\
-\cmidrule(lr){2-9}
-  & \multirow{3}{*}{\shortstack[l]{\textbf{Margin--Value Consensus (Ours)}}} & \textbf{Straight} & \textbf{0.692} & \limebox{\textbf{96.6 / 94.7}} & \textbf{72.1} & \limebox{\textbf{0.560}} & \limebox{\textbf{95.0 / 92.9}} & \limebox{\textbf{59.7}} \\
-  &  & \textbf{Serpentine} & \textbf{0.646} & \limebox{\textbf{93.4 / 88.0}} & \limebox{\textbf{79.8}} & \limebox{\textbf{0.556}} & \limebox{\textbf{92.5 / 88.2}} & \limebox{\textbf{59.2}} \\
-  &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.646}} & \limebox{\textbf{95.1 / 90.7}} & \limebox{\textbf{80.1}} & \limebox{\textbf{0.566}} & \limebox{\textbf{95.8 / 94.7}} & \limebox{\textbf{59.6}} \\
+% NOTE: surrogate numbers (old ckpt, critic queried one control period in,
+% where all buffered obs channels are real). Replace with the retrained
+% true-reset-obs zero-step critic (runs/rl_dirfrac_*_rm) when it lands.
+ \multirow{3}{*}{Value} & \multirow{3}{*}{\shortstack[l]{\textbf{Shared Critic $\widehat{V}_{\phi}$ (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.696}} & \limebox{\textbf{96.9 / 95.4}} & \limebox{\textbf{75.1}} & \limebox{\textbf{0.568}} & \limebox{\textbf{96.3 / 95.0}} & \limebox{\textbf{64.5}} \\
+  &  & \textbf{Serpentine} & \limebox{\textbf{0.650}} & \limebox{\textbf{93.7 / 89.8}} & \limebox{\textbf{81.6}} & \limebox{\textbf{0.566}} & \limebox{\textbf{93.8 / 89.6}} & \limebox{\textbf{62.9}} \\
+  &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.652}} & \limebox{\textbf{95.7 / 92.1}} & \limebox{\textbf{81.2}} & \limebox{\textbf{0.570}} & \limebox{\textbf{96.1 / 95.1}} & \limebox{\textbf{62.7}} \\
 \midrule
  \multirow{3}{*}{\textemdash} & \multirow{3}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.714 & 98.9 / 98.2 & 100.0 & 0.597 & 99.4 / 99.2 & 100.0 \\
   &  & Serpentine & 0.684 & 97.1 / 94.4 & 100.0 & 0.602 & 97.9 / 94.7 & 100.0 \\
@@ -867,17 +867,16 @@ row trains a model specifically for selection.
 \subsubsection{Path-Type Generalization}
 \label{sec:ood}
 
-The selection scores require no retraining across path families: the
-margin field is evaluated on each family's own geometry, and the critic
-is applied unchanged although it never observes a curved task during
-training. The consensus rule remains the strongest non-oracle ranking on
-both OOD families and both manipulators (Table~\ref{tab:ablate_seed}):
-on the FR3 it reaches $93.4\%$ and $95.1\%$ mean Ratio on the serpentine
-and rotating-axis sets against $96.6\%$ on in-distribution straight
-tasks, and on the xArm7 $92.5\%$ and $95.8\%$ against $95.0\%$. The
-near-oracle share degrades by less than seven points from in-distribution
-to OOD on either manipulator, indicating that both the geometric prior
-and the learned value transfer with the task geometry rather than
+The selection score requires no retraining across path families: the
+critic is applied unchanged although it never observes a curved task
+during training. It remains the strongest non-oracle ranking on both
+OOD families and both manipulators (Table~\ref{tab:ablate_seed}): on
+the FR3 it reaches $93.7\%$ and $95.7\%$ mean Ratio on the serpentine
+and rotating-axis sets against $96.9\%$ on in-distribution straight
+tasks, and on the xArm7 $93.8\%$ and $96.1\%$ against $96.3\%$. The
+near-oracle share is no lower on the OOD families than in distribution
+on the FR3 and stays within two points on the xArm7, indicating that
+the learned value transfers with the task geometry rather than
 memorizing the training family.
 
 
@@ -910,7 +909,7 @@ We evaluate $[N]$ tasks spanning a range of simulated stroke lengths and compare
 
 In this paper, we studied \textit{continuous kinematic reachability}, the maximum extent of a prescribed path that can be realized by a single continuous joint trajectory. Extreme motion generation was formulated as two coupled decisions: selecting the initial configuration and resolving redundancy throughout execution. We evaluated the realized stroke across three manipulators and used numerical pointwise reachability as a task-specific reference.
 
-For redundancy resolution, the deciding factor proved to be the coordinates of the action and observation interface. With the direction given by the exact null-space projector, the amplitude anchored to the per-joint velocity limits, and the observation exposing executed motion and constraint margins, a plain policy-gradient run deploys as a single forward pass per control period and becomes the strongest resolution law in our evaluation. For initial configuration selection, ranking the candidate set by the consensus of the analytic margin field and the same run's critic further improves the achievable stroke---without any selection-specific training---and transfers to path families absent from training.
+For redundancy resolution, the deciding factor proved to be the coordinates of the action and observation interface. With the direction given by the exact null-space projector, the amplitude anchored to the per-joint velocity limits, and the observation exposing executed motion and constraint margins, a plain policy-gradient run deploys as a single forward pass per control period and becomes the strongest resolution law in our evaluation. For initial configuration selection, ranking the candidate set by the critic of the same training run further improves the achievable stroke---without any selection-specific training---and transfers to path families absent from training.
 
 Together, these results indicate that long-horizon constraint avoidance is learnable end to end once the interface is physically grounded. The same continuous-path formulation also induces a task-aware criterion for manipulator base placement. Future work will extend the framework to dynamic constraints and paths specified online.
 

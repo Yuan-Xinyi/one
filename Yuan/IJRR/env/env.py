@@ -129,8 +129,16 @@ class EnvConfig:
     # (jl, cone, corridor, collision) to the observation. Class-0
     # information: analytics of the current configuration, no forward
     # simulation. Refreshed in step() for the post-step state; 1.0 right
-    # after reset (exact for corridor, approximate for the rest).
+    # after reset (exact for corridor, approximate for the rest) unless
+    # true_reset_obs is set.
     observe_margins: bool = False
+    # Replace the placeholder reset values of the buffered observation
+    # channels with the true quantities at q0: the four constraint margins
+    # (placeholder 1.0) and the projected-gradient scales (placeholder 0).
+    # Without this V(o(q0)) is blind to wall distances and null-space
+    # mobility exactly at the state where candidate scoring queries it.
+    # a_prev stays 0 at reset -- that IS the true value.
+    true_reset_obs: bool = False
     # Fold the next-step joint-POSITION limits into alpha_feas:
     # |q + dt (qdot_task + alpha xi) - q_mid| <= q_half, still a per-joint
     # closed-form bound (no optimizer). alpha_safe = min(alpha_vel,
@@ -683,6 +691,38 @@ class NSRLBatchedEnv:
         else:
             p_at_reset, _, _, _ = self.kin.tcp_fk_jac(self.q[mask])
             self.p_start[mask] = p_at_reset
+
+        if getattr(self.cfg, 'true_reset_obs', False):
+            q0 = self.q[mask]
+            if getattr(self.cfg, 'observe_margins', False):
+                link_tfs0 = self.kin.link_transforms(q0)
+                p0f, R0, _, _ = self.kin.tcp_fk_jac(q0)
+                cos0 = (R0[:, :, 2] * self.n_target[mask]
+                        ).sum(-1).clamp(-1., 1.)
+                _m_jl = ((self.q_half - (q0 - self.q_mid).abs())
+                         / self.q_half).amin(dim=-1)
+                _m_cone = (cos0 - self.cos_cone) / (1.0 - self.cos_cone)
+                _, _, lat0 = path_frame(p0f, self.p_start[mask],
+                                        self.path_d0[mask],
+                                        self.n_target[mask],
+                                        self.path_kappa[mask],
+                                        self.path_amp[mask],
+                                        self.path_wavelen[mask])
+                _m_lat = (LATERAL_SAFETY_NET - lat0) / LATERAL_SAFETY_NET
+                _m_coll = self.collision.min_margin(link_tfs0) / 0.05
+                self._mg_obs[mask] = torch.stack(
+                    [_m_jl, _m_cone, _m_lat, _m_coll], dim=-1)
+            if getattr(self.cfg, 'observe_proj_scales', False):
+                # Same basis call as step(); at t=0 these are exactly the
+                # scales the first control period will use, so the reset obs
+                # is not even one period stale.
+                _bo = build_task_aligned_basis(
+                    self.kin, q0, self.line_dir[mask], self.n_target[mask],
+                    self.kin.q_mid, self.q_half, self.cfg.manip_damping,
+                    raw_scale=self.cfg.basis_raw_scale, return_scales=True)
+                _df = int(getattr(self.cfg, 'dir_frac_action', 0) or 0)
+                self._proj_scales[mask] = (_bo[3] if _df == 2
+                                           else _bo[2]).float()
 
         if self.cfg.w_margin != 0.0:
             q0 = self.q[mask]

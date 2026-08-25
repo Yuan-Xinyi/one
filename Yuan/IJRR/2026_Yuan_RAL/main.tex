@@ -230,7 +230,7 @@ Consider an $n$-DoF manipulator with joint configuration $\mathbf{q}\in\mathbb{R
 \begin{equation}
 \mathcal{P}=\{\mathbf{p}_{0}+s\mathbf{d}:s\geq 0\},
 \end{equation}
-and the end-effector advances along it at commanded speed $v$ with control period $\Delta t$. The formulation below focuses on straight rays; whether the initial-configuration selector, conditioned on the sampled path ahead, transfers to curved path families is evaluated separately in Section~\ref{sec:ood}.
+and the end-effector advances along it at commanded speed $v$ with control period $\Delta t$. The formulation below focuses on straight rays; the transfer of both stages to curved path families is evaluated in Section~\ref{sec:ood}.
 
 Given an initial configuration $\mathbf{q}_{0}$ and a redundancy-resolution policy $\pi$, execution terminates at the first violation of a feasibility constraint. Let $\mathcal{L}(\mathbf{q}_{0},\pi;\mathbf{c})$ denote the Cartesian length completed before termination. We define the \emph{continuous kinematic reachability} of task $\mathbf{c}$ as
 \begin{equation}
@@ -332,10 +332,18 @@ work, $v$ is constant while the trajectory remains feasible. Hence maximizing
 Eq.~(\ref{eq:value}) is equivalent to delaying the first constraint violation
 and therefore to maximizing the executed stroke.
 
-This formulation also connects the two stages of the framework. Initial
-configuration selection compares the future stroke attainable from
-candidate start states, whereas motion generation maximizes the same
-objective along the executed trajectory.
+This formulation unifies the two stages of the framework as nested
+maximizations of a single scalar objective. Writing
+$\mathrm{IK}(\mathbf{c})$ for the task-feasible start set,
+Eq.~(\ref{eq:ckr}) factorizes as
+$\sup_{\mathbf{q}_0\in\mathrm{IK}(\mathbf{c})}V(\mathbf{q}_0;\mathbf{c})$:
+motion generation approximates the inner supremum with a reactive policy
+trained on the discounted exit-time return, and initial-configuration
+selection approximates the outer maximization by scoring candidates with
+estimates of the same objective---including the critic that the inner
+training already produces (Section~\ref{sec:select}). At deployment the
+value appears only as one forward pass per candidate at the start of a
+task; no stage trains a model of its own for selection.
 
 \subsection{Initial Joint Configuration Selection}
 \label{sec:select}
@@ -355,16 +363,34 @@ $N_{\mathrm{dir}}$ cone directions, reranking the retrieved solutions,
 refining them, and retaining $K$ diverse candidates through farthest-point
 selection.
 
-Because the quality of an initial configuration is determined by the
-subsequent stroke, the selector is supervised directly by rollout
-outcomes. Each candidate in the training set is executed with the deployed
-motion-generation controller of Section~\ref{sec:traj}, and the resulting
-stroke length provides its target score. A permutation-equivariant network
-then ranks the candidate set using each candidate together with a
-mean-pooled set context. The score is additionally conditioned on a
-\emph{road table} that samples the position, tangent, and cone axis of the
-upcoming path every $10$\,cm of arc length up to $1.2$\,m ahead. At deployment, selection requires only candidate generation,
-one network evaluation, and refinement; no rollout is performed online.
+Because the quality of an initial configuration is the stroke that
+follows, its natural score is the exit-time objective itself---and two
+estimates of that objective are already available, neither requiring any
+selection-specific training. The first is the analytic constraint-margin
+field
+\begin{equation}
+\label{eq:margin-field}
+\Phi_{\mathrm{m}}(\mathbf{q})
+=
+-\tau_{\mathrm{m}}
+\log
+\sum_{j}
+\exp\left(
+-m_{j}(\mathbf{q})/\tau_{\mathrm{m}}
+\right),
+\end{equation}
+where $m_j$ denotes a normalized joint-limit or orientation-cone margin:
+a training-free prior for the local viability of a start posture. The
+second is the critic $\widehat{V}_{\phi}$ of the very training run that
+produced the controller, evaluated at the candidate's start observation:
+a learned estimate of the discounted exit-time return. The two scores
+fail differently---the margin field is exact about nearby boundaries but
+myopic, while the critic encodes long-horizon consequences but is least
+reliable far from its visitation distribution---so we rank every
+candidate under both scores and execute the one with the best combined
+rank (\emph{margin--value consensus}). At deployment, selection requires
+candidate generation and one critic forward pass per candidate; no
+rollout and no selector training are performed.
 
 \subsection{Physically Normalized Reactive Motion Generation}
 \label{sec:traj}
@@ -516,12 +542,13 @@ disjoint.
     constraints.
 
     \item \uline{Initial configurations:}
-    For the full-framework and selection experiments, the candidate pool
-    contains $K=32$ configurations retrieved from
-    $N_{\mathrm{dir}}=40$ directions using IKSel. The learned selector
-    ranks these candidates, and the selected configuration is followed by
-    one damped-least-squares refinement. Controller-only comparisons use
-    the same fixed initial configuration for all methods to isolate the
+    For the selection experiments, the candidate pool contains $K=32$
+    configurations obtained by cone-constrained IK from each
+    manipulator's precomputed configuration
+    table~\cite{yuan2026iksel} and thinned by farthest-point selection.
+    Candidates are ranked by the margin--value consensus of
+    Section~\ref{sec:select}. Controller-only comparisons use the same
+    fixed initial configuration for all methods to isolate the
     redundancy-resolution law.
 
     \item \uline{Classical controller:}
@@ -530,8 +557,7 @@ disjoint.
     regulation, respectively.
 
     \item \uline{Margin field:}
-    The analytic constraint-margin field, used as an
-    initial-configuration ranking heuristic in the selection ablation,
+    The analytic constraint-margin field of Eq.~(\ref{eq:margin-field})
     uses temperature $\tau_{\mathrm{m}}=0.1$.
 
     \item \uline{Learned controllers:}
@@ -570,56 +596,43 @@ disjoint.
     reported Ratio is at most one by construction. With feasibility
     witnesses collected from every evaluated controller, $98\%$ of tasks
     lie within one march step of the search estimate and the median
-    binding adjustment is $4$\,mm; the arc family is the exception by
-    construction, since its path closes on itself and continuous
-    execution may loop the circle beyond the $1.8$\,m march horizon
-    (such censored tasks fall back to the executed-stroke reference).
+    binding adjustment is $4$\,mm.
 \end{itemize}
 
-All evaluation tables compare the four path families illustrated in
-Fig.~\ref{fig:families}: straight, arc, serpentine, and rotating-axis.
-The redundancy-resolution controllers and critics are trained on
-straight-line tasks only, and the initial-configuration selector is
-trained on straight and arc tasks; every evaluated task instance is held
-out from all training. Consequently, straight and arc results measure
-generalization to \emph{unseen but in-distribution} tasks, whereas
-serpentine and rotating-axis results measure generalization to
-\emph{out-of-distribution} (OOD) families that appear in no training set;
-for the motion-generation stage, the arc family is additionally zero-shot,
-since the controllers never observe curved paths during training.
+All evaluation tables compare the three path families illustrated in
+Fig.~\ref{fig:families}: straight, serpentine, and rotating-axis. Every
+learned component is trained on straight-line tasks only, and every
+evaluated task instance is held out from training. Straight results
+therefore measure generalization to \emph{unseen but in-distribution}
+tasks, whereas serpentine and rotating-axis results measure zero-shot
+generalization to \emph{out-of-distribution} (OOD) families.
 Straight-line results use $10{,}000$ tasks per manipulator, and each
 curved family uses $2{,}500$ tasks.
 
 \begin{figure*}[!tbp]
     \centering
-    \begin{subfigure}{0.24\textwidth}
+    \begin{subfigure}{0.32\textwidth}
         \centering
         \includegraphics[width=\linewidth]{imgs/path_straight_v2.jpg}
         \caption{Straight}
     \end{subfigure}\hfill
-    \begin{subfigure}{0.24\textwidth}
-        \centering
-        \includegraphics[width=\linewidth]{imgs/path_arc_v2.jpg}
-        \caption{Arc}
-    \end{subfigure}\hfill
-    \begin{subfigure}{0.24\textwidth}
+    \begin{subfigure}{0.32\textwidth}
         \centering
         \includegraphics[width=\linewidth]{imgs/path_serpentine_v2.jpg}
         \caption{Serpentine}
     \end{subfigure}\hfill
-    \begin{subfigure}{0.24\textwidth}
+    \begin{subfigure}{0.32\textwidth}
         \centering
         \includegraphics[width=\linewidth]{imgs/path_rotating_v2.jpg}
         \caption{Rotating axis}
     \end{subfigure}
-    \caption{Path families used to evaluate initial-configuration
-    generalization: (a) a straight ray; (b) an arc with signed curvature;
-    (c) a serpentine seam with sinusoidal lateral offset; and (d) a
+    \caption{Path families used in the evaluation: (a) a straight ray;
+    (b) a serpentine seam with sinusoidal lateral offset; and (c) a
     straight path with a rotating cone axis. Each panel shows the path in
     3D above the translucent task plane; red arrows indicate the local
     cone axis $\mathbf{n}(s)$, which departs from the plane normal only in
-    (d). Families (a) and (b) appear in selector training, whereas (c) and
-    (d) are used only for out-of-distribution evaluation.}
+    (c). All learned components are trained on straight tasks only;
+    (b) and (c) are used for out-of-distribution evaluation.}
     \label{fig:families}
 \end{figure*}
 
@@ -693,8 +706,8 @@ adds a few points over its underlying policy. The proposed controller
 leads every row on the densest benchmark---$89.8\%$ mean Ratio with a
 10th percentile of $63.3\%$ on FR3 straight tasks---and the lead carries
 over zero-shot to the curved families it never saw during training
-($83.1$, $87.7$, and $88.4$ mean Ratio on the FR3 arc, serpentine, and
-rotating-axis sets).
+($87.7$ and $88.4$ mean Ratio on the FR3 serpentine and rotating-axis
+sets).
 
 The Continuous PPO and DirFrac rows share the same learning algorithm,
 reward, and training distribution; they differ only in the action and
@@ -725,28 +738,23 @@ Type
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
-\multirow{8}{*}{Classical} & \multirow{4}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \pinkbox{0.159} & \pinkbox{60.0 / 25.5} \\
- &  & Arc & \pinkbox{0.318} & \pinkbox{50.4 / 11.0} & \pinkbox{0.270} & \pinkbox{50.7 / 12.4} & \pinkbox{0.160} & \pinkbox{59.3 / 25.0} \\
+\multirow{6}{*}{Classical} & \multirow{3}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \pinkbox{0.159} & \pinkbox{60.0 / 25.5} \\
  &  & Serpentine & \pinkbox{0.303} & \pinkbox{54.0 / 14.9} & \pinkbox{0.258} & \pinkbox{53.1 / 14.5} & \pinkbox{0.151} & \pinkbox{56.6 / 23.4} \\
  &  & Rot.-Axis & \pinkbox{0.315} & \pinkbox{56.3 / 16.7} & \pinkbox{0.261} & \pinkbox{54.9 / 15.5} & \pinkbox{0.159} & \pinkbox{59.7 / 26.1} \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{Classical Gradient}} & Straight & 0.332 & 60.4 / 17.9 & 0.269 & 56.4 / 17.8 & 0.163 & 61.3 / 27.6 \\
- &  & Arc & 0.345 & 53.0 / 12.1 & 0.284 & 52.1 / 13.8 & 0.164 & 60.5 / 27.1 \\
+ & \multirow{3}{*}{\shortstack[l]{Classical Gradient}} & Straight & 0.332 & 60.4 / 17.9 & 0.269 & 56.4 / 17.8 & 0.163 & 61.3 / 27.6 \\
  &  & Serpentine & 0.326 & 57.4 / 16.4 & 0.268 & 54.6 / 16.3 & 0.156 & 57.8 / 25.0 \\
  &  & Rot.-Axis & 0.339 & 59.9 / 18.4 & 0.273 & 56.7 / 17.9 & 0.163 & 61.0 / 28.3 \\
 \midrule
-\multirow{12}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 69.4 / 17.4 & 0.340 & 66.7 / 16.8 & 0.197 & 71.1 / 30.3 \\
- &  & Arc & 0.447 & 61.5 / 13.0 & 0.380 & 62.2 / 14.4 & 0.201 & 70.5 / 30.7 \\
+\multirow{9}{*}{Learned} & \multirow{3}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 69.4 / 17.4 & 0.340 & 66.7 / 16.8 & 0.197 & 71.1 / 30.3 \\
  &  & Serpentine & 0.407 & 67.0 / 16.0 & 0.337 & 64.5 / 16.1 & 0.191 & 67.9 / 27.3 \\
  &  & Rot.-Axis & 0.411 & 68.4 / 17.4 & 0.344 & 66.9 / 17.2 & 0.199 & 71.0 / 30.9 \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{PPO + Classical}} & Straight & 0.458 & 75.7 / 23.6 & 0.374 & 71.5 / 20.9 & \limebox{0.207} & \limebox{74.1 / 33.8} \\
- &  & Arc & 0.516 & 67.4 / 16.7 & 0.422 & 67.0 / 17.4 & \limebox{0.213} & \limebox{74.0 / 34.7} \\
+ & \multirow{3}{*}{\shortstack[l]{PPO + Classical}} & Straight & 0.458 & 75.7 / 23.6 & 0.374 & 71.5 / 20.9 & \limebox{0.207} & \limebox{74.1 / 33.8} \\
  &  & Serpentine & 0.457 & 73.0 / 21.4 & 0.370 & 69.2 / 19.6 & \limebox{0.202} & \limebox{71.2 / 31.3} \\
  &  & Rot.-Axis & 0.458 & 74.4 / 23.3 & 0.374 & 71.3 / 20.5 & \limebox{0.209} & \limebox{74.2 / 35.2} \\
 \cmidrule(lr){2-9}
- & \multirow{4}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.598}} & \limebox{\textbf{89.8 / 63.3}} & \limebox{\textbf{0.508}} & \limebox{\textbf{87.9 / 56.0}} & \textbf{[XX]} & \textbf{[XX]} \\
- &  & \textbf{Arc} & \limebox{\textbf{0.764}} & \limebox{\textbf{83.1 / 35.6}} & \limebox{\textbf{0.631}} & \limebox{\textbf{84.6 / 45.3}} & \textbf{[XX]} & \textbf{[XX]} \\
+ & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.598}} & \limebox{\textbf{89.8 / 63.3}} & \limebox{\textbf{0.508}} & \limebox{\textbf{87.9 / 56.0}} & \textbf{[XX]} & \textbf{[XX]} \\
  &  & \textbf{Serpentine} & \limebox{\textbf{0.600}} & \limebox{\textbf{87.7 / 58.3}} & \limebox{\textbf{0.506}} & \limebox{\textbf{85.1 / 51.2}} & \textbf{[XX]} & \textbf{[XX]} \\
  &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.589}} & \limebox{\textbf{88.4 / 54.5}} & \limebox{\textbf{0.507}} & \limebox{\textbf{87.6 / 56.0}} & \textbf{[XX]} & \textbf{[XX]} \\
 \bottomrule
@@ -763,58 +771,7 @@ Type
 \end{threeparttable}
 \end{table*}
 
-\paragraph{Full framework.}
-We next combine the learned initial-configuration selector with a fixed
-motion-generation controller. Table~\ref{tab:framework} reports the
-result on the FR3 evaluation sets of all four path families, with the
-motion controller identical across all rows so that only the initial
-configuration changes. On straight tasks, learned selection increases the
-mean stroke from $0.642$\,m for a randomly chosen candidate to
-$0.682$\,m, reaching a mean Ratio of $95.6\%$ (10th percentile $95.2\%$),
-while the within-pool oracle indicates the remaining gap attributable to
-candidate ranking; the same ordering holds on every curved family.
 
-\begin{table}[!htbp]
-\centering
-\caption{Full-Framework Results on the FR3 Evaluation Sets
-(One Fixed Motion-Generation Controller in All Rows)}
-\label{tab:framework}
-\begin{threeparttable}
-\begin{tabular}{llcc}
-\toprule
-Initial configuration & Family
-& \shortstack{Stroke\\(m)}
-& \shortstack{Ratio (\%)\\mean / p10} \\
-\midrule
-\multirow{4}{*}{Random candidate}
-& Straight   & 0.642 & 90.6 / 79.3 \\
-& Arc   & 0.783 & 84.7 / 55.5 \\
-& Serpentine   & 0.602 & 88.2 / 73.8 \\
-& Rot.-Axis   & 0.594 & 89.3 / 73.2 \\
-\midrule
-\multirow{4}{*}{\textbf{Learned selector (ours)}}
-& \textbf{Straight}   & \textbf{0.682} & \textbf{95.6 / 95.2} \\
-& \textbf{Arc}   & \textbf{0.876} & \textbf{89.9 / 50.8} \\
-& \textbf{Serpentine}   & \textbf{0.634} & \textbf{92.3 / 87.7} \\
-& \textbf{Rot.-Axis}   & \textbf{0.632} & \textbf{93.7 / 90.5} \\
-\midrule
-\multirow{4}{*}{Within-pool oracle ($K$ rollouts)}
-& Straight   & 0.714 & 98.9 / 98.2 \\
-& Arc   & 1.014 & 95.9 / 93.8 \\
-& Serpentine   & 0.684 & 97.1 / 94.4 \\
-& Rot.-Axis   & 0.680 & 98.5 / 98.0 \\
-\bottomrule
-\end{tabular}
-\begin{tablenotes}
-    \item[Note 1]
-    $\ell^{\mathrm{pw}}$ denotes the numerical pointwise-reachability
-    reference used for task-wise normalization. This table uses the FR3
-    benchmark set for which $\ell^{\mathrm{pw}}$ is available; its task
-    distribution differs from that of Table~\ref{tab:mainresult}, so
-    absolute strokes are not directly comparable across the two tables.
-\end{tablenotes}
-\end{threeparttable}
-\end{table}
 
 \subsection{Ablation Study}
 
@@ -822,93 +779,84 @@ Initial configuration & Family
 \label{sec:branch}
 \label{sec:ablate_seed}
 
-To isolate the selection stage, we fix the motion-generation controller and
-compare different ranking rules on the same candidate pool.
-Table~\ref{tab:ablate_seed} reports results on $2500$ held-out tasks per
-path family. On straight tasks, taking the first feasible candidate
-reaches a mean Ratio of $89.6\%$;
-ranking by joint-limit margin or by the analytic margin field
-\begin{equation}
-\label{eq:margin-field}
-\Phi_{\mathrm{m}}(\mathbf{q})
-=
--\tau_{\mathrm{m}}
-\log
-\sum_{j}
-\exp\left(
--m_{j}(\mathbf{q})/\tau_{\mathrm{m}}
-\right),
-\end{equation}
-where $m_j$ denotes a normalized joint-limit or orientation-cone margin,
-raises this to $94.3\%$, while the learned selector reaches $94.8\%$ with a 10th
-percentile of $93.4\%$. These results show that rollout supervision provides a
-stronger ranking signal for initial configurations than the tested
-instantaneous geometric heuristics.
+To isolate the selection stage, we fix each manipulator's
+motion-generation controller and compare ranking rules on the same
+candidate pools. Table~\ref{tab:ablate_seed} reports results on the
+$10{,}000$-task straight sets and $2{,}500$ tasks per curved family, for
+both the FR3 and the xArm7. Among single scores, the margin field is the
+strongest geometric heuristic and the shared critic is strongest where
+the candidate distribution matches its training (FR3); their consensus
+is the best non-oracle rule in every family--manipulator cell, reaching
+mean Ratios of $96.6/93.4/95.1$ on the FR3 and $95.0/92.5/95.8$ on the
+xArm7 without any selection-specific training.
 
 \begin{table*}[!htbp]
 \centering
-\caption{Comparison of Initial Configuration Selection Methods on $2500$
-Held-Out FR3 Tasks per Path Family}
+\caption{Initial-Configuration Selection without Selection-Specific
+Training ($10{,}000$ Straight and $2{,}500$ Tasks per Curved Family per
+Manipulator)}
 \label{tab:ablate_seed}
 \begin{threeparttable}
 \footnotesize
-\setlength{\tabcolsep}{4.5pt}
-\begin{tabular}{lllccc}
+\setlength{\tabcolsep}{3.6pt}
+\begin{tabular}{lllcccccc}
 \toprule
+& & & \multicolumn{3}{c}{Franka Research 3}
+& \multicolumn{3}{c}{xArm7} \\
+\cmidrule(lr){4-6} \cmidrule(lr){7-9}
 Type
 & Candidate Ranking Rule
 & Family
-& \shortstack{Stroke\\(m)}
-& \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Near-Oracle\\Tasks (\%)} \\
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Near-Orc.\\(\%)}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Near-Orc.\\(\%)} \\
 \midrule
- \multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & \pinkbox{0.608} & \pinkbox{89.6 / 61.4} & 58.6 \\
-  &  & Arc & \pinkbox{0.764} & \pinkbox{83.2 / 35.7} & 55.0 \\
-  &  & Serpentine & \pinkbox{0.600} & \pinkbox{87.8 / 58.3} & 63.2 \\
-  &  & Rot.-Axis & \pinkbox{0.589} & \pinkbox{88.4 / 54.5} & 62.4 \\
+ \multirow{3}{*}{\textemdash} & \multirow{3}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & 0.644 & 90.5 / 68.5 & 54.4 & \pinkbox{0.345} & \pinkbox{62.0 / 1.2} & 23.7 \\
+  &  & Serpentine & \pinkbox{0.600} & \pinkbox{87.8 / 58.3} & 63.2 & \pinkbox{0.350} & \pinkbox{61.2 / 1.1} & 23.7 \\
+  &  & Rot.-Axis & \pinkbox{0.589} & \pinkbox{88.4 / 54.5} & 62.4 & \pinkbox{0.350} & \pinkbox{62.7 / 1.2} & 24.5 \\
 \midrule
- \multirow{4}{*}{Random} & \multirow{4}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & 0.611 & 90.5 / 76.8 & \pinkbox{22.1} \\
-  &  & Arc & 0.783 & 84.7 / 55.5 & \pinkbox{19.7} \\
-  &  & Serpentine & 0.602 & 88.2 / 73.8 & \pinkbox{25.2} \\
-  &  & Rot.-Axis & 0.594 & 89.3 / 73.2 & \pinkbox{25.0} \\
+ \multirow{3}{*}{Random} & \multirow{3}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & \pinkbox{0.642} & 90.6 / 79.3 & \pinkbox{13.7} & 0.417 & 73.7 / 55.5 & \pinkbox{0.5} \\
+  &  & Serpentine & 0.602 & 88.2 / 73.8 & \pinkbox{25.2} & 0.418 & 71.7 / 53.7 & \pinkbox{0.8} \\
+  &  & Rot.-Axis & 0.594 & 89.3 / 73.2 & \pinkbox{25.0} & 0.420 & 73.9 / 56.4 & \pinkbox{0.5} \\
 \midrule
- \multirow{16}{*}{Heuristic} & \multirow{4}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.616 & 90.4 / 66.9 & 60.6 \\
-  &  & Arc & 0.778 & 84.0 / 36.1 & 56.9 \\
-  &  & Serpentine & 0.602 & 87.8 / 58.7 & 64.6 \\
-  &  & Rot.-Axis & 0.600 & 89.4 / 60.0 & 64.8 \\
-\cmidrule(lr){2-6}
-  & \multirow{4}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.614 & 90.7 / 66.3 & 61.6 \\
-  &  & Arc & 0.791 & 84.8 / 39.0 & 57.8 \\
-  &  & Serpentine & 0.606 & 88.5 / 61.4 & 65.3 \\
-  &  & Rot.-Axis & 0.596 & 89.5 / 63.7 & 65.0 \\
-\cmidrule(lr){2-6}
-  & \multirow{4}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.643 & 94.1 / 87.0 & 69.9 \\
-  &  & Arc & 0.842 & 88.9 / 48.1 & 68.4 \\
-  &  & Serpentine & 0.637 & 92.3 / 82.6 & 75.7 \\
-  &  & Rot.-Axis & 0.629 & 93.3 / 82.4 & 75.0 \\
-\cmidrule(lr){2-6}
-  & \multirow{4}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.644 & 94.3 / 87.5 & 69.9 \\
-  &  & Arc & 0.844 & 89.1 / 50.1 & 68.8 \\
-  &  & Serpentine & \limebox{0.638} & \limebox{92.5 / 83.0} & 76.2 \\
-  &  & Rot.-Axis & 0.629 & 93.4 / 82.6 & 75.1 \\
+ \multirow{12}{*}{Heuristic} & \multirow{3}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.643 & \pinkbox{90.4 / 69.8} & 56.2 & 0.447 & 77.6 / 5.6 & 36.0 \\
+  &  & Serpentine & 0.602 & 87.8 / 58.7 & 64.6 & 0.453 & 76.0 / 4.6 & 36.9 \\
+  &  & Rot.-Axis & 0.600 & 89.4 / 60.0 & 64.8 & 0.451 & 77.6 / 4.9 & 35.7 \\
+\cmidrule(lr){2-9}
+  & \multirow{3}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.647 & 91.1 / 70.5 & 58.0 & 0.457 & 80.2 / 26.2 & 34.4 \\
+  &  & Serpentine & 0.606 & 88.5 / 61.4 & 65.3 & 0.454 & 78.1 / 22.5 & 34.1 \\
+  &  & Rot.-Axis & 0.596 & 89.5 / 63.7 & 65.0 & 0.457 & 80.1 / 24.3 & 33.9 \\
+\cmidrule(lr){2-9}
+  & \multirow{3}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.677 & 94.9 / 88.8 & 66.5 & 0.531 & 90.7 / 71.3 & 51.2 \\
+  &  & Serpentine & 0.637 & 92.3 / 82.6 & 75.7 & 0.532 & 88.9 / 65.6 & 52.0 \\
+  &  & Rot.-Axis & 0.629 & 93.3 / 82.4 & 75.0 & 0.535 & 91.3 / 75.3 & 51.0 \\
+\cmidrule(lr){2-9}
+  & \multirow{3}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.678 & 95.0 / 89.0 & 66.8 & 0.543 & 92.8 / 78.3 & 50.9 \\
+  &  & Serpentine & 0.638 & 92.5 / 83.0 & 76.2 & 0.544 & 90.8 / 75.0 & 51.7 \\
+  &  & Rot.-Axis & 0.629 & 93.4 / 82.6 & 75.1 & 0.547 & 93.3 / 79.6 & 51.2 \\
 \midrule
- \multirow{4}{*}{Learned} & \multirow{4}{*}{\shortstack[l]{\textbf{Learned Selector (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.648}} & \limebox{\textbf{94.8 / 93.4}} & \limebox{\textbf{75.7}} \\
-  &  & \textbf{Arc} & \limebox{\textbf{0.876}} & \limebox{\textbf{89.9 / 50.8}} & \limebox{\textbf{72.9}} \\
-  &  & \textbf{Serpentine} & \textbf{0.634} & \textbf{92.3 / 87.7} & \limebox{\textbf{80.7}} \\
-  &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.632}} & \limebox{\textbf{93.7 / 90.5}} & \limebox{\textbf{80.6}} \\
+ \multirow{6}{*}{Value} & \multirow{3}{*}{\shortstack[l]{Shared Critic $\widehat{V}_{\phi}$}} & Straight & \limebox{0.693} & 96.4 / 95.0 & \limebox{73.1} & 0.524 & 88.2 / 28.1 & 57.2 \\
+  &  & Serpentine & \limebox{0.646} & 93.1 / 87.9 & 78.6 & 0.523 & 86.3 / 31.4 & 56.3 \\
+  &  & Rot.-Axis & 0.644 & 94.7 / 91.1 & 79.8 & 0.532 & 89.2 / 48.5 & 56.2 \\
+\cmidrule(lr){2-9}
+  & \multirow{3}{*}{\shortstack[l]{\textbf{Margin--Value Consensus (Ours)}}} & \textbf{Straight} & \textbf{0.692} & \limebox{\textbf{96.6 / 94.7}} & \textbf{72.1} & \limebox{\textbf{0.560}} & \limebox{\textbf{95.0 / 92.9}} & \limebox{\textbf{59.7}} \\
+  &  & \textbf{Serpentine} & \textbf{0.646} & \limebox{\textbf{93.4 / 88.0}} & \limebox{\textbf{79.8}} & \limebox{\textbf{0.556}} & \limebox{\textbf{92.5 / 88.2}} & \limebox{\textbf{59.2}} \\
+  &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.646}} & \limebox{\textbf{95.1 / 90.7}} & \limebox{\textbf{80.1}} & \limebox{\textbf{0.566}} & \limebox{\textbf{95.8 / 94.7}} & \limebox{\textbf{59.6}} \\
 \midrule
- \multirow{4}{*}{\textemdash} & \multirow{4}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.687 & 98.5 / 98.6 & 100.0 \\
-  &  & Arc & 1.014 & 95.9 / 93.8 & 100.0 \\
-  &  & Serpentine & 0.684 & 97.1 / 94.4 & 100.0 \\
-  &  & Rot.-Axis & 0.680 & 98.5 / 98.0 & 100.0 \\
+ \multirow{3}{*}{\textemdash} & \multirow{3}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.714 & 98.9 / 98.2 & 100.0 & 0.597 & 99.4 / 99.2 & 100.0 \\
+  &  & Serpentine & 0.684 & 97.1 / 94.4 & 100.0 & 0.602 & 97.9 / 94.7 & 100.0 \\
+  &  & Rot.-Axis & 0.680 & 98.5 / 98.0 & 100.0 & 0.601 & 99.5 / 99.3 & 100.0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-\item[Note 1] All methods rank the same candidate pool and use the same
-motion-generation controller. Ratio is the per-task ratio of the achieved
-stroke to the task's pointwise-reachable length $\ell^{\mathrm{pw}}$,
-reported in percent as mean / p10. Near-Oracle Tasks denotes the percentage of tasks
-whose achieved stroke is within $1$\,cm of the within-pool oracle stroke.
+\item[Note 1] All rules rank the same candidate pools and use the same
+motion-generation controller per manipulator. Ratio is the per-task
+ratio of the achieved stroke to the task's pointwise-reachable length
+$\ell^{\mathrm{pw}}$ (mean / p10, percent). Near-Orc.\ is the share of
+tasks within $1$\,cm of the within-pool oracle stroke. The shared
+critic is taken from the manipulator's own controller training run; no
+row trains a model specifically for selection.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
@@ -919,22 +867,18 @@ whose achieved stroke is within $1$\,cm of the within-pool oracle stroke.
 \subsubsection{Path-Type Generalization}
 \label{sec:ood}
 
-We summarize how the learned initial-configuration selector transfers
-across path families. The selector is trained on $20{,}000$ tasks,
-comprising $10{,}000$ straight and $10{,}000$ arc tasks in equal
-proportion, with all $K$ candidates of every training task rolled out to
-produce the ranking labels; it is then evaluated on $2{,}500$ held-out
-tasks from each of the four families. The Learned Selector rows of
-Table~\ref{tab:ablate_seed} distinguish unseen in-distribution tasks
-(straight, arc) from OOD tasks belonging to the serpentine and
-rotating-axis families that are absent from training. The results show that the achieved Ratio is governed by path curvature
-rather than by training membership: the OOD rotating-axis family, whose
-centerline is straight, matches the in-distribution straight family
-($93.7\%$ vs $94.8\%$ in mean Ratio), and the OOD serpentine family even
-exceeds the in-distribution arc family ($92.3\%$ vs $89.9\%$). On every family the learned
-selector remains the strongest non-oracle ranking rule.
-
-
+The selection scores require no retraining across path families: the
+margin field is evaluated on each family's own geometry, and the critic
+is applied unchanged although it never observes a curved task during
+training. The consensus rule remains the strongest non-oracle ranking on
+both OOD families and both manipulators (Table~\ref{tab:ablate_seed}):
+on the FR3 it reaches $93.4\%$ and $95.1\%$ mean Ratio on the serpentine
+and rotating-axis sets against $96.6\%$ on in-distribution straight
+tasks, and on the xArm7 $92.5\%$ and $95.8\%$ against $95.0\%$. The
+near-oracle share degrades by less than seven points from in-distribution
+to OOD on either manipulator, indicating that both the geometric prior
+and the learned value transfer with the task geometry rather than
+memorizing the training family.
 
 
 \subsubsection{Implication for Manipulator Base Placement}
@@ -966,7 +910,7 @@ We evaluate $[N]$ tasks spanning a range of simulated stroke lengths and compare
 
 In this paper, we studied \textit{continuous kinematic reachability}, the maximum extent of a prescribed path that can be realized by a single continuous joint trajectory. Extreme motion generation was formulated as two coupled decisions: selecting the initial configuration and resolving redundancy throughout execution. We evaluated the realized stroke across three manipulators and used numerical pointwise reachability as a task-specific reference.
 
-For redundancy resolution, the deciding factor proved to be the coordinates of the action and observation interface. With the direction given by the exact null-space projector, the amplitude anchored to the per-joint velocity limits, and the observation exposing executed motion and constraint margins, a plain policy-gradient run deploys as a single forward pass per control period and becomes the strongest resolution law in our evaluation. For initial configuration selection, rollout-supervised ranking further improves the achievable stroke and transfers to path families absent from selector training.
+For redundancy resolution, the deciding factor proved to be the coordinates of the action and observation interface. With the direction given by the exact null-space projector, the amplitude anchored to the per-joint velocity limits, and the observation exposing executed motion and constraint margins, a plain policy-gradient run deploys as a single forward pass per control period and becomes the strongest resolution law in our evaluation. For initial configuration selection, ranking the candidate set by the consensus of the analytic margin field and the same run's critic further improves the achievable stroke---without any selection-specific training---and transfers to path families absent from training.
 
 Together, these results indicate that long-horizon constraint avoidance is learnable end to end once the interface is physically grounded. The same continuous-path formulation also induces a task-aware criterion for manipulator base placement. Future work will extend the framework to dynamic constraints and paths specified online.
 

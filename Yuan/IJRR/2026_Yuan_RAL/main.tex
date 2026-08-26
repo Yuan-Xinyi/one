@@ -101,7 +101,7 @@
 \bstctlcite{IEEEexample:BSTcontrol}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{abstract}
-This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length along a pre-defined trajectory within the manipulator's workspace. Conventional reachability analysis focuses on pointwise attainability, without considering whether the start and goal can be connected by a constraint-satisfying trajectory in the workspace. This objective is particularly important for industrial tasks such as welding and surface coating, which require long, uninterrupted strokes. However, maximizing the stroke is challenging because action consequences accumulate over long horizons, and deliberately approaching safety boundaries may yield greater returns. Accordingly, we investigate extreme motion generation and propose learning-based initial configuration selection and real-time redundancy resolution to extend the achievable stroke. The former is addressed through supervised learning from CVT-based candidate batches, while the latter is formulated as an exit-time optimal control problem. Reinforcement learning provides long-horizon decision-making through velocity-limited null-space actions, isolating redundancy resolution from task-space tracking. We evaluate the proposed framework across three manipulators on four spatial path-following tasks in simulation and real-world experiments. Relative to the pointwise-reachable reference, the proposed method recovers X\% of the reference path length and consistently outperforms classical baselines. The method further provides practical guidance for task-aware base placement.
+This work studies \textit{extreme motion generation}, which aims to maximize the Cartesian path length along a pre-defined trajectory within the manipulator's workspace. Conventional reachability analysis focuses on pointwise attainability, without considering whether the start and goal can be connected by a constraint-satisfying trajectory in the workspace. This objective is particularly important for industrial tasks such as welding and surface coating, which require long, uninterrupted strokes. However, maximizing the stroke is challenging because action consequences accumulate over long horizons, and deliberately approaching safety boundaries may yield greater returns. Accordingly, we investigate extreme motion generation and propose learning-based initial configuration selection and real-time redundancy resolution to extend the achievable stroke. The former is addressed through supervised learning from CVT-based candidate batches, while the latter is formulated as an exit-time optimal control problem. Reinforcement learning provides long-horizon decision-making through velocity-limited null-space actions, isolating redundancy resolution from task-space tracking. We evaluate the proposed framework across three manipulators on four spatial path-following tasks in simulation and real-world experiments. Relative to the pointwise-reachable reference, the proposed method recovers $94$--$97\%$ of the reference path length and consistently outperforms classical baselines. The method further provides practical guidance for task-aware base placement.
 
 
 \end{abstract}
@@ -708,15 +708,15 @@ manipulator; on the curved families every learned method runs zero-shot.
 Classical gradient resolution provides only a modest improvement over
 zero null-space motion, and the classical takeover patch of the hybrid
 adds a few points over its underlying policy. The proposed controller
-leads every row on the densest benchmark---$89.8\%$ mean Ratio with a
-10th percentile of $63.3\%$ on FR3 straight tasks---and the lead carries
+leads every row on the densest benchmark---$89.9\%$ mean Ratio with a
+10th percentile of $64.1\%$ on FR3 straight tasks---and the lead carries
 over zero-shot to the curved families it never saw during training
-($87.7$ and $88.4$ mean Ratio on the FR3 serpentine and rotating-axis
+($88.0$ and $88.5$ mean Ratio on the FR3 serpentine and rotating-axis
 sets).
 
 The Continuous PPO and DirFrac rows share the same learning algorithm,
 reward, and training distribution; they differ only in the action and
-observation coordinates, and the gap is $69.4$ versus $89.8$ in mean
+observation coordinates, and the gap is $69.4$ versus $89.9$ in mean
 Ratio. Scale is not the explanation: at the baselines' own budget and
 width the physically normalized interface already reaches $84.9\%$.
 Long-horizon constraint avoidance is learnable end to end once the
@@ -759,9 +759,9 @@ Type
  &  & Serpentine & 0.457 & 73.0 / 21.4 & 0.370 & 69.2 / 19.6 & \limebox{0.202} & \limebox{71.2 / 31.3} \\
  &  & Rot.-Axis & 0.458 & 74.4 / 23.3 & 0.374 & 71.3 / 20.5 & \limebox{0.209} & \limebox{74.2 / 35.2} \\
 \cmidrule(lr){2-9}
- & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.598}} & \limebox{\textbf{89.8 / 63.3}} & \limebox{\textbf{0.508}} & \limebox{\textbf{87.9 / 56.0}} & \textbf{[XX]} & \textbf{[XX]} \\
- &  & \textbf{Serpentine} & \limebox{\textbf{0.600}} & \limebox{\textbf{87.7 / 58.3}} & \limebox{\textbf{0.506}} & \limebox{\textbf{85.1 / 51.2}} & \textbf{[XX]} & \textbf{[XX]} \\
- &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.589}} & \limebox{\textbf{88.4 / 54.5}} & \limebox{\textbf{0.507}} & \limebox{\textbf{87.6 / 56.0}} & \textbf{[XX]} & \textbf{[XX]} \\
+ & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.598}} & \limebox{\textbf{89.9 / 64.1}} & \limebox{\textbf{0.508}} & \limebox{\textbf{87.9 / 55.6}} & \textbf{[XX]} & \textbf{[XX]} \\
+ &  & \textbf{Serpentine} & \limebox{\textbf{0.605}} & \limebox{\textbf{88.0 / 61.0}} & \limebox{\textbf{0.507}} & \limebox{\textbf{85.4 / 52.1}} & \textbf{[XX]} & \textbf{[XX]} \\
+ &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.588}} & \limebox{\textbf{88.5 / 56.3}} & \limebox{\textbf{0.510}} & \limebox{\textbf{87.7 / 56.0}} & \textbf{[XX]} & \textbf{[XX]} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -805,7 +805,7 @@ consequences. Table~\ref{tab:ablate_seed} reports results on the
 $10{,}000$-task straight sets and $2{,}500$ tasks per curved family, for
 both the FR3 and the xArm7. The shared critic is the best non-oracle
 rule in every family--manipulator cell, reaching mean Ratios of
-$96.9/93.7/95.7$ on the FR3 and $96.3/93.8/96.1$ on the xArm7---above
+$96.9/94.4/95.8$ on the FR3 and $95.9/93.5/95.9$ on the xArm7---above
 the margin field and every geometric heuristic---without any
 selection-specific training.
 
@@ -831,40 +831,37 @@ Type
 & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
 & \shortstack{Near-Orc.\\(\%)} \\
 \midrule
- \multirow{3}{*}{\textemdash} & \multirow{3}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & 0.644 & 90.5 / 68.5 & 54.4 & \pinkbox{0.345} & \pinkbox{62.0 / 1.2} & 23.7 \\
-  &  & Serpentine & \pinkbox{0.600} & \pinkbox{87.8 / 58.3} & 63.2 & \pinkbox{0.350} & \pinkbox{61.2 / 1.1} & 23.7 \\
-  &  & Rot.-Axis & \pinkbox{0.589} & \pinkbox{88.4 / 54.5} & 62.4 & \pinkbox{0.350} & \pinkbox{62.7 / 1.2} & 24.5 \\
+ \multirow{3}{*}{\textemdash} & \multirow{3}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & 0.646 & 90.8 / 69.5 & 54.2 & \pinkbox{0.348} & \pinkbox{62.2 / 1.2} & 23.3 \\
+  &  & Serpentine & 0.606 & 88.1 / 60.7 & 53.6 & \pinkbox{0.353} & \pinkbox{61.2 / 1.2} & 24.3 \\
+  &  & Rot.-Axis & \pinkbox{0.590} & \pinkbox{88.7 / 56.8} & 52.9 & \pinkbox{0.355} & \pinkbox{63.2 / 1.3} & 25.0 \\
 \midrule
- \multirow{3}{*}{Random} & \multirow{3}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & \pinkbox{0.642} & 90.6 / 79.3 & \pinkbox{13.7} & 0.417 & 73.7 / 55.5 & \pinkbox{0.5} \\
-  &  & Serpentine & 0.602 & 88.2 / 73.8 & \pinkbox{25.2} & 0.418 & 71.7 / 53.7 & \pinkbox{0.8} \\
-  &  & Rot.-Axis & 0.594 & 89.3 / 73.2 & \pinkbox{25.0} & 0.420 & 73.9 / 56.4 & \pinkbox{0.5} \\
+ \multirow{3}{*}{Random} & \multirow{3}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & \pinkbox{0.642} & 90.6 / 79.5 & \pinkbox{13.5} & 0.419 & 73.9 / 55.9 & \pinkbox{0.8} \\
+  &  & Serpentine & 0.605 & 88.6 / 73.7 & \pinkbox{18.4} & 0.420 & 72.0 / 53.6 & \pinkbox{0.5} \\
+  &  & Rot.-Axis & 0.597 & 89.8 / 74.8 & \pinkbox{19.4} & 0.422 & 74.3 / 56.1 & \pinkbox{0.6} \\
 \midrule
- \multirow{12}{*}{Heuristic} & \multirow{3}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.643 & \pinkbox{90.4 / 69.8} & 56.2 & 0.447 & 77.6 / 5.6 & 36.0 \\
-  &  & Serpentine & 0.602 & 87.8 / 58.7 & 64.6 & 0.453 & 76.0 / 4.6 & 36.9 \\
-  &  & Rot.-Axis & 0.600 & 89.4 / 60.0 & 64.8 & 0.451 & 77.6 / 4.9 & 35.7 \\
+ \multirow{12}{*}{Heuristic} & \multirow{3}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.643 & \pinkbox{90.5 / 69.5} & 55.9 & 0.450 & 77.9 / 6.3 & 36.3 \\
+  &  & Serpentine & \pinkbox{0.603} & \pinkbox{88.1 / 58.7} & 56.6 & 0.451 & 75.6 / 4.9 & 35.4 \\
+  &  & Rot.-Axis & 0.598 & 89.3 / 59.5 & 56.3 & 0.451 & 77.6 / 5.1 & 35.4 \\
 \cmidrule(lr){2-9}
-  & \multirow{3}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.647 & 91.1 / 70.5 & 58.0 & 0.457 & 80.2 / 26.2 & 34.4 \\
-  &  & Serpentine & 0.606 & 88.5 / 61.4 & 65.3 & 0.454 & 78.1 / 22.5 & 34.1 \\
-  &  & Rot.-Axis & 0.596 & 89.5 / 63.7 & 65.0 & 0.457 & 80.1 / 24.3 & 33.9 \\
+  & \multirow{3}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.645 & 90.9 / 69.9 & 56.7 & 0.466 & 81.6 / 33.4 & 34.4 \\
+  &  & Serpentine & 0.612 & 89.2 / 63.7 & 57.3 & 0.467 & 79.9 / 30.6 & 35.2 \\
+  &  & Rot.-Axis & 0.597 & 89.7 / 62.4 & 56.6 & 0.469 & 82.1 / 33.1 & 35.0 \\
 \cmidrule(lr){2-9}
-  & \multirow{3}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.677 & 94.9 / 88.8 & 66.5 & 0.531 & 90.7 / 71.3 & 51.2 \\
-  &  & Serpentine & 0.637 & 92.3 / 82.6 & 75.7 & 0.532 & 88.9 / 65.6 & 52.0 \\
-  &  & Rot.-Axis & 0.629 & 93.3 / 82.4 & 75.0 & 0.535 & 91.3 / 75.3 & 51.0 \\
+  & \multirow{3}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.676 & 94.9 / 88.7 & 67.4 & 0.523 & 89.4 / 60.2 & 50.5 \\
+  &  & Serpentine & 0.638 & 92.5 / 82.6 & 65.5 & 0.526 & 87.5 / 56.6 & 50.7 \\
+  &  & Rot.-Axis & 0.630 & 93.6 / 81.7 & 66.8 & 0.525 & 89.5 / 61.5 & 49.4 \\
 \cmidrule(lr){2-9}
-  & \multirow{3}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.678 & 95.0 / 89.0 & 66.8 & 0.543 & 92.8 / 78.3 & 50.9 \\
-  &  & Serpentine & 0.638 & 92.5 / 83.0 & 76.2 & 0.544 & 90.8 / 75.0 & 51.7 \\
-  &  & Rot.-Axis & 0.629 & 93.4 / 82.6 & 75.1 & 0.547 & 93.3 / 79.6 & 51.2 \\
+  & \multirow{3}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.677 & 94.9 / 88.7 & 67.4 & 0.540 & 92.2 / 75.5 & 50.9 \\
+  &  & Serpentine & 0.638 & 92.6 / 82.9 & 65.7 & 0.544 & 90.4 / 72.6 & 52.3 \\
+  &  & Rot.-Axis & 0.632 & 93.7 / 82.1 & 66.0 & 0.542 & 92.4 / 76.7 & 50.8 \\
 \midrule
-% NOTE: surrogate numbers (old ckpt, critic queried one control period in,
-% where all buffered obs channels are real). Replace with the retrained
-% true-reset-obs zero-step critic (runs/rl_dirfrac_*_rm) when it lands.
- \multirow{3}{*}{Value} & \multirow{3}{*}{\shortstack[l]{\textbf{Shared Critic $\widehat{V}_{\phi}$ (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.696}} & \limebox{\textbf{96.9 / 95.4}} & \limebox{\textbf{75.1}} & \limebox{\textbf{0.568}} & \limebox{\textbf{96.3 / 95.0}} & \limebox{\textbf{64.5}} \\
-  &  & \textbf{Serpentine} & \limebox{\textbf{0.650}} & \limebox{\textbf{93.7 / 89.8}} & \limebox{\textbf{81.6}} & \limebox{\textbf{0.566}} & \limebox{\textbf{93.8 / 89.6}} & \limebox{\textbf{62.9}} \\
-  &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.652}} & \limebox{\textbf{95.7 / 92.1}} & \limebox{\textbf{81.2}} & \limebox{\textbf{0.570}} & \limebox{\textbf{96.1 / 95.1}} & \limebox{\textbf{62.7}} \\
+ \multirow{3}{*}{Value} & \multirow{3}{*}{\shortstack[l]{\textbf{Shared Critic $\widehat{V}_{\phi}$ (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.695}} & \limebox{\textbf{96.9 / 95.3}} & \limebox{\textbf{75.6}} & \limebox{\textbf{0.566}} & \limebox{\textbf{95.9 / 94.7}} & \limebox{\textbf{62.0}} \\
+  &  & \textbf{Serpentine} & \limebox{\textbf{0.656}} & \limebox{\textbf{94.4 / 90.4}} & \limebox{\textbf{73.5}} & \limebox{\textbf{0.563}} & \limebox{\textbf{93.5 / 89.4}} & \limebox{\textbf{62.0}} \\
+  &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.651}} & \limebox{\textbf{95.8 / 93.0}} & \limebox{\textbf{74.8}} & \limebox{\textbf{0.568}} & \limebox{\textbf{95.9 / 95.1}} & \limebox{\textbf{61.8}} \\
 \midrule
- \multirow{3}{*}{\textemdash} & \multirow{3}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.714 & 98.9 / 98.2 & 100.0 & 0.597 & 99.4 / 99.2 & 100.0 \\
-  &  & Serpentine & 0.684 & 97.1 / 94.4 & 100.0 & 0.602 & 97.9 / 94.7 & 100.0 \\
-  &  & Rot.-Axis & 0.680 & 98.5 / 98.0 & 100.0 & 0.601 & 99.5 / 99.3 & 100.0 \\
+ \multirow{3}{*}{\textemdash} & \multirow{3}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.714 & 98.9 / 98.3 & 100.0 & 0.598 & 99.4 / 99.2 & 100.0 \\
+  &  & Serpentine & 0.689 & 97.5 / 95.2 & 100.0 & 0.602 & 97.9 / 94.7 & 100.0 \\
+  &  & Rot.-Axis & 0.681 & 98.6 / 99.0 & 100.0 & 0.602 & 99.6 / 99.3 & 100.0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -889,13 +886,13 @@ The selection score requires no retraining across path families: the
 critic is applied unchanged although it never observes a curved task
 during training. It remains the strongest non-oracle ranking on both
 OOD families and both manipulators (Table~\ref{tab:ablate_seed}): on
-the FR3 it reaches $93.7\%$ and $95.7\%$ mean Ratio on the serpentine
+the FR3 it reaches $94.4\%$ and $95.8\%$ mean Ratio on the serpentine
 and rotating-axis sets against $96.9\%$ on in-distribution straight
-tasks, and on the xArm7 $93.8\%$ and $96.1\%$ against $96.3\%$. The
-near-oracle share is no lower on the OOD families than in distribution
-on the FR3 and stays within two points on the xArm7, indicating that
-the learned value transfers with the task geometry rather than
-memorizing the training family.
+tasks, and on the xArm7 $93.5\%$ and $95.9\%$ against $95.9\%$. The
+near-oracle share shifts by at most $2.1$ points from in-distribution
+to OOD on either manipulator, indicating that the learned value
+transfers with the task geometry rather than memorizing the training
+family.
 
 
 \subsubsection{Implication for Manipulator Base Placement}

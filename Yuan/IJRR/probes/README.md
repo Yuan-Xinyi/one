@@ -19,3 +19,4 @@ Highlights (2026-08, algorithm-optimization phase):
 - gated_dirfrac.py       diagnostic intent-preserving gate on dirfrac v2: 84.9 / 42.8
 - l81_cont_10k.py        L81(+zero) candidate-set 10k eval
 - witness_arms.py/witness_gen2.py  multi-arm witness strengthening
+- manifold_symmetry.py  within-component value symmetry: var-within median 3.2%; A->B null-space migration recovery median 1.00 (8/10 >=0.97); data fam_unify/manifold_symmetry.json

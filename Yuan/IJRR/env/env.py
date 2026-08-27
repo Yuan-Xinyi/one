@@ -160,6 +160,15 @@ class EnvConfig:
     # earns half the reward and the return still equals arc length: slowing
     # down is priced, surviving longer pays for it.
     speed_levels: tuple = ()
+    # Binary advance gate: one trailing action channel, executed as
+    # g = 1[a > 0]. g=1 runs the task-space command as usual; g=0 executes
+    # NO task motion this step -- pure null-space reconfiguration, with the
+    # whole velocity budget available to it (alpha_feas sees qdot_task = 0).
+    # Progress reward is computed from realized motion, so a paused step
+    # earns exactly 0: under the exit-time objective a pause pays only if
+    # the reconfiguration buys more stroke than the time it costs.
+    # dir_frac_action == 2 only; mutually exclusive with speed_levels.
+    task_gate: bool = False
     # Potential-based margin shaping: r += w_margin*(margin_gamma*phi' - phi)
     # with phi = -tau*logsumexp(-m/tau) over the normalized joint-limit and
     # cone margins -- the two components the myopic one-step ablation showed
@@ -402,8 +411,12 @@ class NSRLBatchedEnv:
                                self.n_joints + (0 if _rfn else 1)
                                if _dfa == 2 else
                                self.act_dim)
-        if _dfa == 2 and cfg.speed_levels:
-            self.act_dim_policy += 1          # trailing speed channel
+        if getattr(cfg, 'task_gate', False):
+            assert _dfa == 2 and not cfg.speed_levels, \
+                'task_gate requires dir_frac_action == 2, no speed_levels'
+        if _dfa == 2 and (cfg.speed_levels
+                          or getattr(cfg, 'task_gate', False)):
+            self.act_dim_policy += 1          # trailing speed/gate channel
         _od = set(getattr(cfg, 'obs_drop', ()) or ())
         assert _od <= {'q_sq', 'z_cross_n', 'cos_angle', 'a_prev'}, _od
         # 2n (q_norm, q_norm^2) + 13 task channels + a_prev; 31 for FR3.
@@ -859,10 +872,14 @@ class NSRLBatchedEnv:
             else:
                 rho = 0.5 * (actions[:, nd] + 1.0)   # [0, 1]
                 _sp_col = nd + 1
-            # dir-frac + speed: one extra trailing channel.
-            speed_frac = (actions[:, _sp_col].clamp(
-                min(self.cfg.speed_levels), 1.0)
-                if self.cfg.speed_levels else None)
+            # dir-frac + speed/gate: one extra trailing channel.
+            if getattr(self.cfg, 'task_gate', False):
+                speed_frac = (actions[:, _sp_col] > 0).to(actions.dtype)
+            elif self.cfg.speed_levels:
+                speed_frac = actions[:, _sp_col].clamp(
+                    min(self.cfg.speed_levels), 1.0)
+            else:
+                speed_frac = None
             actions = u_dir
         elif self.cfg.speed_levels:
             speed_frac = actions[:, self.act_dim].clamp(
@@ -912,6 +929,10 @@ class NSRLBatchedEnv:
                  else (self.v * speed_frac).unsqueeze(-1))
         x_dot = (v_eff * self.line_dir
                  + self.cfg.k_lateral * lateral_vec).unsqueeze(-1)
+        if getattr(self.cfg, 'task_gate', False):
+            # g=0 kills the ENTIRE task command (feed-forward and lateral
+            # feedback): the paused step is pure self-motion.
+            x_dot = x_dot * speed_frac.reshape(-1, 1, 1)
         qdot_task = (J_plus @ x_dot).squeeze(-1)
         if getattr(self.cfg, 'observe_headroom', False):
             _hr = torch.cat(

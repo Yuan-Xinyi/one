@@ -599,6 +599,99 @@ class NSRLBatchedEnv:
         self.n_target = torch.where(
             (self.n_rot_rate != 0).unsqueeze(-1), n, self.n_target)
 
+    @torch.no_grad()
+    def _twin_side(self, q_t: torch.Tensor):
+        """Full admissibility check + geometry of one twin candidate."""
+        lmt = ((q_t >= self.lmt_lo) & (q_t <= self.lmt_up)).all(dim=-1)
+        tfs = self.kin.link_transforms(q_t)
+        coll = self.collision.is_collided(tfs)
+        p_t, R_t, _, _ = self.kin.tcp_fk_jac(q_t)
+        tangent, _, lat = self._path_frame(p_t)
+        cos = (R_t[:, :, 2] * self.n_target).sum(-1).clamp(-1.0, 1.0)
+        feas = ((~coll) & lmt & (lat <= LATERAL_SAFETY_NET)
+                & (cos >= self.cos_cone))
+        mm = self.collision.min_margin(tfs) / 0.05
+        return feas, p_t, R_t, tangent, lat, cos, mm
+
+    @torch.no_grad()
+    def compute_twin_obs(self, delta: float, null_space: bool = True,
+                         margin_floor: float = 0.0):
+        """Feasibility-certified null-space twin observation of the state.
+
+        V* is constant along feasible self-motion directions: a pure
+        reconfiguration changes neither the task-space progress nor the
+        reachable remainder, so the critic queried at the current state
+        and at a small certified step along ker J_p must agree
+        (P_N grad V = 0). Samples one random null direction per env,
+        tries +delta and -delta in random order, and emits the
+        observation at the first feasible side with margins and tangent
+        recomputed there; the convention-stale channels (a_prev, proj
+        scales) are inherited from the anchor so both observations follow
+        the training-time staleness convention. States at t=0 emit no
+        pair: without true_reset_obs their anchor margins are the reset
+        placeholder and the pair would compare different conventions.
+        A pair never straddles an
+        infeasible region -- the certification is the same constraint
+        set that terminates an episode -- so the equality constraint
+        cannot propagate across a component boundary.
+
+        Returns (twin_obs, valid) of shapes (B, obs_dim) and (B,).
+        """
+        B = self.n_envs
+        dt = self.kin.dtype
+        if null_space:
+            _, _, J, _ = self.kin.tcp_fk_jac(self.q)
+            _, _, Vh = torch.linalg.svd(J[:, :3, :].double(),
+                                        full_matrices=True)
+            Nn = Vh.transpose(-1, -2)[..., 3:]
+            r = torch.randn(B, Nn.shape[-1], 1, device=self.device,
+                            dtype=torch.float64)
+            xi = (Nn @ r).squeeze(-1)
+        else:
+            # Confound control: same certified-pair machinery, but the
+            # direction is drawn in the FULL joint space. The implied
+            # invariance is wrong (the pair may move along the path), so
+            # matching gains here would mean the effect is generic
+            # neighbor-consistency, not the null-space semantics.
+            xi = torch.randn(B, self.n_joints, device=self.device,
+                             dtype=torch.float64)
+        nrm = xi.norm(dim=-1, keepdim=True)
+        ok_dir = nrm.squeeze(-1) > 1e-8
+        xi = (xi / nrm.clamp_min(1e-8)).to(dt)
+        sgn = (torch.randint(0, 2, (B, 1), device=self.device) * 2 - 1).to(dt)
+        qa = self.q + delta * sgn * xi
+        qb = self.q - delta * sgn * xi
+        fa, pa, Ra, ta, la, ca, ma = self._twin_side(qa)
+        fb, pb, Rb, tb, lb, cb, mb = self._twin_side(qb)
+        valid = (fa | fb) & ok_dir & (self.t > 0)
+        w = fa.unsqueeze(-1)
+        if margin_floor > 0.0:
+            # Interior-only pairing: both sides must keep every normalized
+            # margin above the floor (anchor from its buffered margins,
+            # twin from the freshly computed ones below).
+            valid &= self._mg_obs.amin(dim=-1) > margin_floor
+        q_t = torch.where(w, qa, qb)
+        p_t = torch.where(w, pa, pb)
+        R_t = torch.where(w.unsqueeze(-1), Ra, Rb)
+        tan = torch.where(w, ta, tb)
+        lat = torch.where(fa, la, lb)
+        cos = torch.where(fa, ca, cb)
+        mm = torch.where(fa, ma, mb)
+        sv = (self._mg_obs, self.line_dir)
+        if getattr(self.cfg, 'observe_margins', False):
+            m_jl = ((self.q_half - (q_t - self.q_mid).abs())
+                    / self.q_half).amin(dim=-1)
+            m_cone = (cos - self.cos_cone) / (1.0 - self.cos_cone)
+            m_lat = (LATERAL_SAFETY_NET - lat) / LATERAL_SAFETY_NET
+            _tw_mg = torch.stack([m_jl, m_cone, m_lat, mm], dim=-1)
+            if margin_floor > 0.0:
+                valid &= _tw_mg.amin(dim=-1) > margin_floor
+            self._mg_obs = _tw_mg
+        self.line_dir = tan
+        obs_t = self._compute_obs(p_t, R_t, q=q_t, a_prev=self.a_prev)
+        self._mg_obs, self.line_dir = sv
+        return obs_t, valid
+
     def _path_frame(self, p: torch.Tensor):
         """(tangent, lateral_vec, lateral_dist) of the path at TCP position p.
 

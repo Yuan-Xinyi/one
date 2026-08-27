@@ -50,6 +50,34 @@ class PPOConfig:
     # garbage advantages would erode the distilled actor before the critic
     # calibrates.
     actor_warmup_updates: int = 0
+    # Null-space value-equality regularizer: at every rollout state, the env
+    # emits the observation of a feasibility-certified twin one small step
+    # along ker J_p (bidirectional sampling), and the critic pays
+    # twin_lambda * (V(o) - V(o_twin))^2. V* is invariant under feasible
+    # self-motion, so this installs P_N grad V = 0 as an inductive bias;
+    # certified pairs never straddle a component boundary, so values are
+    # shared within a self-motion component but not across walls.
+    # Reseed torch at train() entry: fresh net init + sampling stream while
+    # the task pool (train_seed) stays fixed. None = leave the global RNG.
+    torch_seed: int | None = None
+    twin_lambda: float = 0.0
+    twin_delta: float = 0.1
+    # 'eq'   symmetric equality (V_a - V_t)^2 -- R1: monotonically harmful,
+    #        drags good states down toward doomed neighbours.
+    # 'lift' one-sided improvement inequality: only the LOWER value is
+    #        raised toward the (detached) higher one. This is the form V*
+    #        actually satisfies: a feasible self-motion step is free, so
+    #        V(q) >= V(q') must hold both ways; under an imperfect policy
+    #        only the lift direction is sound.
+    twin_mode: str = 'eq'
+    # When > 0, a pair is only emitted if BOTH sides keep all normalized
+    # margins above this floor -- restricts the equality to the interior,
+    # away from walls where V^pi legitimately varies steeply.
+    twin_margin_floor: float = 0.0
+    # False switches the twin direction to a full-joint-space random draw
+    # (feasibility-certified all the same): the confound control that
+    # separates "null-space invariance" from generic neighbor smoothing.
+    twin_null_space: bool = True
     # Use the TRUE entropy of the tanh-squashed distribution (single-sample
     # rsample estimate) instead of the underlying Normal's entropy. The Normal
     # proxy is degenerate: inflating sigma earns unbounded log-sigma bonus
@@ -315,6 +343,8 @@ def train(cfg: PPOConfig, env, device: torch.device,
     `eval_fn(agent)` is called every `eval_every` env steps and may return a
     dict logged via `log_fn`. `log_fn(dict)` is called after each update.
     """
+    if cfg.torch_seed is not None:
+        torch.manual_seed(cfg.torch_seed)
     obs_dim = env.obs_dim
     act_dim = getattr(env, 'act_dim_policy', env.act_dim)
     n_envs = env.n_envs
@@ -357,6 +387,14 @@ def train(cfg: PPOConfig, env, device: torch.device,
     truncated_buf = torch.zeros((cfg.n_steps, n_envs), device=device)
     values_buf = torch.zeros((cfg.n_steps, n_envs), device=device)
     terminal_obs_buf = torch.zeros((cfg.n_steps, n_envs, obs_dim), device=device)
+    twin_obs_buf = None
+    if cfg.twin_lambda > 0.0:
+        if not hasattr(env, 'compute_twin_obs'):
+            raise ValueError('twin_lambda > 0 requires an env with '
+                             'compute_twin_obs (no wrapper support)')
+        twin_obs_buf = torch.zeros((cfg.n_steps, n_envs, obs_dim),
+                                   device=device)
+        twin_mask_buf = torch.zeros((cfg.n_steps, n_envs), device=device)
     # action masking (mask_fn): sampled AND update-side distributions must be
     # masked identically, so masks are stored alongside the transitions
     masks_buf = None
@@ -415,6 +453,12 @@ def train(cfg: PPOConfig, env, device: torch.device,
         for step in range(cfg.n_steps):
             global_step += n_envs
             obs_buf[step] = next_obs
+            if twin_obs_buf is not None:
+                t_obs, t_val = env.compute_twin_obs(
+                    cfg.twin_delta, null_space=cfg.twin_null_space,
+                    margin_floor=cfg.twin_margin_floor)
+                twin_obs_buf[step] = t_obs
+                twin_mask_buf[step] = t_val.float()
             with torch.no_grad():
                 if mask_fn is not None:
                     cur_mask = mask_fn()
@@ -525,6 +569,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
         b_values = values_buf.reshape(-1)
         b_masks = (masks_buf.reshape(-1, agent.n_actions)
                    if masks_buf is not None else None)
+        if twin_obs_buf is not None:
+            b_twin = twin_obs_buf.reshape(-1, obs_dim)
+            b_tmask = twin_mask_buf.reshape(-1)
 
 
         b_inds = np.arange(batch_size)
@@ -584,6 +631,23 @@ def train(cfg: PPOConfig, env, device: torch.device,
                     loss = cfg.vf_coef * v_loss
                 else:
                     loss = pg_loss - cfg.ent_coef * ent_loss + cfg.vf_coef * v_loss
+                if twin_obs_buf is not None:
+                    tv = agent.get_value(b_twin[mb_inds])
+                    tm = b_tmask[mb_inds]
+                    dv = newvalue - tv
+                    if cfg.twin_mode == 'lift':
+                        hi = torch.maximum(newvalue, tv).detach()
+                        lo = torch.minimum(newvalue, tv)
+                        twin_loss = ((((hi - lo) ** 2) * tm).sum()
+                                     / tm.sum().clamp_min(1.0))
+                    else:
+                        twin_loss = (((dv ** 2) * tm).sum()
+                                     / tm.sum().clamp_min(1.0))
+                    loss = loss + cfg.twin_lambda * twin_loss
+                    with torch.no_grad():
+                        twin_dv_abs = float(((dv.abs() * tm).sum()
+                                             / tm.sum().clamp_min(1.0)).item())
+                        twin_valid_frac = float(tm.mean().item())
                 if kl_prior is not None:
                     loss = loss + cfg.kl_prior_coef * kl_prior
                 if anchor is not None and update > cfg.actor_warmup_updates:
@@ -643,6 +707,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 "train/sigma_clamp_frac":
                     rollout_sigma_clamp_sum / max(rollout_term_n, 1),
             }
+            if twin_obs_buf is not None:
+                log_dict["train/twin_dv"] = twin_dv_abs
+                log_dict["train/twin_valid_frac"] = twin_valid_frac
             for k in _reward_term_keys:
                 short = k.replace("_mean", "").replace("r_", "")  # progress
                 log_dict[f"reward/{short}"] = (rollout_term_accum[k] / rollout_term_n

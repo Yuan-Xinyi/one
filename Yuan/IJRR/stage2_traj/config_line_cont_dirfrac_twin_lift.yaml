@@ -1,0 +1,75 @@
+env:
+  dir_frac_action: 2
+  a_prev_executed: true
+  observe_margins: true
+  rho_from_norm: true
+  observe_proj_scales: true
+  qd_limit: [2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61]
+  n_envs: 128
+  dt: 0.05           # 20 Hz control
+  v: 0.2             # m/s linear EE speed along u_hat
+  a_max: 0.5         # rad/s nullspace action scale. History: 1.0→0.5→0.1(weak)→0.3(2026-05-28); back to 0.5 on 2026-05-29 (K_P removed)
+  lambda_0: 0.05     # DLS damping baseline
+  sigma_thr: 0.05    # adaptive damping threshold
+  cone_deg: 30.0     # rotation cone half-angle (hard terminate)
+  max_steps: 500     # 25 s physical time at dt=0.05 (geometric max ≈ 100 steps)
+  tcp_offset: 0.2034 # pen tip = HAND_TCP_OFFSET (0.1034) + PEN_LENGTH (0.10)
+  # Terminal penalties unified to 0; lifetime alone is the performance signal
+  r_collision: 0.0
+  r_cone: 0.0
+  r_jl: 0.0
+  # P0 progress-only reward: r_t = w_progress · clip(Δp·u_hat / (v·dt), 0, 1)
+  w_progress: 1.0
+  manip_damping: 1.0e-3
+  # Signed local curvature; changes sign mid-episode on a wave,
+  # so it cannot be inferred from a few steps and must be observed.
+  observe_curvature: false
+
+ppo:
+  twin_lambda: 0.3
+  twin_delta: 0.1
+  twin_mode: lift
+  total_timesteps: 30000000
+  learning_rate: 3.0e-4
+  n_steps: 32
+  anneal_lr: true
+  gamma: 0.99             # horizon 1/(1-γ)=100 steps = 5s = 1m EE travel
+  gae_lambda: 0.95
+  n_minibatches: 32
+  update_epochs: 10
+  norm_adv: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.02
+  hidden_dim: 512
+  init_log_std: -0.5      # effective joint-vel exploration std = exp(-0.5)*a_max = 0.30 rad/s at a_max=0.5 (matches 0520 baseline)
+  normalize_returns: true
+  # Entropy of the SQUASHED action, i.e. with the tanh Jacobian correction.
+  # Without it the bonus rewards raw-Gaussian spread, which grows without
+  # bound while the executed action collapses onto the tanh saturation, so
+  # log_std pins to LOG_STD_MAX. Measured in runs/p0_*_30M: 63-92% of all
+  # updates sat at the cap, sigma = 1.65, actions effectively bang-bang.
+  squashed_entropy: true
+
+agent:
+  kind: gaussian
+
+line_distribution:
+  n_pool: 100000
+  n_target_noise_deg: 5.0
+  train_seed: 0
+  # Pre-filter pool: drop lines where classical_nullspace controller can't
+  # reach `feasibility_threshold_m` of EE travel before terminating.
+  feasibility_filter: true
+  feasibility_threshold_m: 0.1
+
+eval:
+  n_holdout: 200
+  holdout_seed: 42
+
+train:
+  eval_every: 250000
+  ckpt_every_n_updates: 10

@@ -154,6 +154,13 @@ class EnvConfig:
     r_jl: float = 0.0
     # Progress-only shaping reward.
     w_progress: float = 1.0
+    # Position-compensated progress reward: multiply the per-step progress
+    # reward by exp(kappa * arc_progress). With kappa = -ln(gamma)/(v dt)
+    # the weight exactly cancels the time discount along a full-speed
+    # trajectory, so an increment of progress far down the line has the
+    # same discounted value as one near the start -- without it the hard
+    # tail of a long stroke is worth exponentially less gradient signal.
+    progress_w_kappa: float = 0.0
     # Non-empty: the policy also chooses a tangential speed each step, as a
     # trailing action channel holding one of these fractions of cfg.v. The
     # progress reward stays normalized by the FULL v, so a half-speed step
@@ -501,6 +508,10 @@ class NSRLBatchedEnv:
             (B, (self._ap_k - 1) * self.act_dim_policy),
             device=self.device, dtype=d)
         self._mg_obs = torch.ones((B, 4), device=self.device, dtype=d)
+        # Absolute arc-position of the episode's start on the task line
+        # (progress_offset from the distribution; 0 for ordinary tasks).
+        # Only consumed by the progress_w_kappa reward weight.
+        self._prog_w0 = torch.zeros((B,), device=self.device, dtype=d)
         # Potential of the margin-shaping term at the previous step.
         self.phi_prev = torch.zeros((B,), device=self.device, dtype=d)
         self.done_persistent = torch.zeros((B,), device=self.device, dtype=torch.bool)
@@ -628,7 +639,7 @@ class NSRLBatchedEnv:
 
     @torch.no_grad()
     def compute_twin_obs(self, delta: float, null_space: bool = True,
-                         margin_floor: float = 0.0):
+                         margin_floor: float = 0.0, n_sub: int = 1):
         """Feasibility-certified null-space twin observation of the state.
 
         V* is constant along feasible self-motion directions: a pure
@@ -672,8 +683,9 @@ class NSRLBatchedEnv:
         ok_dir = nrm.squeeze(-1) > 1e-8
         xi = (xi / nrm.clamp_min(1e-8)).to(dt)
         sgn = (torch.randint(0, 2, (B, 1), device=self.device) * 2 - 1).to(dt)
-        qa = self.q + delta * sgn * xi
-        qb = self.q - delta * sgn * xi
+        d_sub = delta / max(int(n_sub), 1)
+        qa = self.q + d_sub * sgn * xi
+        qb = self.q - d_sub * sgn * xi
         fa, pa, Ra, ta, la, ca, ma = self._twin_side(qa)
         fb, pb, Rb, tb, lb, cb, mb = self._twin_side(qb)
         valid = (fa | fb) & ok_dir & (self.t > 0)
@@ -690,6 +702,34 @@ class NSRLBatchedEnv:
         lat = torch.where(fa, la, lb)
         cos = torch.where(fa, ca, cb)
         mm = torch.where(fa, ma, mb)
+        if int(n_sub) > 1:
+            # Certified self-motion WALK: continue along the (re-projected)
+            # same direction for up to n_sub-1 more substeps; an env whose
+            # next substep fails certification simply stops where it is,
+            # so the endpoint is always reachable through an all-feasible
+            # chain -- the multi-step form of "a can reconfigure into b".
+            xi_s = torch.where(w, sgn * xi, -sgn * xi)
+            for _ in range(int(n_sub) - 1):
+                _, _, Jt, _ = self.kin.tcp_fk_jac(q_t)
+                _, _, Vh_t = torch.linalg.svd(Jt[:, :3, :].double(),
+                                              full_matrices=True)
+                Nt = Vh_t.transpose(-1, -2)[..., 3:]
+                xk = (Nt @ (Nt.transpose(-1, -2)
+                            @ xi_s.double().unsqueeze(-1))).squeeze(-1)
+                nk = xk.norm(dim=-1, keepdim=True)
+                xk = (xk / nk.clamp_min(1e-8)).to(dt)
+                q_n = q_t + d_sub * xk
+                fk_, pk, Rk, tk, lk, ck, mk = self._twin_side(q_n)
+                stepok = fk_ & (nk.squeeze(-1) > 1e-6)
+                wk = stepok.unsqueeze(-1)
+                q_t = torch.where(wk, q_n, q_t)
+                p_t = torch.where(wk, pk, p_t)
+                R_t = torch.where(wk.unsqueeze(-1), Rk, R_t)
+                tan = torch.where(wk, tk, tan)
+                lat = torch.where(stepok, lk, lat)
+                cos = torch.where(stepok, ck, cos)
+                mm = torch.where(stepok, mk, mm)
+                xi_s = torch.where(wk, xk, xi_s)
         sv = (self._mg_obs, self.line_dir)
         if getattr(self.cfg, 'observe_margins', False):
             m_jl = ((self.q_half - (q_t - self.q_mid).abs())
@@ -777,6 +817,11 @@ class NSRLBatchedEnv:
         self._headroom[mask] = 1.0
         self._a_hist[mask] = 0
         self._mg_obs[mask] = 1.0
+        if "progress_offset" in spec:
+            self._prog_w0[mask] = spec["progress_offset"].to(
+                device=self.device, dtype=self.kin.dtype).reshape(n_reset)
+        else:
+            self._prog_w0[mask] = 0.0
         self.done_persistent[mask] = False
         self.episode_reward[mask] = 0.0
         self.episode_steps[mask] = 0
@@ -1046,6 +1091,14 @@ class NSRLBatchedEnv:
         progress_norm = (delta_progress / (self.v * self.dt)).clamp(0.0, 1.0)
         arc_step = delta_progress.clamp_min(0.0)
         r_progress_per_env = self.cfg.w_progress * progress_norm
+        _kap = float(getattr(self.cfg, 'progress_w_kappa', 0.0) or 0.0)
+        if _kap:
+            # Weight by ABSOLUTE position on the line (episode start offset
+            # + progress within the episode): under a random-start
+            # curriculum every episode prices the same line segment the
+            # same, however it got there.
+            r_progress_per_env = r_progress_per_env * torch.exp(
+                _kap * (self._prog_w0 + self.arc_progress))
 
         reward = r_progress_per_env.clone()
         if self.cfg.w_margin != 0.0:

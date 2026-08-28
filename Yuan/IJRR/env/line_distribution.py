@@ -316,3 +316,41 @@ class ScriptedLineDistribution:
         out = {k: v[self._cursor:self._cursor + n] for k, v in self._specs.items()}
         self._cursor += n
         return out
+
+
+class RayStartDistribution:
+    """Single-task curriculum: one fixed (line_dir, n_target), start states
+    drawn from a precomputed admissible pool sampled along the task's own
+    ray. Each pool entry carries its ray anchor p0 = task_p0 + s * d, so an
+    episode started mid-ray measures progress (and the lateral corridor)
+    from that point onward -- the policy trains on every segment of the
+    one line instead of only what it survives to reach."""
+
+    def __init__(self, npz_path: str, device, dtype):
+        import numpy as np
+        d = np.load(npz_path)
+        self.q = torch.tensor(d["q"], dtype=dtype, device=device)
+        self.p0 = torch.tensor(d["p0"], dtype=dtype, device=device)
+        self.s = torch.tensor(d["s"], dtype=dtype, device=device)
+        self._dir = torch.tensor(d["line_dir"], dtype=dtype, device=device)
+        self._nt = torch.tensor(d["n_target"], dtype=dtype, device=device)
+        self._n = self.q.shape[0]
+        # Optional per-start sampling weights (curriculum emphasis).
+        if "weight" in d.files:
+            w = torch.tensor(d["weight"], dtype=torch.float32, device=device)
+            self._cum = torch.cumsum(w / w.sum(), 0)
+        else:
+            self._cum = None
+
+    def sample(self, n: int, generator: torch.Generator | None = None
+               ) -> dict[str, torch.Tensor]:
+        if self._cum is not None:
+            idx = torch.searchsorted(
+                self._cum, torch.rand(n, device=self.q.device))
+            idx = idx.clamp_max(self._n - 1)
+        else:
+            idx = torch.randint(0, self._n, (n,), device=self.q.device)
+        return {"q0": self.q[idx], "p0": self.p0[idx],
+                "progress_offset": self.s[idx],
+                "line_dir": self._dir.expand(n, 3).clone(),
+                "n_target": self._nt.expand(n, 3).clone()}

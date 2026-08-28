@@ -70,6 +70,16 @@ class PPOConfig:
     #        V(q) >= V(q') must hold both ways; under an imperfect policy
     #        only the lift direction is sound.
     twin_mode: str = 'eq'
+    # Total twin reach delta is split into n_sub certified substeps along
+    # the (re-projected) same null direction: a multi-step self-motion walk
+    # whose endpoint is reachable through an all-feasible chain.
+    twin_nsub: int = 1
+    # 'maxlift' draws twin_k INDEPENDENT twins per state and raises the
+    # anchor's value toward the BEST of them (detached): the proper
+    # execution of "a inherits the value of the best b it can reconfigure
+    # into" -- a max over reachable neighbours, not a tie to one random
+    # peer. One-sided; nothing is ever dragged down.
+    twin_k: int = 1
     # When > 0, a pair is only emitted if BOTH sides keep all normalized
     # margins above this floor -- restricts the equality to the interior,
     # away from walls where V^pi legitimately varies steeply.
@@ -392,9 +402,11 @@ def train(cfg: PPOConfig, env, device: torch.device,
         if not hasattr(env, 'compute_twin_obs'):
             raise ValueError('twin_lambda > 0 requires an env with '
                              'compute_twin_obs (no wrapper support)')
-        twin_obs_buf = torch.zeros((cfg.n_steps, n_envs, obs_dim),
-                                   device=device)
-        twin_mask_buf = torch.zeros((cfg.n_steps, n_envs), device=device)
+        twin_obs_buf = torch.zeros(
+            (cfg.n_steps, n_envs, max(cfg.twin_k, 1), obs_dim),
+            device=device)
+        twin_mask_buf = torch.zeros(
+            (cfg.n_steps, n_envs, max(cfg.twin_k, 1)), device=device)
     # action masking (mask_fn): sampled AND update-side distributions must be
     # masked identically, so masks are stored alongside the transitions
     masks_buf = None
@@ -454,11 +466,13 @@ def train(cfg: PPOConfig, env, device: torch.device,
             global_step += n_envs
             obs_buf[step] = next_obs
             if twin_obs_buf is not None:
-                t_obs, t_val = env.compute_twin_obs(
-                    cfg.twin_delta, null_space=cfg.twin_null_space,
-                    margin_floor=cfg.twin_margin_floor)
-                twin_obs_buf[step] = t_obs
-                twin_mask_buf[step] = t_val.float()
+                for kk in range(max(cfg.twin_k, 1)):
+                    t_obs, t_val = env.compute_twin_obs(
+                        cfg.twin_delta, null_space=cfg.twin_null_space,
+                        margin_floor=cfg.twin_margin_floor,
+                        n_sub=cfg.twin_nsub)
+                    twin_obs_buf[step, :, kk] = t_obs
+                    twin_mask_buf[step, :, kk] = t_val.float()
             with torch.no_grad():
                 if mask_fn is not None:
                     cur_mask = mask_fn()
@@ -570,8 +584,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
         b_masks = (masks_buf.reshape(-1, agent.n_actions)
                    if masks_buf is not None else None)
         if twin_obs_buf is not None:
-            b_twin = twin_obs_buf.reshape(-1, obs_dim)
-            b_tmask = twin_mask_buf.reshape(-1)
+            _K = max(cfg.twin_k, 1)
+            b_twin = twin_obs_buf.reshape(-1, _K, obs_dim)
+            b_tmask = twin_mask_buf.reshape(-1, _K)
 
 
         b_inds = np.arange(batch_size)
@@ -632,22 +647,42 @@ def train(cfg: PPOConfig, env, device: torch.device,
                 else:
                     loss = pg_loss - cfg.ent_coef * ent_loss + cfg.vf_coef * v_loss
                 if twin_obs_buf is not None:
-                    tv = agent.get_value(b_twin[mb_inds])
-                    tm = b_tmask[mb_inds]
-                    dv = newvalue - tv
-                    if cfg.twin_mode == 'lift':
-                        hi = torch.maximum(newvalue, tv).detach()
-                        lo = torch.minimum(newvalue, tv)
-                        twin_loss = ((((hi - lo) ** 2) * tm).sum()
-                                     / tm.sum().clamp_min(1.0))
+                    mb_tw = b_twin[mb_inds]          # (m, K, obs)
+                    tm2 = b_tmask[mb_inds]           # (m, K)
+                    with torch.no_grad():
+                        tvk = agent.get_value(
+                            mb_tw.reshape(-1, obs_dim)).reshape(tm2.shape)
+                    if cfg.twin_mode == 'maxlift':
+                        # anchor inherits the BEST reachable neighbour:
+                        # raise V(anchor) toward max_k V(twin_k), one-sided.
+                        tvm = torch.where(tm2 > 0, tvk,
+                                          torch.full_like(tvk, -1e9)
+                                          ).max(dim=-1).values
+                        any_ok = (tm2.sum(-1) > 0).float()
+                        gap = (tvm - newvalue).clamp_min(0.0)
+                        twin_loss = (((gap ** 2) * any_ok).sum()
+                                     / any_ok.sum().clamp_min(1.0))
+                        dv = gap
+                        tmset = any_ok
                     else:
-                        twin_loss = (((dv ** 2) * tm).sum()
-                                     / tm.sum().clamp_min(1.0))
+                        tv = agent.get_value(mb_tw[:, 0])
+                        tm = tm2[:, 0]
+                        dv = newvalue - tv
+                        if cfg.twin_mode == 'lift':
+                            hi = torch.maximum(newvalue, tv).detach()
+                            lo = torch.minimum(newvalue, tv)
+                            twin_loss = ((((hi - lo) ** 2) * tm).sum()
+                                         / tm.sum().clamp_min(1.0))
+                        else:
+                            twin_loss = (((dv ** 2) * tm).sum()
+                                         / tm.sum().clamp_min(1.0))
+                        tmset = tm
                     loss = loss + cfg.twin_lambda * twin_loss
                     with torch.no_grad():
-                        twin_dv_abs = float(((dv.abs() * tm).sum()
-                                             / tm.sum().clamp_min(1.0)).item())
-                        twin_valid_frac = float(tm.mean().item())
+                        twin_dv_abs = float(((dv.abs() * tmset).sum()
+                                             / tmset.sum().clamp_min(1.0)
+                                             ).item())
+                        twin_valid_frac = float(tm2.mean().item())
                 if kl_prior is not None:
                     loss = loss + cfg.kl_prior_coef * kl_prior
                 if anchor is not None and update > cfg.actor_warmup_updates:

@@ -110,33 +110,45 @@ def main():
 
     print(f"[train] device={device}; building train env (n_envs={env_cfg.n_envs})")
     train_env = NSRLBatchedEnv(env_cfg, line_dist=None, device=device)
-    train_env.line_dist = LineDistribution.load_or_build(
-        kin=train_env.kin, collision=train_env.collision,
-        n_pool=line_cfg["n_pool"],
-        n_target_noise_deg=line_cfg["n_target_noise_deg"],
-        seed=line_cfg["train_seed"],
-        env_cfg=env_cfg,
-        feasibility_threshold_m=threshold_m,
-        swing_max_deg=line_cfg.get("swing_max_deg", 0.0),
-        wavelen_range=tuple(line_cfg.get("wavelen_range", (0.4, 1.2))),
-        min_radius_m=line_cfg.get("min_radius_m", 0.15),
-    )
-
+    _ray_npz = line_cfg.get("ray_start_npz")
+    if _ray_npz:
+        from Yuan.IJRR.env.line_distribution import RayStartDistribution
+        train_env.line_dist = RayStartDistribution(
+            _ray_npz, device, train_env.kin.dtype)
+        print(f"[train] single-task ray-start pool: "
+              f"{train_env.line_dist._n} starts")
+    else:
+        train_env.line_dist = LineDistribution.load_or_build(
+            kin=train_env.kin, collision=train_env.collision,
+            n_pool=line_cfg["n_pool"],
+            n_target_noise_deg=line_cfg["n_target_noise_deg"],
+            seed=line_cfg["train_seed"],
+            env_cfg=env_cfg,
+            feasibility_threshold_m=threshold_m,
+            swing_max_deg=line_cfg.get("swing_max_deg", 0.0),
+            wavelen_range=tuple(line_cfg.get("wavelen_range", (0.4, 1.2))),
+            min_radius_m=line_cfg.get("min_radius_m", 0.15),
+        )
 
     eval_env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": eval_cfg["n_holdout"]})
     print(f"[train] building eval env (n_envs={eval_env_cfg.n_envs})")
     eval_env = NSRLBatchedEnv(eval_env_cfg, line_dist=None, device=device)
-    eval_env.line_dist = LineDistribution.load_or_build(
-        kin=eval_env.kin, collision=eval_env.collision,
-        n_pool=line_cfg["n_pool"],
-        n_target_noise_deg=line_cfg["n_target_noise_deg"],
-        seed=eval_cfg["holdout_seed"],
-        env_cfg=env_cfg,
-        feasibility_threshold_m=threshold_m,
-        swing_max_deg=line_cfg.get("swing_max_deg", 0.0),
-        wavelen_range=tuple(line_cfg.get("wavelen_range", (0.4, 1.2))),
-        min_radius_m=line_cfg.get("min_radius_m", 0.15),
-    )
+    if _ray_npz:
+        from Yuan.IJRR.env.line_distribution import RayStartDistribution
+        eval_env.line_dist = RayStartDistribution(
+            _ray_npz, device, eval_env.kin.dtype)
+    else:
+        eval_env.line_dist = LineDistribution.load_or_build(
+            kin=eval_env.kin, collision=eval_env.collision,
+            n_pool=line_cfg["n_pool"],
+            n_target_noise_deg=line_cfg["n_target_noise_deg"],
+            seed=eval_cfg["holdout_seed"],
+            env_cfg=env_cfg,
+            feasibility_threshold_m=threshold_m,
+            swing_max_deg=line_cfg.get("swing_max_deg", 0.0),
+            wavelen_range=tuple(line_cfg.get("wavelen_range", (0.4, 1.2))),
+            min_radius_m=line_cfg.get("min_radius_m", 0.15),
+        )
 
     log_file = open(log_path, "w")
     t0 = time.time()

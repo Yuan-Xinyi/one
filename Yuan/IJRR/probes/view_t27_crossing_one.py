@@ -47,11 +47,23 @@ def _rot_with_z(z: np.ndarray) -> np.ndarray:
     return np.stack([x, y, z], axis=1).astype(np.float32)
 
 
+def _pen_pose(tip: np.ndarray, zax: np.ndarray):
+    """Rotation + midpoint position for a pen ENDING exactly at the tip.
+
+    The cylinder is defined symmetrically about its own origin, so this
+    works whether the primitive keeps the given endpoints or re-centres
+    the geometry at their midpoint."""
+    z = zax / (np.linalg.norm(zax) + 1e-9)
+    return _rot_with_z(z), (tip - 0.5 * PEN_LEN * z).astype(np.float32)
+
+
 def spawn_pen(scene, tip: np.ndarray, zax: np.ndarray, alpha: float):
     """The pen as a cylinder ending at the TCP tip, aligned with the tool."""
-    pen = ossop.cylinder(spos=(0.0, 0.0, -PEN_LEN), epos=(0.0, 0.0, 0.0),
+    pen = ossop.cylinder(spos=(0.0, 0.0, -0.5 * PEN_LEN),
+                         epos=(0.0, 0.0, 0.5 * PEN_LEN),
                          radius=0.006, rgb=PEN, alpha=alpha)
-    pen.set_rotmat_pos(_rot_with_z(zax), tip.astype(np.float32))
+    R, pos = _pen_pose(tip, zax)
+    pen.set_rotmat_pos(R, pos)
     pen.attach_to(scene)
     return pen
 
@@ -105,7 +117,7 @@ def main():
         t = state['t']
         ti = min(t, len(Q) - 1)
         arm.fk(Q[ti])
-        live_pen.set_rotmat_pos(_rot_with_z(ZAX[ti]), TIP[ti])
+        live_pen.set_rotmat_pos(*_pen_pose(TIP[ti], ZAX[ti]))
         state['t'] = 0 if t > len(Q) + n_hold else t + 1
 
     world.schedule_interval(tick, interval=1.0 / FPS)

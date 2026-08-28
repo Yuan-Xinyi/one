@@ -48,19 +48,19 @@ def _rot_with_z(z: np.ndarray) -> np.ndarray:
 
 
 def _pen_pose(tip: np.ndarray, zax: np.ndarray):
-    """Rotation + midpoint position for a pen ENDING exactly at the tip.
+    """Rotation + BASE position for a pen ENDING exactly at the tip.
 
-    The cylinder is defined symmetrically about its own origin, so this
-    works whether the primitive keeps the given endpoints or re-centres
-    the geometry at their midpoint."""
+    one's cylinder primitive keeps its local origin at the START endpoint
+    and extends along its own +z by the built length
+    (scene_object_primitive.cylinder places pos=spos at construction), so
+    the pose we set must be the pen's tail: tip - PEN_LEN * z."""
     z = zax / (np.linalg.norm(zax) + 1e-9)
-    return _rot_with_z(z), (tip - 0.5 * PEN_LEN * z).astype(np.float32)
+    return _rot_with_z(z), (tip - PEN_LEN * z).astype(np.float32)
 
 
 def spawn_pen(scene, tip: np.ndarray, zax: np.ndarray, alpha: float):
     """The pen as a cylinder ending at the TCP tip, aligned with the tool."""
-    pen = ossop.cylinder(spos=(0.0, 0.0, -0.5 * PEN_LEN),
-                         epos=(0.0, 0.0, 0.5 * PEN_LEN),
+    pen = ossop.cylinder(spos=(0.0, 0.0, 0.0), epos=(0.0, 0.0, PEN_LEN),
                          radius=0.006, rgb=PEN, alpha=alpha)
     R, pos = _pen_pose(tip, zax)
     pen.set_rotmat_pos(R, pos)

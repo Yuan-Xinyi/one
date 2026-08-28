@@ -354,3 +354,53 @@ class RayStartDistribution:
                 "progress_offset": self.s[idx],
                 "line_dir": self._dir.expand(n, 3).clone(),
                 "n_target": self._nt.expand(n, 3).clone()}
+
+
+class RayMixDistribution:
+    """Generalized start curriculum over a full task pool.
+
+    With probability 1 - p_ray an episode starts exactly as the base
+    LineDistribution would (the task's own start state); with probability
+    p_ray it starts from a precomputed, feasibility-certified mid-line
+    state of the SAME task family: an admissible configuration at
+    p0 + s0 * line_dir for s0 ~ U(0.02, 1.4). Every row carries an
+    explicit p0 anchor and its progress offset, so progress and the
+    lateral corridor are measured from the sampled start onward. The
+    evaluation protocol is untouched -- this only changes what the policy
+    gets to practice."""
+
+    def __init__(self, base, reservoir_npz: str, p_ray: float = 0.7):
+        import numpy as np
+        self.base = base
+        self.p_ray = float(p_ray)
+        dev, dtype = base.q_pool.device, base.q_pool.dtype
+        d = np.load(reservoir_npz)
+        self.r_task = torch.tensor(d["task_idx"], device=dev)
+        self.r_q = torch.tensor(d["q"], dtype=dtype, device=dev)
+        self.r_s0 = torch.tensor(d["s0"], dtype=dtype, device=dev)
+        self.r_p = torch.tensor(d["p_anchor"], dtype=dtype, device=dev)
+        self.p0_task = torch.tensor(d["p0_task"], dtype=dtype, device=dev)
+        self._n = self.r_q.shape[0]
+
+    def sample(self, n: int, generator: torch.Generator | None = None
+               ) -> dict[str, torch.Tensor]:
+        b = self.base
+        dev = b.q_pool.device
+        take_ray = torch.rand(n, device=dev) < self.p_ray
+        # ray rows: reservoir entries; canonical rows: pool rows drawn the
+        # same way base.sample would, but with the index kept so the row's
+        # precomputed FK anchor can be attached.
+        ridx = torch.randint(0, self._n, (n,), device=dev)
+        valid_idx = torch.nonzero(b.valid_mask, as_tuple=False).squeeze(-1)
+        cidx = valid_idx[torch.randint(0, len(valid_idx), (n,), device=dev)]
+        task = torch.where(take_ray, self.r_task[ridx], cidx)
+        q0 = torch.where(take_ray.unsqueeze(-1), self.r_q[ridx],
+                         b.q_pool[cidx])
+        p0 = torch.where(take_ray.unsqueeze(-1), self.r_p[ridx],
+                         self.p0_task[cidx])
+        off = torch.where(take_ray, self.r_s0[ridx],
+                          torch.zeros_like(self.r_s0[ridx]))
+        return {"q0": q0, "p0": p0, "progress_offset": off,
+                "line_dir": b.line_dir_pool[task],
+                "n_target": b.n_target_pool[task],
+                "amp": b.amp_pool[task], "wavelen": b.wavelen_pool[task]}

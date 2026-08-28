@@ -129,6 +129,14 @@ def main():
             wavelen_range=tuple(line_cfg.get("wavelen_range", (0.4, 1.2))),
             min_radius_m=line_cfg.get("min_radius_m", 0.15),
         )
+        if line_cfg.get("ray_mix_npz"):
+            from Yuan.IJRR.env.line_distribution import RayMixDistribution
+            train_env.line_dist = RayMixDistribution(
+                train_env.line_dist, line_cfg["ray_mix_npz"],
+                p_ray=float(line_cfg.get("ray_mix_p", 0.7)))
+            print(f"[train] ray-mix curriculum: p_ray="
+                  f"{train_env.line_dist.p_ray}, reservoir "
+                  f"{train_env.line_dist._n} starts")
 
     eval_env_cfg = EnvConfig(**{**cfg_yaml["env"], "n_envs": eval_cfg["n_holdout"]})
     print(f"[train] building eval env (n_envs={eval_env_cfg.n_envs})")

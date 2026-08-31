@@ -1,0 +1,48 @@
+env:
+  device: cuda
+  dt: 0.05
+  kind: regrasp
+  margin_speed_scale: 0.03
+  max_steps: 1000
+  n_envs: 8192
+  scenario:
+    H: 0.26
+    L: 0.45
+    W: 0.35
+    n_pull: 9
+    n_rot: 25
+    n_transit: 6
+    pull_out_x: 0.015
+    slot_center:
+    - 0.495
+    - 0.3
+    turn_center:
+    - -0.05
+    - 0.44
+  seed: 0
+ppo:
+  anneal_lr: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.01
+  gae_lambda: 0.95
+  gamma: 0.99
+  hidden_dim: 512
+  init_log_std: -0.5
+  learning_rate: 0.0006
+  max_grad_norm: 0.5
+  n_minibatches: 64
+  n_steps: 32
+  norm_adv: true
+  normalize_returns: true
+  squashed_entropy: true
+  target_kl: 0.02
+  torch_seed: 0
+  total_timesteps: 60000000
+  update_epochs: 6
+  vf_coef: 0.5
+train:
+  ckpt_every_n_updates: 10
+  eval_every: 2000000
+  eval_n_envs: 512
+  eval_seed: 42

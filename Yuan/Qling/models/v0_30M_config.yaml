@@ -1,0 +1,35 @@
+env:
+  device: cpu
+  dt: 0.05
+  goal_eps: 0.025
+  max_steps: 400
+  n_envs: 128
+  n_pool: 10000
+  seed: 0
+  static_eps: 0.05
+ppo:
+  anneal_lr: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.01
+  gae_lambda: 0.95
+  gamma: 0.99
+  hidden_dim: 512
+  init_log_std: -0.5
+  learning_rate: 0.0003
+  max_grad_norm: 0.5
+  n_minibatches: 32
+  n_steps: 32
+  norm_adv: true
+  normalize_returns: true
+  squashed_entropy: true
+  target_kl: 0.02
+  torch_seed: 0
+  total_timesteps: 30000000
+  update_epochs: 10
+  vf_coef: 0.5
+train:
+  ckpt_every_n_updates: 10
+  eval_every: 250000
+  eval_n_envs: 256
+  eval_seed: 42

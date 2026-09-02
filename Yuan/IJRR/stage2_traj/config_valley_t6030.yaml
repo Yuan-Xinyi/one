@@ -1,0 +1,60 @@
+env:
+  dir_frac_action: 2
+  a_prev_executed: true
+  observe_margins: true
+  rho_from_norm: true
+  observe_proj_scales: true
+  qd_limit:
+  - 2.175
+  - 2.175
+  - 2.175
+  - 2.175
+  - 2.61
+  - 2.61
+  - 2.61
+  n_envs: 8192
+  dt: 0.05
+  v: 0.2
+  a_max: 0.5
+  lambda_0: 0.05
+  sigma_thr: 0.05
+  cone_deg: 30.0
+  max_steps: 500
+  tcp_offset: 0.2034
+  r_collision: 0.0
+  r_cone: 0.0
+  r_jl: 0.0
+  w_progress: 1.0
+  manip_damping: 0.001
+  observe_curvature: false
+ppo:
+  total_timesteps: 30000000
+  learning_rate: 0.0006
+  n_steps: 4
+  anneal_lr: true
+  gamma: 0.99
+  gae_lambda: 0.95
+  n_minibatches: 32
+  update_epochs: 15
+  norm_adv: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.02
+  hidden_dim: 512
+  init_log_std: -0.5
+  normalize_returns: true
+  squashed_entropy: true
+agent:
+  kind: gaussian
+line_distribution:
+  ray_start_npz: /home/lqin/one/Yuan/IJRR/runs/paper_fill/valley/t6030_pool.npz
+  train_seed: 0
+eval:
+  n_holdout: 200
+  holdout_seed: 42
+train:
+  eval_every: 250000
+  ckpt_every_n_updates: 10

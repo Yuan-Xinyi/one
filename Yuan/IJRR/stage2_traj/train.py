@@ -71,6 +71,29 @@ def _make_eval_fn(eval_env: NSRLBatchedEnv):
     return _eval
 
 
+@torch.no_grad()
+def _apply_stiffness_filter(dist: LineDistribution, env: NSRLBatchedEnv,
+                            tag: str, chunk: int = 16384) -> None:
+    """Implicit-force admissibility of the start pool: drop starts whose
+    end-effector stiffness along the tool axis exceeds force_kn_max, so no
+    episode is born already violating the constraint. Applied on top of the
+    cached pool (the cache key ignores the force fields on purpose: the
+    geometric pool is shared with the position-only runs)."""
+    n = dist.q_pool.shape[0]
+    ok = torch.zeros(n, dtype=torch.bool, device=dist.q_pool.device)
+    for lo in range(0, n, chunk):
+        q = dist.q_pool[lo:lo + chunk]
+        _, R, J, _ = env.kin.tcp_fk_jac(q)
+        kn = env._stiffness_along(J, R[:, :, 2])
+        ok[lo:lo + chunk] = kn <= env.cfg.force_kn_max
+    before = int(dist.valid_mask.sum().item())
+    dist.valid_mask &= ok
+    after = int(dist.valid_mask.sum().item())
+    print(f"[train] {tag} pool stiffness filter (k_n <= "
+          f"{env.cfg.force_kn_max:.0f} N/m): {after}/{before} starts kept "
+          f"({100.0 * after / max(before, 1):.1f}%)")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
@@ -129,6 +152,8 @@ def main():
             wavelen_range=tuple(line_cfg.get("wavelen_range", (0.4, 1.2))),
             min_radius_m=line_cfg.get("min_radius_m", 0.15),
         )
+        if getattr(train_env, "_force_on", False):
+            _apply_stiffness_filter(train_env.line_dist, train_env, "train")
         if line_cfg.get("ray_mix_npz"):
             from Yuan.IJRR.env.line_distribution import RayMixDistribution
             train_env.line_dist = RayMixDistribution(
@@ -157,6 +182,8 @@ def main():
             wavelen_range=tuple(line_cfg.get("wavelen_range", (0.4, 1.2))),
             min_radius_m=line_cfg.get("min_radius_m", 0.15),
         )
+        if getattr(eval_env, "_force_on", False):
+            _apply_stiffness_filter(eval_env.line_dist, eval_env, "holdout")
 
     log_file = open(log_path, "w")
     t0 = time.time()

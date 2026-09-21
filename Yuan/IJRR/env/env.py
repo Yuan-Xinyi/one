@@ -210,6 +210,30 @@ class EnvConfig:
     # changes sign within an episode, so unlike a constant-curvature arc it
     # cannot be inferred from a few steps of experience and has to be observed.
     observe_curvature: bool = False
+    # Implicit-force constraint. A constant contact force force_set is
+    # encoded, without any force sensing, as a virtual displacement of the
+    # commanded tip below the surface, d(q) = force_set / k_n(q), where
+    # k_n = 1 / (n^T J_v K_q^-1 J_v^T n) is the end-effector stiffness along
+    # the tool axis under joint impedance K_q = force_kq (FR3 controller
+    # defaults when empty). The surface is placed d(q0) above the reset tip
+    # so the set force holds at t=0; the lateral feedback then tracks the
+    # posture-dependent depth (k_lateral > 0 required). Two terminating
+    # conditions: k_n > force_kn_max (the force tolerance force_tol / k_n
+    # would fall below the executable position precision) and
+    # |k_n * depth - force_set| > force_tol (the tracked depth no longer
+    # realises the set force). force_kn_max = 0 disables all of it.
+    force_kn_max: float = 0.0
+    force_set: float = 5.0
+    force_tol: float = 2.0
+    force_kq: tuple = ()
+    # Append [ln(force_kn_max / k_n), force_error / force_tol] (2 channels).
+    observe_force: bool = False
+    # Add the stiffness margin ln(force_kn_max / k_n) / ln 2 to the
+    # w_margin potential alongside the joint-limit and cone margins.
+    force_in_margin: bool = False
+
+
+FR3_KQ_DEFAULT = (600.0, 600.0, 600.0, 600.0, 250.0, 150.0, 50.0)
 
 
 def damped_pinv(J_p: torch.Tensor, lambda_0: float, sigma_thr: float):
@@ -375,6 +399,8 @@ TERM_CONE = 3
 TERM_JL = 4
 TERM_TRUNCATED = 5
 TERM_LATERAL = 6
+TERM_STIFF = 7      # implicit force: k_n above force_kn_max
+TERM_FORCE = 8      # implicit force: |k_n depth - force_set| above force_tol
 
 TERM_NAMES = {
     TERM_ALIVE: "alive",
@@ -383,6 +409,8 @@ TERM_NAMES = {
     TERM_JL: "jl",
     TERM_TRUNCATED: "truncated",
     TERM_LATERAL: "lateral",
+    TERM_STIFF: "stiff",
+    TERM_FORCE: "force",
 }
 
 
@@ -444,6 +472,7 @@ class NSRLBatchedEnv:
                         * self.act_dim_policy
                         + (4 if getattr(cfg, 'observe_margins', False)
                            else 0)
+                        + (2 if getattr(cfg, 'observe_force', False) else 0)
                         + (1 if getattr(cfg, 'observe_curvature', False) else 0)
                         + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
                         + (2 ** self.act_dim
@@ -512,6 +541,25 @@ class NSRLBatchedEnv:
             (B, (self._ap_k - 1) * self.act_dim_policy),
             device=self.device, dtype=d)
         self._mg_obs = torch.ones((B, 4), device=self.device, dtype=d)
+        # Implicit-force buffers: stiffness along the tool axis, the height
+        # of the surface above the reset tip, and the current force error.
+        self._force_on = float(getattr(cfg, 'force_kn_max', 0.0) or 0.0) > 0.0
+        if self._force_on:
+            kq = tuple(getattr(cfg, 'force_kq', ()) or ())
+            if not kq:
+                assert robot == 'fr3', 'force_kq is required for non-FR3 arms'
+                kq = FR3_KQ_DEFAULT
+            assert len(kq) == self.n_joints, kq
+            self._kq = torch.tensor(kq, device=self.device, dtype=d)
+            assert cfg.k_lateral > 0.0, \
+                'the implicit-force depth is tracked by the lateral feedback'
+        else:
+            assert not getattr(cfg, 'observe_force', False) and \
+                not getattr(cfg, 'force_in_margin', False), \
+                'observe_force / force_in_margin need force_kn_max > 0'
+        self._kn = torch.ones((B,), device=self.device, dtype=d)
+        self._depth0 = torch.zeros((B,), device=self.device, dtype=d)
+        self._ferr = torch.zeros((B,), device=self.device, dtype=d)
         # Absolute arc-position of the episode's start on the task line
         # (progress_offset from the distribution; 0 for ordinary tasks).
         # Only consumed by the progress_w_kappa reward weight.
@@ -526,6 +574,23 @@ class NSRLBatchedEnv:
         self.p_start = torch.full((B, 3), float("nan"), device=self.device, dtype=d)
 
     # ---------------------------------------------------------------- helpers
+
+    def _stiffness_along(self, J: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
+        """End-effector translational stiffness along unit direction n [N/m]
+        under joint impedance self._kq: 1 / (n^T J_v K_q^-1 J_v^T n)."""
+        a = torch.einsum('bi,bij->bj', n, J[:, :3, :])
+        return 1.0 / (a * a / self._kq).sum(-1).clamp_min(1e-12)
+
+    def _force_margin(self, kn: torch.Tensor) -> torch.Tensor:
+        """Normalized stiffness margin: 1 at half the cap, 0 at the cap."""
+        return torch.log(self.cfg.force_kn_max / kn) / math.log(2.0)
+
+    def _n_perp(self, tangent: torch.Tensor) -> torch.Tensor:
+        """Direction the depth is measured along: the cone axis (tool z at
+        the nominal posture, pointing into the surface) with its along-path
+        component removed, so depth tracking never alters progress."""
+        n = self.n_target - (self.n_target * tangent).sum(-1, keepdim=True) * tangent
+        return n / n.norm(dim=-1, keepdim=True).clamp_min(1e-9)
 
     def _compute_obs(self, p_tcp: torch.Tensor, R_tcp: torch.Tensor,
                      q: torch.Tensor | None = None,
@@ -555,6 +620,10 @@ class NSRLBatchedEnv:
             obs_parts.append(self._a_hist)        # (K-1) older a_prev frames
         if getattr(self.cfg, 'observe_margins', False):
             obs_parts.append(self._mg_obs)        # 4 current-state margins
+        if getattr(self.cfg, 'observe_force', False):
+            obs_parts.append(torch.stack(
+                [self._force_margin(self._kn),
+                 self._ferr / self.cfg.force_tol], dim=-1))   # 2
         if getattr(self.cfg, 'observe_proj_scales', False):
             obs_parts.append(self._proj_scales)   # 3, one period stale
         if getattr(self.cfg, 'observe_headroom', False):
@@ -821,6 +890,14 @@ class NSRLBatchedEnv:
         self._headroom[mask] = 1.0
         self._a_hist[mask] = 0
         self._mg_obs[mask] = 1.0
+        if self._force_on:
+            # The surface is placed force_set / k_n(q0) above the reset tip,
+            # so the commanded depth realises the set force exactly at t=0.
+            _, R0, J0, _ = self.kin.tcp_fk_jac(self.q[mask])
+            kn0 = self._stiffness_along(J0, R0[:, :, 2])
+            self._kn[mask] = kn0
+            self._depth0[mask] = self.cfg.force_set / kn0
+            self._ferr[mask] = 0.0
         if "progress_offset" in spec:
             self._prog_w0[mask] = spec["progress_offset"].to(
                 device=self.device, dtype=self.kin.dtype).reshape(n_reset)
@@ -887,8 +964,11 @@ class NSRLBatchedEnv:
                     / self.q_half).amin(dim=-1)
             m_cone = (cos0 - self.cos_cone) / (1.0 - self.cos_cone)
             tau = self.cfg.margin_tau
+            _ms = [m_jl, m_cone]
+            if getattr(self.cfg, 'force_in_margin', False):
+                _ms.append(self._force_margin(self._kn[mask]))
             self.phi_prev[mask] = -tau * torch.logsumexp(
-                -torch.stack([m_jl, m_cone], dim=-1) / tau, dim=-1)
+                -torch.stack(_ms, dim=-1) / tau, dim=-1)
 
     # ---------------------------------------------------------------- API
 
@@ -976,8 +1056,19 @@ class NSRLBatchedEnv:
         # to the tangent, so this term never changes the along-path speed.
         v_eff = (self.v if speed_frac is None
                  else (self.v * speed_frac).unsqueeze(-1))
+        if self._force_on:
+            # Depth below the surface is depth0 - lateral_vec . n_perp (n
+            # points into the surface). The feedback targets the posture-
+            # dependent depth d(q) = force_set / k_n(q) rather than the
+            # nominal path, so a change of stiffness moves the commanded tip.
+            kn_cur = self._stiffness_along(J, R[:, :, 2])
+            n_perp = self._n_perp(self.line_dir)
+            depth_tgt = self.cfg.force_set / kn_cur - self._depth0
+            lateral_fb = lateral_vec + depth_tgt.unsqueeze(-1) * n_perp
+        else:
+            lateral_fb = lateral_vec
         x_dot = (v_eff * self.line_dir
-                 + self.cfg.k_lateral * lateral_vec).unsqueeze(-1)
+                 + self.cfg.k_lateral * lateral_fb).unsqueeze(-1)
         if getattr(self.cfg, 'task_gate', False):
             # g=0 kills the ENTIRE task command (feed-forward and lateral
             # feedback): the paused step is pure self-motion.
@@ -1048,7 +1139,7 @@ class NSRLBatchedEnv:
         q_new = self.q + qdot * self.dt
 
         link_tfs = self.kin.link_transforms(q_new)
-        p_new, R_new, _, _ = self.kin.tcp_fk_jac(q_new)
+        p_new, R_new, J_new, _ = self.kin.tcp_fk_jac(q_new)
         z_new = R_new[:, :, 2]
 
         is_coll = self.collision.is_collided(link_tfs)
@@ -1063,6 +1154,22 @@ class NSRLBatchedEnv:
         # which has nothing to do with kinematic capability. Safety-net
         # terminate only — the k_lateral feedback keeps this far below the cap.
         tangent_new, lateral_vec_new, lateral_err = self._path_frame(p_new)
+        if self._force_on:
+            kn_new = self._stiffness_along(J_new, z_new)
+            n_perp_new = self._n_perp(tangent_new)
+            depth_new = self._depth0 - (lateral_vec_new * n_perp_new).sum(-1)
+            ferr_new = kn_new * depth_new - self.cfg.force_set
+            stiff_viol = kn_new > self.cfg.force_kn_max
+            force_viol = ferr_new.abs() > self.cfg.force_tol
+            # the safety net is measured from the depth-shifted target
+            _dt_new = self.cfg.force_set / kn_new - self._depth0
+            lateral_err = (lateral_vec_new
+                           + _dt_new.unsqueeze(-1) * n_perp_new).norm(dim=-1)
+            self._kn = torch.where(active, kn_new, self._kn)
+            self._ferr = torch.where(active, ferr_new, self._ferr)
+        else:
+            stiff_viol = torch.zeros_like(is_coll)
+            force_viol = torch.zeros_like(is_coll)
         lateral_viol = lateral_err > LATERAL_SAFETY_NET
 
         if getattr(self.cfg, 'observe_margins', False):
@@ -1114,8 +1221,11 @@ class NSRLBatchedEnv:
                     / self.q_half).amin(dim=-1)
             m_cone = (cos_angle - self.cos_cone) / (1.0 - self.cos_cone)
             tau = self.cfg.margin_tau
+            _ms = [m_jl, m_cone]
+            if getattr(self.cfg, 'force_in_margin', False):
+                _ms.append(self._force_margin(kn_new))
             phi_new = -tau * torch.logsumexp(
-                -torch.stack([m_jl, m_cone], dim=-1) / tau, dim=-1)
+                -torch.stack(_ms, dim=-1) / tau, dim=-1)
             reward = reward + self.cfg.w_margin * (
                 self.cfg.margin_gamma * phi_new - self.phi_prev)
             self.phi_prev = torch.where(
@@ -1127,7 +1237,8 @@ class NSRLBatchedEnv:
 
         # Framing B: lateral_viol is a terminating condition (hard constraint),
         # not bootstrapped. NOT included as bootstrap-truncation.
-        terminated = is_coll | cone_viol | jl_viol | lateral_viol
+        terminated = (is_coll | cone_viol | jl_viol | lateral_viol
+                      | stiff_viol | force_viol)
         done = terminated | truncated
 
         term_reason = torch.full((self.n_envs,), TERM_ALIVE,
@@ -1140,6 +1251,11 @@ class NSRLBatchedEnv:
                                   torch.full_like(term_reason, TERM_JL), term_reason)
         term_reason = torch.where(lateral_viol & ~is_coll & ~cone_viol & ~jl_viol,
                                   torch.full_like(term_reason, TERM_LATERAL), term_reason)
+        _geom = is_coll | cone_viol | jl_viol | lateral_viol
+        term_reason = torch.where(stiff_viol & ~_geom,
+                                  torch.full_like(term_reason, TERM_STIFF), term_reason)
+        term_reason = torch.where(force_viol & ~_geom & ~stiff_viol,
+                                  torch.full_like(term_reason, TERM_FORCE), term_reason)
         term_reason = torch.where(truncated & ~terminated,
                                   torch.full_like(term_reason, TERM_TRUNCATED), term_reason)
 
@@ -1249,6 +1365,8 @@ class NSRLBatchedEnv:
             "r_progress_mean": float(r_progress_per_env.mean().item()),
             "lateral_err_mean": float(lateral_err.mean().item()),
             "lateral_err_max": float(lateral_err.max().item()),
+            "force_err_max": (float(self._ferr.abs().max().item())
+                              if self._force_on else 0.0),
             "ep_reward_mean": ep_reward_mean,
             "ep_len_mean": ep_len_mean,
             "ep_progress_mean": ep_progress_mean,

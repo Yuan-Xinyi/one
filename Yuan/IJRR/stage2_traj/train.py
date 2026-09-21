@@ -84,7 +84,8 @@ def _apply_stiffness_filter(dist: LineDistribution, env: NSRLBatchedEnv,
     for lo in range(0, n, chunk):
         q = dist.q_pool[lo:lo + chunk]
         _, R, J, _ = env.kin.tcp_fk_jac(q)
-        kn = env._stiffness_along(J, R[:, :, 2])
+        # the tangent matters once friction is on: k_eff = 1/(c_nn + mu c_nt)
+        kn = env._stiffness_along(J, R[:, :, 2], dist.line_dir_pool[lo:lo + chunk])
         ok[lo:lo + chunk] = kn <= env.cfg.force_kn_max
     before = int(dist.valid_mask.sum().item())
     dist.valid_mask &= ok

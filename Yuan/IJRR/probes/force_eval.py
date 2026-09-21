@@ -33,8 +33,9 @@ FORCE_KW = dict(force_kn_max=KN_MAX, force_set=F_SET, force_tol=F_TOL,
 dev = torch.device('cuda')
 A = MAIN / 'runs/paper_fill/ratio_assets'
 FU = MAIN / 'runs/paper_fill/fam_unify'
-OUTF = FU / 'force_eval_v1.npz'
-extra = sys.argv[1:]
+FULL = '--all' in sys.argv[1:]
+extra = [a for a in sys.argv[1:] if not a.startswith('--')]
+OUTF = FU / ('force_eval_10k.npz' if FULL else 'force_eval_v1.npz')
 
 env0 = lb.build_env(dev, 'stock', 512)
 dt0 = env0.kin.dtype
@@ -47,13 +48,14 @@ tz = np.load(A / 'tasks_pool_fr3.npz')
 b30 = np.load(A / 'bound_pool_fr3.npz'); w30 = np.load(A / 'witness_pool_fr3.npz')
 ref30 = np.maximum(b30['L_hi'], w30['prog'])
 rng = np.random.default_rng(3)
-sub = rng.choice(len(tz['q0_seed']), 2000, replace=False); sub.sort()
+sub = (np.arange(len(tz['q0_seed'])) if FULL else
+       np.sort(rng.choice(len(tz['q0_seed']), 2000, replace=False)))
 p0 = tz['cs_p0'][sub].astype(np.float32)
 dd = tz['cs_line_dir'][sub].astype(np.float32)
 dd /= np.linalg.norm(dd, axis=1, keepdims=True)
 nt = tz['cs_n_target'][sub].astype(np.float32)
 nt /= np.linalg.norm(nt, axis=1, keepdims=True)
-N = 2000
+N = len(sub)
 
 
 def stiffness(q_t, z_t):
@@ -119,26 +121,30 @@ if not OUTF.exists():
         kn_tab.append(stiffness(qt, zt).float().cpu().numpy())
     Td = {k: T[k] for k in T.files}; Td['kn'] = np.concatenate(kn_tab)
     M = 8
-    pts_all, zs_all, nr_all, seg = [], [], [], []
-    for i in range(N):
-        smax = min(float(ref30[sub[i]]) + 0.06, 1.8)
-        ss = np.arange(0.02, smax, 0.02, dtype=np.float32)
-        P = p0[i][None] + ss[:, None] * dd[i][None]
-        dirs = np.concatenate([nt[i][None], _sample_in_cone(
-            torch.as_tensor(nt[i]), CONE, 16, np.random.default_rng(50 + i)
-            ).numpy()[:M - 1]], 0).astype(np.float32)
-        pts_all.append(np.repeat(P, M, 0)); zs_all.append(np.tile(dirs, (len(ss), 1)))
-        nr_all.append(np.repeat(nt[i][None], len(ss) * M, 0)); seg.append(len(ss))
-    okr, _ = lb.feasible_rows(env0, tree, Td, np.concatenate(pts_all),
-                              np.concatenate(zs_all), np.concatenate(nr_all),
-                              cosc, tube, k_nn=100, n_try=12,
-                              kn_lim=(None, KN_MAX))
-    lpwf = np.zeros(N, np.float32); lo = 0
-    for i, npts in enumerate(seg):
-        o = okr[lo:lo + npts * M].reshape(npts, M).any(1)
-        bad = np.nonzero(~o)[0]
-        lpwf[i] = (bad[0] + 1) * 0.02 if len(bad) else npts * 0.02 + 0.02
-        lo += npts * M
+    lpwf = np.zeros(N, np.float32)
+    for c0 in range(0, N, 2000):
+        c1 = min(c0 + 2000, N)
+        pts_all, zs_all, nr_all, seg = [], [], [], []
+        for i in range(c0, c1):
+            smax = min(float(ref30[sub[i]]) + 0.06, 1.8)
+            ss = np.arange(0.02, smax, 0.02, dtype=np.float32)
+            P = p0[i][None] + ss[:, None] * dd[i][None]
+            dirs = np.concatenate([nt[i][None], _sample_in_cone(
+                torch.as_tensor(nt[i]), CONE, 16, np.random.default_rng(50 + i)
+                ).numpy()[:M - 1]], 0).astype(np.float32)
+            pts_all.append(np.repeat(P, M, 0)); zs_all.append(np.tile(dirs, (len(ss), 1)))
+            nr_all.append(np.repeat(nt[i][None], len(ss) * M, 0)); seg.append(len(ss))
+        okr, _ = lb.feasible_rows(env0, tree, Td, np.concatenate(pts_all),
+                                  np.concatenate(zs_all), np.concatenate(nr_all),
+                                  cosc, tube, k_nn=100, n_try=12,
+                                  kn_lim=(None, KN_MAX))
+        lo = 0
+        for i, npts in zip(range(c0, c1), seg):
+            o = okr[lo:lo + npts * M].reshape(npts, M).any(1)
+            bad = np.nonzero(~o)[0]
+            lpwf[i] = (bad[0] + 1) * 0.02 if len(bad) else npts * 0.02 + 0.02
+            lo += npts * M
+        print(f'march {c1}/{N}', flush=True)
     print(f'lpw_force: mean {lpwf[has].mean():.3f} '
           f'(30-deg ref mean {ref30[sub][has].mean():.3f})', flush=True)
     np.savez(OUTF, sub=sub, q0_first=q0_first, has=has, lpwf=lpwf,
@@ -167,19 +173,22 @@ def roll(cfgfile, ckpt, classical=False):
                    hidden_dim=y['ppo']['hidden_dim']).to(dev)
         ag.load_state_dict(torch.load(REPO / ckpt, map_location=dev))
         ag.eval()
-    renv.line_dist = ScriptedLineDistribution(
-        {'q0': torch.tensor(q0_first, dtype=rdt, device=dev),
-         'line_dir': torch.tensor(dd, dtype=rdt, device=dev),
-         'n_target': torch.tensor(nt, dtype=rdt, device=dev)})
-    renv.reset()
-    with torch.no_grad():
-        for _ in range(renv.cfg.max_steps // 2):
-            a = fn(renv) if classical else ag.actor_mean(renv.current_obs())
-            for _ in range(2):
-                renv.step(a, auto_reset=False)
-            if bool(renv.done_persistent.all()):
-                break
-    out = renv.arc_progress.float().cpu().numpy().copy()
+    out = np.zeros(N, np.float32)
+    for lo in range(0, N, B):
+        hi = min(lo + B, N); pad = B - (hi - lo)
+        def _t(a):
+            t = torch.tensor(a[lo:hi], dtype=rdt, device=dev)
+            return torch.cat([t, t[-1:].expand(pad, *t.shape[1:])]) if pad else t
+        renv.line_dist = ScriptedLineDistribution({'q0': _t(q0_first), 'line_dir': _t(dd), 'n_target': _t(nt)})
+        renv.reset()
+        with torch.no_grad():
+            for _ in range(renv.cfg.max_steps // 2):
+                a = fn(renv) if classical else ag.actor_mean(renv.current_obs())
+                for _ in range(2):
+                    renv.step(a, auto_reset=False)
+                if bool(renv.done_persistent.all()):
+                    break
+        out[lo:hi] = renv.arc_progress.float().cpu().numpy()[:hi - lo]
     del renv; torch.cuda.empty_cache()
     return out
 

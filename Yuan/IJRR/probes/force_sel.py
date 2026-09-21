@@ -21,7 +21,7 @@ FORCE_KW = dict(force_kn_max=2000.0, force_set=5.0, force_tol=2.0, k_lateral=5.0
 dev = torch.device('cuda')
 A = MAIN / 'runs/paper_fill/ratio_assets'
 FU = MAIN / 'runs/paper_fill/fam_unify'
-OUTF = FU / 'force_eval_v1.npz'
+OUTF = FU / ('force_eval_10k.npz' if '--all' in sys.argv[1:] else 'force_eval_v1.npz')
 d = dict(np.load(OUTF))
 sub, has, lpwf = d['sub'], d['has'], d['lpwf']
 CQ, CT, CK = d['cands_q'], d['cands_t'], d['cands_kn']

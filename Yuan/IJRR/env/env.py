@@ -231,6 +231,18 @@ class EnvConfig:
     # Add the stiffness margin ln(force_kn_max / k_n) / ln 2 to the
     # w_margin potential alongside the joint-limit and cone margins.
     force_in_margin: bool = False
+    # Depth feed-forward: after the step's joint velocity is known, predict
+    # k_n at the end of the step and add the depth change d(q_new) - d(q)
+    # as a task-space velocity, so the commanded depth no longer lags the
+    # stiffness by one feedback time constant (the lag is what turns a
+    # fast stiffness change into a force error).
+    force_depth_ff: bool = False
+    # Coulomb friction at the pen tip, mu * f_n opposing the motion along
+    # the path tangent t. Through the normal-tangential cross-compliance
+    # c_nt = n^T C t the friction changes the depth a given normal force
+    # produces, so the effective normal stiffness becomes
+    # 1 / (c_nn + mu c_nt); 0 recovers the frictionless model.
+    force_mu: float = 0.0
 
 
 FR3_KQ_DEFAULT = (600.0, 600.0, 600.0, 600.0, 250.0, 150.0, 50.0)
@@ -558,6 +570,7 @@ class NSRLBatchedEnv:
                 not getattr(cfg, 'force_in_margin', False), \
                 'observe_force / force_in_margin need force_kn_max > 0'
         self._kn = torch.ones((B,), device=self.device, dtype=d)
+        self._fric_ratio = torch.zeros((B,), device=self.device, dtype=d)
         self._depth0 = torch.zeros((B,), device=self.device, dtype=d)
         self._ferr = torch.zeros((B,), device=self.device, dtype=d)
         # Absolute arc-position of the episode's start on the task line
@@ -575,11 +588,24 @@ class NSRLBatchedEnv:
 
     # ---------------------------------------------------------------- helpers
 
-    def _stiffness_along(self, J: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
-        """End-effector translational stiffness along unit direction n [N/m]
-        under joint impedance self._kq: 1 / (n^T J_v K_q^-1 J_v^T n)."""
+    def _stiffness_along(self, J: torch.Tensor, n: torch.Tensor,
+                         t: torch.Tensor | None = None) -> torch.Tensor:
+        """Effective end-effector stiffness along unit direction n [N/m]
+        under joint impedance self._kq: 1 / (n^T C n + mu n^T C t) with
+        C = J_v K_q^-1 J_v^T; t (path tangent) only matters for force_mu > 0.
+        The last cross ratio n^T C t / n^T C n is kept in self._fric_ratio."""
         a = torch.einsum('bi,bij->bj', n, J[:, :3, :])
-        return 1.0 / (a * a / self._kq).sum(-1).clamp_min(1e-12)
+        c_nn = (a * a / self._kq).sum(-1).clamp_min(1e-12)
+        mu = float(getattr(self.cfg, 'force_mu', 0.0) or 0.0)
+        if t is None or mu == 0.0:
+            if t is not None:
+                b = torch.einsum('bi,bij->bj', t, J[:, :3, :])
+                self._fric_ratio = (a * b / self._kq).sum(-1) / c_nn
+            return 1.0 / c_nn
+        b = torch.einsum('bi,bij->bj', t, J[:, :3, :])
+        c_nt = (a * b / self._kq).sum(-1)
+        self._fric_ratio = c_nt / c_nn
+        return 1.0 / (c_nn + mu * c_nt).clamp_min(0.2 * c_nn)
 
     def _force_margin(self, kn: torch.Tensor) -> torch.Tensor:
         """Normalized stiffness margin: 1 at half the cap, 0 at the cap."""
@@ -894,7 +920,7 @@ class NSRLBatchedEnv:
             # The surface is placed force_set / k_n(q0) above the reset tip,
             # so the commanded depth realises the set force exactly at t=0.
             _, R0, J0, _ = self.kin.tcp_fk_jac(self.q[mask])
-            kn0 = self._stiffness_along(J0, R0[:, :, 2])
+            kn0 = self._stiffness_along(J0, R0[:, :, 2], self.line_dir[mask])
             self._kn[mask] = kn0
             self._depth0[mask] = self.cfg.force_set / kn0
             self._ferr[mask] = 0.0
@@ -1061,7 +1087,7 @@ class NSRLBatchedEnv:
             # points into the surface). The feedback targets the posture-
             # dependent depth d(q) = force_set / k_n(q) rather than the
             # nominal path, so a change of stiffness moves the commanded tip.
-            kn_cur = self._stiffness_along(J, R[:, :, 2])
+            kn_cur = self._stiffness_along(J, R[:, :, 2], self.line_dir)
             n_perp = self._n_perp(self.line_dir)
             depth_tgt = self.cfg.force_set / kn_cur - self._depth0
             lateral_fb = lateral_vec + depth_tgt.unsqueeze(-1) * n_perp
@@ -1137,6 +1163,17 @@ class NSRLBatchedEnv:
             qdot_null = (B_basis @ a_scaled.unsqueeze(-1)).squeeze(-1)
         qdot = qdot_task + qdot_null
         q_new = self.q + qdot * self.dt
+        if self._force_on and getattr(self.cfg, 'force_depth_ff', False):
+            # second pass: the depth the END posture needs, commanded now
+            _, R_pr, J_pr, _ = self.kin.tcp_fk_jac(q_new)
+            kn_pr = self._stiffness_along(J_pr, R_pr[:, :, 2], self.line_dir)
+            d_ff = (self.cfg.force_set / kn_pr - self.cfg.force_set / kn_cur)
+            x_ff = (d_ff / self.dt).unsqueeze(-1) * n_perp
+            if getattr(self.cfg, 'task_gate', False):
+                x_ff = x_ff * speed_frac.reshape(-1, 1)
+            qdot_task = (J_plus @ (x_dot + x_ff.unsqueeze(-1))).squeeze(-1)
+            qdot = qdot_task + qdot_null
+            q_new = self.q + qdot * self.dt
 
         link_tfs = self.kin.link_transforms(q_new)
         p_new, R_new, J_new, _ = self.kin.tcp_fk_jac(q_new)
@@ -1155,7 +1192,7 @@ class NSRLBatchedEnv:
         # terminate only — the k_lateral feedback keeps this far below the cap.
         tangent_new, lateral_vec_new, lateral_err = self._path_frame(p_new)
         if self._force_on:
-            kn_new = self._stiffness_along(J_new, z_new)
+            kn_new = self._stiffness_along(J_new, z_new, tangent_new)
             n_perp_new = self._n_perp(tangent_new)
             depth_new = self._depth0 - (lateral_vec_new * n_perp_new).sum(-1)
             ferr_new = kn_new * depth_new - self.cfg.force_set

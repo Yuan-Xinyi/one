@@ -17,11 +17,15 @@ from Yuan.IJRR.env.line_distribution import ScriptedLineDistribution
 from Yuan.IJRR.stage2_traj.ppo import Agent
 
 CONE = 30.0
-FORCE_KW = dict(force_kn_max=2000.0, force_set=5.0, force_tol=2.0, k_lateral=5.0)
+_kn = [a for a in sys.argv[1:] if a.startswith('--kn=')]
+KN_MAX = float(_kn[0][5:]) if _kn else 2000.0
+FORCE_KW = dict(force_kn_max=KN_MAX, force_set=5.0, force_tol=2.0, k_lateral=5.0)
 dev = torch.device('cuda')
 A = MAIN / 'runs/paper_fill/ratio_assets'
 FU = MAIN / 'runs/paper_fill/fam_unify'
-OUTF = FU / ('force_eval_10k.npz' if '--all' in sys.argv[1:] else 'force_eval_v1.npz')
+_sfx = '' if KN_MAX == 2000.0 else f'_k{int(KN_MAX)}'
+FULL = '--all' in sys.argv[1:]
+OUTF = FU / (f'force_eval_10k{_sfx}.npz' if FULL else (f'force_eval{_sfx}.npz' if _sfx else 'force_eval_v1.npz'))
 d = dict(np.load(OUTF))
 sub, has, lpwf = d['sub'], d['has'], d['lpwf']
 CQ, CT, CK = d['cands_q'], d['cands_t'], d['cands_kn']

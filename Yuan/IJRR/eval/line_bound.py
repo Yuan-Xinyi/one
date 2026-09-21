@@ -74,6 +74,32 @@ def stiffness_along(env, q, n, kq):
     return 1.0 / (a * a / kq).sum(-1)
 
 
+@torch.no_grad()
+def stiffness_descend(env, q, p_t, R_t, kn_lim, n_iter=4, step=0.12, eps=1e-3):
+    """Search completeness under a stiffness window: a projected posture that
+    fails only the k_n cap is pushed down the finite-difference gradient of
+    k_n and re-projected onto the point/direction, a few times. Without this
+    the march certifies only what the nearest warm starts happen to land on
+    and the bound is biased low. Returns the improved q."""
+    kq = torch.as_tensor(env.kq_joint, device=q.device, dtype=q.dtype)
+    k_min, k_max = kn_lim
+    for _ in range(n_iter):
+        _, R0, J0, _ = env.kin.tcp_fk_jac(q)
+        k0 = stiffness_along(env, q, R0[:, :, 2], kq)
+        g = torch.zeros_like(q)
+        for i in range(q.shape[1]):
+            qi = q.clone(); qi[:, i] += eps
+            _, Ri, Ji, _ = env.kin.tcp_fk_jac(qi)
+            g[:, i] = (stiffness_along(env, qi, Ri[:, :, 2], kq) - k0) / eps
+        # move towards the window: down when above k_max, up when below k_min
+        sgn = torch.where(k0 > (k_max if k_max is not None else float('inf')), -1.0,
+                          torch.where(k0 < (k_min if k_min is not None else -1.0), 1.0, 0.0))
+        d = sgn.unsqueeze(-1) * g / g.norm(dim=-1, keepdim=True).clamp_min(1e-9)
+        q = q + step * d
+        q, _, _ = _batched_ik_project(env.kin, q, p_t, R_t, branch_action=None)
+    return q
+
+
 def _kn_ok(env, q_o, R_fk, kn_lim):
     """Implicit-force admissibility: constant force encoded as a virtual
     displacement needs the position tolerance eps_f / k_n(q) to stay above
@@ -95,7 +121,7 @@ def _kn_ok(env, q_o, R_fk, kn_lim):
 @torch.no_grad()
 def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
                   k_nn=200, n_try=12, q_hint=None, chunk=8192,
-                  kn_lim=(None, None)):
+                  kn_lim=(None, None), kn_descend=True):
     """Per row: is there a collision-free q at ``pts`` with the tool along
     ``zs`` and within the cone around ``n_refs``?
 
@@ -180,10 +206,24 @@ def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
             nt = torch.as_tensor(n_refs[rows], device=dev, dtype=dt)
             in_lmt = ((q_o >= env.kin.lmt_lo - 1e-5)
                       & (q_o <= env.kin.lmt_up + 1e-5)).all(dim=-1)
-            fine = ((~coll) & in_lmt
+            geom = ((~coll) & in_lmt
                     & ((p_fk - p_t).norm(dim=-1) <= tube)
-                    & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim)
-                    & _kn_ok(env, q_o, R_fk, kn_lim))
+                    & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim))
+            fine = geom & _kn_ok(env, q_o, R_fk, kn_lim)
+            if kn_lim != (None, None) and kn_descend:
+                retry = geom & ~fine
+                if retry.any():
+                    q_r = stiffness_descend(env, q_o[retry], p_t[retry], R_t[retry], kn_lim)
+                    coll_r = env.collision.is_collided(env.kin.link_transforms(q_r))
+                    p_r, R_r, _, _ = env.kin.tcp_fk_jac(q_r)
+                    ok_r = ((~coll_r)
+                            & ((q_r >= env.kin.lmt_lo - 1e-5) & (q_r <= env.kin.lmt_up + 1e-5)).all(dim=-1)
+                            & ((p_r - p_t[retry]).norm(dim=-1) <= tube)
+                            & ((R_r[:, :, 2] * nt[retry]).sum(-1) >= cos_lim)
+                            & _kn_ok(env, q_r, R_r, kn_lim))
+                    idx = torch.nonzero(retry, as_tuple=False).squeeze(-1)[ok_r]
+                    q_o[idx] = q_r[ok_r]
+                    fine[idx] = True
             f = fine.cpu().numpy()
             ok[rows[f]] = True
             q_out[rows[f]] = q_o[fine].cpu().numpy()

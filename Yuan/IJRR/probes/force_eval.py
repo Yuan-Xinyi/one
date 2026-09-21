@@ -27,7 +27,9 @@ from Yuan.IJRR.env.classical_nullspace import (ClassicalNullspaceController,
 from Yuan.IJRR.stage2_traj.ppo import Agent
 
 CONE = 30.0
-KN_MAX, F_SET, F_TOL, K_LAT = 2000.0, 5.0, 2.0, 5.0
+_kn = [a for a in sys.argv[1:] if a.startswith('--kn=')]
+KN_MAX = float(_kn[0][5:]) if _kn else 2000.0
+F_SET, F_TOL, K_LAT = 5.0, 2.0, 5.0
 FORCE_KW = dict(force_kn_max=KN_MAX, force_set=F_SET, force_tol=F_TOL,
                 k_lateral=K_LAT)
 dev = torch.device('cuda')
@@ -35,7 +37,8 @@ A = MAIN / 'runs/paper_fill/ratio_assets'
 FU = MAIN / 'runs/paper_fill/fam_unify'
 FULL = '--all' in sys.argv[1:]
 extra = [a for a in sys.argv[1:] if not a.startswith('--')]
-OUTF = FU / ('force_eval_10k.npz' if FULL else 'force_eval_v1.npz')
+_sfx = '' if KN_MAX == 2000.0 else f'_k{int(KN_MAX)}'
+OUTF = FU / (f'force_eval_10k{_sfx}.npz' if FULL else (f'force_eval{_sfx}.npz' if _sfx else 'force_eval_v1.npz'))
 
 env0 = lb.build_env(dev, 'stock', 512)
 dt0 = env0.kin.dtype

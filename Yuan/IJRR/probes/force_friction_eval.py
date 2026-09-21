@@ -29,6 +29,8 @@ keys = {f.name for f in dataclasses.fields(EnvConfig)}
 base = {k: v for k, v in y['env'].items() if k in keys}
 base['dt'] /= 2; base['max_steps'] = int(y['env']['max_steps'] * 2)
 FF = '--ff' in sys.argv[1:]
+_ck = [a for a in sys.argv[1:] if a.startswith('--ckpt=')]
+CKPT = _ck[0][7:] if _ck else 'force'
 
 
 def roll(mu):
@@ -36,7 +38,7 @@ def roll(mu):
               force_depth_ff=FF, force_mu=mu, n_envs=B)
     env = NSRLBatchedEnv(EnvConfig(**kw), None, dev)
     ag = Agent(env.obs_dim, env.act_dim_policy, hidden_dim=y['ppo']['hidden_dim']).to(dev)
-    ag.load_state_dict(torch.load(REPO / 'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_force/agent.pt', map_location=dev))
+    ag.load_state_dict(torch.load(REPO / f'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_{CKPT}/agent.pt', map_location=dev))
     ag.eval(); rdt = env.kin.dtype
     prog = np.zeros(N, np.float32); fmax = np.zeros(N, np.float32); term = np.zeros(N, np.int64)
     ratios = []
@@ -78,7 +80,7 @@ for mu in (0.3, 0.6):
     e = mu * np.abs(r) / (1 + mu * r)            # relative change of realised force
     print(f'  mu={mu}: relative force change |mu r/(1+mu r)| median {np.median(e)*100:.1f}%, '
           f'p90 {np.percentile(e, 90)*100:.1f}%, share > 20% (1 N at 5 N): {(e > 0.2).mean()*100:.1f}%', flush=True)
-np.savez(FU / f'force_friction_10k{"_ff" if FF else ""}.npz',
+np.savez(FU / f'force_friction_10k{"_ff" if FF else ""}{"" if CKPT == "force" else "_" + CKPT}.npz',
          **{f'p_mu{mu}': v[0] for mu, v in res.items()}, **{f'fmax_mu{mu}': v[1] for mu, v in res.items()},
          **{f'term_mu{mu}': v[2] for mu, v in res.items()}, ratio_mu0=r)
 ref = np.maximum.reduce([lpwf] + [v[0] for v in res.values()] + [d['p_sel']])

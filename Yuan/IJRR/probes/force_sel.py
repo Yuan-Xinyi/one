@@ -18,6 +18,8 @@ from Yuan.IJRR.stage2_traj.ppo import Agent
 
 CONE = 30.0
 _kn = [a for a in sys.argv[1:] if a.startswith('--kn=')]
+_ck = [a for a in sys.argv[1:] if a.startswith('--ckpt=')]
+CKPT = _ck[0][7:] if _ck else 'force'
 KN_MAX = float(_kn[0][5:]) if _kn else 2000.0
 FORCE_KW = dict(force_kn_max=KN_MAX, force_set=5.0, force_tol=2.0, k_lateral=5.0)
 dev = torch.device('cuda')
@@ -36,7 +38,7 @@ dd /= np.linalg.norm(dd, axis=1, keepdims=True)
 nt = tz['cs_n_target'][sub].astype(np.float32)
 nt /= np.linalg.norm(nt, axis=1, keepdims=True)
 
-y = yaml.safe_load(open(REPO / 'Yuan/IJRR/stage2_traj/config_line_cont_dirfrac_e8kXXL_force.yaml'))
+y = yaml.safe_load(open(REPO / f'Yuan/IJRR/stage2_traj/config_line_cont_dirfrac_e8kXXL_{CKPT}.yaml'))
 keys = {f.name for f in dataclasses.fields(EnvConfig)}
 kw = {k: v for k, v in y['env'].items() if k in keys}
 kw['dt'] /= 2; kw['max_steps'] = int(y['env']['max_steps'] * 2)
@@ -44,7 +46,7 @@ kw.update(FORCE_KW); kw['cone_deg'] = CONE
 B = 4096
 renv = NSRLBatchedEnv(EnvConfig(**{**kw, 'n_envs': B}), None, dev)
 ag = Agent(renv.obs_dim, renv.act_dim_policy, hidden_dim=y['ppo']['hidden_dim']).to(dev)
-ag.load_state_dict(torch.load(REPO / 'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_force/agent.pt',
+ag.load_state_dict(torch.load(REPO / f'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_{CKPT}/agent.pt',
                               map_location=dev))
 ag.eval()
 rdt = renv.kin.dtype
@@ -95,13 +97,18 @@ with torch.no_grad():
             if bool(renv.done_persistent.all()):
                 break
         p_sel[lo:hi] = renv.arc_progress.float().cpu().numpy()[:hi - lo]
-d['p_sel'] = p_sel; d['pick_q'] = pick_q; d['cands_V'] = V
+_k = '' if CKPT == 'force' else '_' + CKPT
+d['p_sel' + _k] = p_sel; d['pick_q' + _k] = pick_q; d['cands_V' + _k] = V
 np.savez(OUTF, **d)
 print(f'picked-start k_n median {np.median(pick_kn[has]):.0f} N/m '
       f'(first-candidate {np.median(first_kn[has]):.0f})', flush=True)
 
 rows = [('classical', d['p_cls']), ('flagship-0shot', d['p_rl']),
-        ('force', d['p_force']), ('force+critic', p_sel)]
+        ('force', d['p_force']), ('force+critic', d['p_sel'])] if CKPT != 'force' else \
+       [('classical', d['p_cls']), ('flagship-0shot', d['p_rl']), ('force', d['p_force'])]
+rows.append((CKPT if CKPT != 'force' else 'force+critic', p_sel) if CKPT == 'force' else (CKPT + '+critic', p_sel))
+if CKPT != 'force' and f'p_{CKPT}' in d:
+    rows.insert(-1, (CKPT, d[f'p_{CKPT}']))
 ref = np.maximum.reduce([lpwf] + [v for _, v in rows])
 for tag, v in rows:
     rt = v[has] / np.maximum(ref[has], 1e-9)

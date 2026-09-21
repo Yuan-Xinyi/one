@@ -1,3 +1,13 @@
+> **ABANDONED LINE.** This branch (`action-chain-trail`, pushed as
+> `origin/ijrr-pipeline-curves`) is retired as of 2026-09-21. It is kept only
+> as the record of the exit-time/HJB pipeline, the three-arm port, the
+> paper-fill campaign and the learned-controller negative result; nothing here
+> is being continued.
+>
+> **The live line is `rl-single-traj-clean`**, which branches from this
+> branch's last research commit (`f5c50b8`). Work there, not here. Anything
+> below describes the frozen state of the abandoned line.
+
 # IJRR — frozen clean copy of the final pipeline
 
 Everything here is a **copy**. Nothing was moved and nothing outside this

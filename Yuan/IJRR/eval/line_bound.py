@@ -59,11 +59,43 @@ TABLE = "Yuan/IJRR/runs/iksel_clean_v1/cvt_table_201600.npz"
 ENV_YAML = "Yuan/IJRR/stage2_traj/config.yaml"
 TASKS = "Yuan/IJRR/runs/eval_10k_systematic/eval_set_10k.npz"
 CONE_DEG = 30.0
+# Joint-impedance stiffness [N m/rad] used for the implicit-force constraint
+# (Franka FR3 controller defaults). Only FR3 has a value here.
+KQ_JOINT = {"fr3": (600.0, 600.0, 600.0, 600.0, 250.0, 150.0, 50.0)}
+
+
+@torch.no_grad()
+def stiffness_along(env, q, n, kq):
+    """End-effector translational stiffness along unit direction n [N/m]
+    under joint impedance kq: 1 / (n^T J_v K_q^-1 J_v^T n). The pen presses
+    along its own axis, so n is the tool z axis of the same posture."""
+    _, _, J, _ = env.kin.tcp_fk_jac(q)
+    a = torch.einsum('bi,bij->bj', n, J[:, :3, :])
+    return 1.0 / (a * a / kq).sum(-1)
+
+
+def _kn_ok(env, q_o, R_fk, kn_lim):
+    """Implicit-force admissibility: constant force encoded as a virtual
+    displacement needs the position tolerance eps_f / k_n(q) to stay above
+    the executable precision, i.e. k_n <= k_max; a finite pen travel gives
+    k_n >= k_min. kn_lim=(k_min, k_max) with None = no bound."""
+    k_min, k_max = kn_lim
+    if k_min is None and k_max is None:
+        return torch.ones(q_o.shape[0], dtype=torch.bool, device=q_o.device)
+    kq = torch.as_tensor(env.kq_joint, device=q_o.device, dtype=q_o.dtype)
+    kn = stiffness_along(env, q_o, R_fk[:, :, 2], kq)
+    ok = torch.ones_like(kn, dtype=torch.bool)
+    if k_min is not None:
+        ok &= kn >= k_min
+    if k_max is not None:
+        ok &= kn <= k_max
+    return ok
 
 
 @torch.no_grad()
 def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
-                  k_nn=200, n_try=12, q_hint=None, chunk=8192):
+                  k_nn=200, n_try=12, q_hint=None, chunk=8192,
+                  kn_lim=(None, None)):
     """Per row: is there a collision-free q at ``pts`` with the tool along
     ``zs`` and within the cone around ``n_refs``?
 
@@ -100,7 +132,22 @@ def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
                              np.repeat(zs[lo:hi], k_nn, 0)).reshape(C, k_nn, 3)
         d6 = np.concatenate([dp, rv], -1).astype(np.float32)
         dq = np.einsum('ckje,cke->ckj', Tji[ids], d6)
-        order = (dq * dq).sum(-1).argsort(1)[:, :n_try]
+        cost = (dq * dq).sum(-1)
+        if "kn" in T:
+            # Warm starts are ranked by joint displacement only; with a
+            # stiffness window the projector would otherwise be seeded from
+            # whichever branch is nearest, stiff or not, and the window
+            # would be applied only after the fact. Demote table rows outside
+            # the window so the search itself favours admissible postures.
+            k_min, k_max = kn_lim
+            kt = T["kn"][ids]
+            bad = np.zeros_like(cost, bool)
+            if k_min is not None:
+                bad |= kt < k_min
+            if k_max is not None:
+                bad |= kt > k_max
+            cost = np.where(bad, cost + 1e6, cost)
+        order = cost.argsort(1)[:, :n_try]
         cand[lo:hi] = Tq[np.take_along_axis(ids, order, 1)]
 
     slots = [cand[:, t] for t in range(n_try)]
@@ -135,7 +182,8 @@ def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
                       & (q_o <= env.kin.lmt_up + 1e-5)).all(dim=-1)
             fine = ((~coll) & in_lmt
                     & ((p_fk - p_t).norm(dim=-1) <= tube)
-                    & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim))
+                    & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim)
+                    & _kn_ok(env, q_o, R_fk, kn_lim))
             f = fine.cpu().numpy()
             ok[rows[f]] = True
             q_out[rows[f]] = q_o[fine].cpu().numpy()
@@ -146,7 +194,7 @@ def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
 
 
 @torch.no_grad()
-def witness_rows(env, qw, pts, n_refs, cos_lim, tube):
+def witness_rows(env, qw, pts, n_refs, cos_lim, tube, kn_lim=(None, None)):
     """Constraint check of externally supplied witness configurations,
     without any IK projection: a witness comes from an executed rollout, so
     it either satisfies the point's constraints as it stands or it does not
@@ -161,7 +209,8 @@ def witness_rows(env, qw, pts, n_refs, cos_lim, tube):
               & (q_t <= env.kin.lmt_up + 1e-5)).all(dim=-1)
     fine = ((~coll) & in_lmt
             & ((p_fk - p_t).norm(dim=-1) <= tube)
-            & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim))
+            & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim)
+            & _kn_ok(env, q_t, R_fk, kn_lim))
     return fine.cpu().numpy()
 
 
@@ -173,6 +222,7 @@ def build_env(device, collision, chunk, robot="fr3"):
     keys = {fl.name for fl in dataclasses.fields(EnvConfig)}
     kw = {k: v for k, v in y["env"].items() if k in keys}
     env = NSRLBatchedEnv(EnvConfig(**{**kw, "n_envs": chunk}), None, device)
+    env.kq_joint = KQ_JOINT.get(robot)
     if collision == "pen":
         env.collision = PenSphereCollision(env.kin.tcp_offset, device=device)
         print(f"[bound] collision model includes hand and pen "
@@ -209,6 +259,13 @@ def main():
                          "env's LATERAL_SAFETY_NET so the bound admits every "
                          "stroke the rollout itself would admit")
     ap.add_argument("--collision", choices=["stock", "pen"], default="stock")
+    ap.add_argument("--kn-max", type=float, default=None,
+                    help="implicit-force constraint: end-effector stiffness "
+                         "along the tool axis must not exceed this [N/m] "
+                         "(= force tolerance / executable position precision)")
+    ap.add_argument("--kn-min", type=float, default=None,
+                    help="lower stiffness bound [N/m] (= set force / max pen "
+                         "travel); None = off")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--chunk", type=int, default=512)
     ap.add_argument("--out", default=None)
@@ -253,6 +310,32 @@ def main():
     tube = LATERAL_SAFETY_NET if a.tube is None else a.tube
     print(f"[bound] position tolerance tube {tube * 1000:.0f} mm, "
           f"cone {a.cone_deg} deg, {a.n_dirs} directions per point")
+    kn_lim = (a.kn_min, a.kn_max)
+    if kn_lim != (None, None):
+        if env.kq_joint is None:
+            raise SystemExit(f"no joint-impedance stiffness known for {a.robot}")
+        print(f"[bound] implicit-force constraint: k_n in "
+              f"[{a.kn_min}, {a.kn_max}] N/m along the tool axis, "
+              f"K_q = {env.kq_joint}")
+        # stiffness of every table posture along its own tool axis, so the
+        # warm-start ranking in feasible_rows can favour admissible rows
+        kq = torch.as_tensor(env.kq_joint, device=dev, dtype=env.kin.dtype)
+        kn_tab = []
+        for lo in range(0, len(T["q"]), 16384):
+            qt = torch.as_tensor(T["q"][lo:lo + 16384], device=dev,
+                                 dtype=env.kin.dtype)
+            nt = torch.as_tensor(T["zax"][lo:lo + 16384], device=dev,
+                                 dtype=env.kin.dtype)
+            kn_tab.append(stiffness_along(env, qt, nt, kq).float().cpu().numpy())
+        T = {k: T[k] for k in T.files}
+        T["kn"] = np.concatenate(kn_tab)
+        inw = np.ones(len(T["kn"]), bool)
+        if a.kn_min is not None:
+            inw &= T["kn"] >= a.kn_min
+        if a.kn_max is not None:
+            inw &= T["kn"] <= a.kn_max
+        print(f"[bound] table rows inside the stiffness window: "
+              f"{inw.mean():.1%} of {len(inw)}")
 
     # Directions are sampled across the full cone and the axis is always
     # included; a converged solution may sit up to THETA_MAX off the requested
@@ -366,7 +449,8 @@ def main():
                             else p0[rr] + d[rr] * s)
                     nrfw = (cur_axes[rr] if PATH_PTS is not None
                             else n_t[rr])
-                    fine = witness_rows(env, ww, ptsw, nrfw, cos_lim, tube)
+                    fine = witness_rows(env, ww, ptsw, nrfw, cos_lim, tube,
+                                        kn_lim=kn_lim)
                     certified[rr[fine]] = True
                     q_prev[rr[fine]] = ww[fine]
                     n_wcert += int(fine.sum())
@@ -385,7 +469,7 @@ def main():
             ok, q = feasible_rows(env, tree, T, pts, zs, nrf, cos_lim, tube,
                                   k_nn=a.k_nn, n_try=a.n_try,
                                   q_hint=None if (r == 0 and not seeded)
-                                  else hint)
+                                  else hint, kn_lim=kn_lim)
             ok = ok.reshape(len(search), M)
             q = q.reshape(len(search), M, NJ)
             any_ok = ok.any(axis=1)
@@ -435,6 +519,8 @@ def main():
                         censored=censored, step=np.float32(a.step),
                         cone_deg=np.float32(a.cone_deg),
                         collision=a.collision, n_dirs=np.int32(M),
+                        kn_min=np.float32(a.kn_min if a.kn_min else np.nan),
+                        kn_max=np.float32(a.kn_max if a.kn_max else np.nan),
                         **({"q_witness": witness} if witness is not None
                            else {}))
     print(f"\n[bound] wrote {out}  ({time.time() - t0:.1f}s)")

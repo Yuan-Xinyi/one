@@ -21,7 +21,9 @@ _kn = [a for a in sys.argv[1:] if a.startswith('--kn=')]
 _ck = [a for a in sys.argv[1:] if a.startswith('--ckpt=')]
 CKPT = _ck[0][7:] if _ck else 'force'
 KN_MAX = float(_kn[0][5:]) if _kn else 2000.0
-FORCE_KW = dict(force_kn_max=KN_MAX, force_set=5.0, force_tol=2.0, k_lateral=5.0)
+_mu = [a for a in sys.argv[1:] if a.startswith('--mu=')]
+MU = float(_mu[0][5:]) if _mu else 0.0
+FORCE_KW = dict(force_kn_max=KN_MAX, force_set=5.0, force_tol=2.0, k_lateral=5.0, force_mu=MU)
 dev = torch.device('cuda')
 A = MAIN / 'runs/paper_fill/ratio_assets'
 FU = MAIN / 'runs/paper_fill/fam_unify'
@@ -70,7 +72,11 @@ with torch.no_grad():
         renv.line_dist = ScriptedLineDistribution(specs(CQ[lo:hi], CT[lo:hi]))
         renv.reset()
         V[lo:hi] = ag.get_value(renv.current_obs()).float().cpu().numpy()[:hi - lo]
-print(f'scored {len(CQ)} candidates ({time.time() - t0:.0f}s)', flush=True)
+        if MU > 0.0:   # friction raises the effective stiffness: re-screen the candidates
+            bad = (renv._kn > KN_MAX).cpu().numpy()[:hi - lo]
+            V[lo:hi][bad] = -1e9
+print(f'scored {len(CQ)} candidates ({time.time() - t0:.0f}s); admissible under mu={MU}: '
+      f'{(V > -1e8).mean()*100:.1f}%', flush=True)
 
 pick_q = d['q0_first'].copy(); pick_kn = np.zeros(N, np.float32)
 first_kn = np.zeros(N, np.float32)
@@ -80,8 +86,12 @@ while lo < len(CT):
     while hi < len(CT) and CT[hi] == CT[lo]:
         hi += 1
     j = lo + int(np.argmax(V[lo:hi]))
+    if V[j] < -1e8:
+        has[CT[lo]] = False
     pick_q[CT[lo]] = CQ[j]; pick_kn[CT[lo]] = CK[j]; first_kn[CT[lo]] = CK[lo]
     lo = hi
+if MU > 0.0:
+    print(f'tasks with an admissible start under mu={MU}: {has.mean()*100:.1f}%', flush=True)
 
 # ---- roll the picks ----
 p_sel = np.zeros(N, np.float32)
@@ -97,7 +107,7 @@ with torch.no_grad():
             if bool(renv.done_persistent.all()):
                 break
         p_sel[lo:hi] = renv.arc_progress.float().cpu().numpy()[:hi - lo]
-_k = '' if CKPT == 'force' else '_' + CKPT
+_k = ('' if CKPT == 'force' else '_' + CKPT) + ('' if MU == 0.0 else f'_mu{MU}')
 d['p_sel' + _k] = p_sel; d['pick_q' + _k] = pick_q; d['cands_V' + _k] = V
 np.savez(OUTF, **d)
 print(f'picked-start k_n median {np.median(pick_kn[has]):.0f} N/m '
@@ -114,5 +124,10 @@ for tag, v in rows:
     rt = v[has] / np.maximum(ref[has], 1e-9)
     print(f'{tag:15s} stroke {v[has].mean():.3f}  ratio {rt.mean() * 100:.1f} / '
           f'{np.percentile(rt, 10) * 100:.1f}', flush=True)
+if MU > 0.0:
+    ref0 = np.maximum(np.maximum(lpwf, d['p_sel']), p_sel)
+    rt = p_sel[has] / np.maximum(ref0[has], 1e-9)
+    print(f'[mu={MU}] {CKPT}+critic, friction-screened starts: stroke {p_sel[has].mean():.3f}  '
+          f'ratio {rt.mean()*100:.1f} / {np.percentile(rt,10)*100:.1f}  (tasks {has.sum()})', flush=True)
 imp = (p_sel[has] > d['p_force'][has] + 0.01).mean(); wor = (p_sel[has] < d['p_force'][has] - 0.01).mean()
 print(f'critic pick vs first candidate: better {imp * 100:.1f}% / worse {wor * 100:.1f}% of tasks', flush=True)

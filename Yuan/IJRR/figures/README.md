@@ -49,9 +49,10 @@ rotation. Without it the fingers meet the bar at 45°, which is not a grasp.
 
 ```bash
 # in one's own real-time viewer (transparent overlay, orbit and screenshot yourself)
-python Yuan/IJRR/figures/door_scene_one.py --scenario init
-python Yuan/IJRR/figures/door_scene_one.py --scenario base --ghosts 8
-python Yuan/IJRR/figures/door_scene_one.py --scenario init --variant 0 --animate
+# one case at a time: meshes, and the same poses as a link diagram --gap away
+python Yuan/IJRR/figures/door_scene_one.py --scenario init --variant 0
+python Yuan/IJRR/figures/door_scene_one.py --scenario redundancy --variant 3
+python Yuan/IJRR/figures/door_scene_one.py --scenario base --all      # all cases, meshes only
 
 # the matplotlib figures / animations
 python Yuan/IJRR/figures/fig_door_opening.py --scenario init         # start joint angles

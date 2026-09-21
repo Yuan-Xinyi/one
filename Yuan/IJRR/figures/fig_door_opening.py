@@ -104,6 +104,8 @@ from one.robots.manipulators.franka.fr3_pen.batched_fr3_kin import ( # noqa: E40
 
 torch.set_grad_enabled(False)
 DTYPE = torch.float64
+PEN_LENGTH = 0.10                                  # rigid pen past the gripper
+PEN_TCP_OFFSET = HAND_TCP_OFFSET + PEN_LENGTH
 
 # Franka Hand mount: the hand frame is the flange frame rotated -45 deg about z
 # (panda_hand_joint), so flange = hand @ Rz(+45 deg).
@@ -120,7 +122,10 @@ class DoorSpec:
     hinge_xy: tuple = (0.82, 0.57)      # hinge axis (world x, y) [m]
     leaf_dir_deg: float = -100.0        # closed-leaf direction in xy [deg from +x]
     width: float = 0.70                 # hinge -> free edge [m]
-    height: float = 2.0                 # leaf height [m]
+    height: float = 1.6                 # leaf height [m]; drawn and
+                                        # collided against, but the arm
+                                        # never reaches above ~1.3 m so
+                                        # this is a framing choice only
     z_bottom: float = 0.0               # leaf bottom [m]
     handle_r: float = 0.64              # grasp radius from the hinge [m]
     handle_z: float = 0.95              # grasp height [m]
@@ -229,10 +234,15 @@ class BasePose:
 # kinematics helpers
 # --------------------------------------------------------------------------- #
 class Arm:
-    """FR3 with a Franka Hand TCP plus the sphere collision model."""
+    """FR3 with a Franka Hand TCP plus the sphere collision model.
 
-    def __init__(self):
-        self.kin = BatchedFR3Kinematics(dtype=DTYPE, tcp_offset=HAND_TCP_OFFSET)
+    ``tcp_offset`` is measured from the flange: ``HAND_TCP_OFFSET`` is the
+    gripper acting centre, ``PEN_TCP_OFFSET`` puts the TCP at the tip of the
+    10 cm pen the paper's task writes with.
+    """
+
+    def __init__(self, tcp_offset: float = HAND_TCP_OFFSET):
+        self.kin = BatchedFR3Kinematics(dtype=DTYPE, tcp_offset=tcp_offset)
         self.coll = FR3SphereCollision(dtype=DTYPE)
         self.lo = self.kin.lmt_lo
         self.hi = self.kin.lmt_up
@@ -352,7 +362,7 @@ def solve_ik(arm: Arm, p_d: torch.Tensor, R_d: torch.Tensor, q_init: torch.Tenso
 
 def ik_solutions(arm: Arm, p_d_w: np.ndarray, R_d_w: np.ndarray, base: BasePose,
                  door: DoorSpec, n_restart: int = 400, seed: int = 0,
-                 dedup: float = 0.7, want: int = 8):
+                 dedup: float = 0.7, want: int = 8, theta: float = 0.0):
     """Distinct collision-free IK solutions for one world pose, spread out.
 
     Returns ``(q (k,7), swivel (k,))`` sorted by elbow swivel angle, which is the
@@ -364,7 +374,7 @@ def ik_solutions(arm: Arm, p_d_w: np.ndarray, R_d_w: np.ndarray, base: BasePose,
     q, ok = solve_ik(arm, torch.as_tensor(p_b, dtype=DTYPE).expand(n_restart, 3),
                      torch.as_tensor(R_b, dtype=DTYPE).expand(n_restart, 3, 3), q0)
     ok = ok & (arm.self_collision_margin(q) > 0.0)
-    ok = ok & static_env_ok(arm, q, base, door, theta=0.0)
+    ok = ok & static_env_ok(arm, q, base, door, theta=theta)
     q = q[ok]
     if q.numel() == 0:
         return q.reshape(0, 7).numpy(), np.zeros(0)
@@ -1385,6 +1395,8 @@ def main():
     ap.add_argument('--dtheta', type=float, default=0.5, help='door step [deg]')
     ap.add_argument('--theta-end', type=float, default=90.0, help='goal opening [deg]')
     ap.add_argument('--handle-z', type=float, default=0.95)
+    ap.add_argument('--door-height', type=float, default=None,
+                    help='leaf height [m], purely a framing choice')
     ap.add_argument('--base-xy', type=float, nargs=2, default=(-0.05, 0.45))
     ap.add_argument('--cam-elev', type=float, default=26.0,
                     help='mesh camera elevation above the floor [deg]')
@@ -1399,6 +1411,8 @@ def main():
         plt.switch_backend('Agg')
 
     door = DoorSpec(handle_z=args.handle_z, theta_end_deg=args.theta_end)
+    if args.door_height is not None:
+        door = replace(door, height=args.door_height)
     base = BasePose(x=args.base_xy[0], y=args.base_xy[1])
     arm = Arm()
 

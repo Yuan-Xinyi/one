@@ -111,24 +111,33 @@ def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
     for q_slot in slots:
         if not len(pend):
             break
-        q0 = torch.as_tensor(q_slot[pend], device=dev, dtype=dt)
-        p_t = torch.as_tensor(pts[pend], device=dev, dtype=dt)
-        R_t = _build_R_with_z(torch.as_tensor(zs[pend], device=dev, dtype=dt), hint)
-        q_o, _, _ = _batched_ik_project(env.kin, q0, p_t, R_t, branch_action=None)
-        # The projector's own convergence flag demands the exact point to
-        # within 5 mm; the admissible set here is the tolerance tube, so every
-        # projected configuration is scored rather than only the converged ones.
-        coll = env.collision.is_collided(env.kin.link_transforms(q_o))
-        p_fk, R_fk, _, _ = env.kin.tcp_fk_jac(q_o)
-        nt = torch.as_tensor(n_refs[pend], device=dev, dtype=dt)
-        in_lmt = ((q_o >= env.kin.lmt_lo - 1e-5)
-                  & (q_o <= env.kin.lmt_up + 1e-5)).all(dim=-1)
-        fine = ((~coll) & in_lmt
-                & ((p_fk - p_t).norm(dim=-1) <= tube)
-                & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim))
-        f = fine.cpu().numpy()
-        ok[pend[f]] = True
-        q_out[pend[f]] = q_o[fine].cpu().numpy()
+        # The projection and the collision check are chunked as well: at the
+        # first march step every task is alive, so pend can hold hundreds of
+        # thousands of rows and the pairwise sphere margins alone would not
+        # fit on the device.
+        for c_lo in range(0, len(pend), chunk):
+            rows = pend[c_lo:c_lo + chunk]
+            q0 = torch.as_tensor(q_slot[rows], device=dev, dtype=dt)
+            p_t = torch.as_tensor(pts[rows], device=dev, dtype=dt)
+            R_t = _build_R_with_z(
+                torch.as_tensor(zs[rows], device=dev, dtype=dt), hint)
+            q_o, _, _ = _batched_ik_project(env.kin, q0, p_t, R_t,
+                                            branch_action=None)
+            # The projector's own convergence flag demands the exact point to
+            # within 5 mm; the admissible set here is the tolerance tube, so
+            # every projected configuration is scored rather than only the
+            # converged ones.
+            coll = env.collision.is_collided(env.kin.link_transforms(q_o))
+            p_fk, R_fk, _, _ = env.kin.tcp_fk_jac(q_o)
+            nt = torch.as_tensor(n_refs[rows], device=dev, dtype=dt)
+            in_lmt = ((q_o >= env.kin.lmt_lo - 1e-5)
+                      & (q_o <= env.kin.lmt_up + 1e-5)).all(dim=-1)
+            fine = ((~coll) & in_lmt
+                    & ((p_fk - p_t).norm(dim=-1) <= tube)
+                    & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim))
+            f = fine.cpu().numpy()
+            ok[rows[f]] = True
+            q_out[rows[f]] = q_o[fine].cpu().numpy()
         # A row that projected but failed the collision, position or cone check
         # is still pending: the next warm start may land on another branch.
         pend = pend[~ok[pend]]

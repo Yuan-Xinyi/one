@@ -338,6 +338,11 @@ class NSRLBatchedEnv:
         # objective has to be accumulated step by step.
         self.arc_progress = torch.zeros((B,), device=self.device, dtype=d)
         self.n_target = torch.zeros((B, 3), device=self.device, dtype=d)
+        # Non-planar surfaces: the cone axis rotates along the path,
+        # n(s) = R(axis, rate*s) n0. rate = 0 keeps the historical fixed axis.
+        self.n0_target = torch.zeros((B, 3), device=self.device, dtype=d)
+        self.n_rot_axis = torch.zeros((B, 3), device=self.device, dtype=d)
+        self.n_rot_rate = torch.zeros((B,), device=self.device, dtype=d)
         self.t = torch.zeros((B,), device=self.device, dtype=torch.long)
         self.a_prev = torch.zeros((B, self.act_dim), device=self.device,
                                   dtype=d)
@@ -426,6 +431,22 @@ class NSRLBatchedEnv:
         sigma = torch.einsum('bij,bi->bj', B_basis, g_phi)
         return sigma @ self._prior_verts.T
 
+    def _refresh_n_target(self) -> None:
+        """n(s) at the current arc progress (Rodrigues, batched); no-op for
+        rate = 0 tasks. Consumers within one control period see n at the
+        period's start, a <1 deg staleness at the sampled rates."""
+        if not bool((self.n_rot_rate != 0).any()):
+            return
+        th = (self.n_rot_rate * self.arc_progress).unsqueeze(-1)
+        k = self.n_rot_axis
+        n0 = self.n0_target
+        c, s = torch.cos(th), torch.sin(th)
+        kxn = torch.linalg.cross(k, n0, dim=-1)
+        kdn = (k * n0).sum(-1, keepdim=True)
+        n = n0 * c + kxn * s + k * kdn * (1 - c)
+        self.n_target = torch.where(
+            (self.n_rot_rate != 0).unsqueeze(-1), n, self.n_target)
+
     def _path_frame(self, p: torch.Tensor):
         """(tangent, lateral_vec, lateral_dist) of the path at TCP position p.
 
@@ -448,6 +469,7 @@ class NSRLBatchedEnv:
         self.line_dir = torch.where(
             torch.isfinite(tangent).all(-1, keepdim=True), tangent,
             self.line_dir)
+        self._refresh_n_target()
         return self._compute_obs(p, R)
 
     def _reset_envs(self, mask: torch.Tensor) -> None:
@@ -459,6 +481,15 @@ class NSRLBatchedEnv:
         self.line_dir[mask] = spec["line_dir"]
         self.path_d0[mask] = spec["line_dir"]
         self.n_target[mask] = spec["n_target"]
+        self.n0_target[mask] = spec["n_target"]
+        if "n_rot_axis" in spec:
+            self.n_rot_axis[mask] = spec["n_rot_axis"].to(
+                device=self.device, dtype=self.kin.dtype)
+            self.n_rot_rate[mask] = spec["n_rot_rate"].to(
+                device=self.device, dtype=self.kin.dtype).reshape(-1)
+        else:
+            self.n_rot_axis[mask] = 0.0
+            self.n_rot_rate[mask] = 0.0
         # Curvature is optional: distributions that predate the curved-path
         # extension describe straight rays only.
         if "kappa" in spec:
@@ -540,6 +571,7 @@ class NSRLBatchedEnv:
         # manipulability, none of which need to know the path is curved.
         tangent, lateral_vec, _ = self._path_frame(p)
         self.line_dir = tangent
+        self._refresh_n_target()
 
         J_plus, sigma_min = damped_pinv(J_p, self.cfg.lambda_0, self.cfg.sigma_thr)
         B_basis, fb_mask = build_task_aligned_basis(

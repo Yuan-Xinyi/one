@@ -161,6 +161,10 @@ class EnvConfig:
     # same discounted value as one near the start -- without it the hard
     # tail of a long stroke is worth exponentially less gradient signal.
     progress_w_kappa: float = 0.0
+    # Linear position weight on the progress reward: x (1 + beta*(s0+arc)).
+    # Bounded convexity (max ~2-3x on a 1.7 m line), unlike the exponential
+    # kappa weight whose cross-task scale spread drowns short tasks.
+    progress_w_beta: float = 0.0
     # Non-empty: the policy also chooses a tangential speed each step, as a
     # trailing action channel holding one of these fractions of cfg.v. The
     # progress reward stays normalized by the FULL v, so a half-speed step
@@ -1099,6 +1103,10 @@ class NSRLBatchedEnv:
             # same, however it got there.
             r_progress_per_env = r_progress_per_env * torch.exp(
                 _kap * (self._prog_w0 + self.arc_progress))
+        _bet = float(getattr(self.cfg, 'progress_w_beta', 0.0) or 0.0)
+        if _bet:
+            r_progress_per_env = r_progress_per_env * (
+                1.0 + _bet * (self._prog_w0 + self.arc_progress))
 
         reward = r_progress_per_env.clone()
         if self.cfg.w_margin != 0.0:

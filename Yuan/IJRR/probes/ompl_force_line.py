@@ -26,6 +26,11 @@ RATE_MAX = F_TOL * K_LAT / (F_SET * V)          # |d ln k / ds| bound [1/m] = 10
 CONE, STEP, TUBE, BUDGET = 30.0, 0.002, LATERAL_SAFETY_NET, 300.0
 QD = np.array([2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61])
 N_TASKS = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+# 'how far' protocol: the target line is the march maximum for every task; the
+# planner's approximate solution gives the farthest verified arc, exactly the
+# quantity the policy is graded on
+L_TARGET = 1.8
+TAG = sys.argv[2] if len(sys.argv) > 2 else 'v2'
 BIN = SCR / 'ompl_force_line'; WORK = SCR / 'ompl_force_work'; WORK.mkdir(exist_ok=True)
 FU = MAIN / 'runs/paper_fill/fam_unify'; A = MAIN / 'runs/paper_fill/ratio_assets'
 dev = torch.device('cuda')
@@ -104,7 +109,7 @@ def verify(i, Q, L):
 
 res = []
 for i in tasks:
-    L = float(lpwf[i]); ss = np.arange(0.0, L + 1e-9, STEP)
+    L = L_TARGET; ss = np.arange(0.0, L + 1e-9, STEP)
     W = p0[i][None] + ss[:, None] * dd[i][None]
     fig = WORK / f'line_{i}.txt'
     with open(fig, 'w') as f:
@@ -127,8 +132,9 @@ for i in tasks:
         chk = verify(i, Q, L)
     else:
         chk = dict(s_end=0.0, L=L, track=0.0, kn_max=0.0, rate_max=0.0, full=False)
+    L = float(lpwf[i])
     ref = max(L, float(p_pol[i]), chk['s_end'])
-    res.append((int(i), L, chk['s_end'], float(p_pol[i]), el, len(q0), len(bank), chk['full']))
+    res.append((int(i), L, chk['s_end'], float(p_pol[i]), el, len(q0), len(bank), chk['s_end'] >= L - 1e-6))
     print(f'task {i}: bound {L:.2f}  starts {len(q0)}  bank {len(bank)} ({tb:.0f}s)  {head}  '
           f'| verified s_end {chk["s_end"]:.2f} (kn max {chk["kn_max"]:.0f}, track {chk["track"]*1e3:.1f} mm)  '
           f'ompl {chk["s_end"]/ref*100:.0f}%  policy {p_pol[i]/ref*100:.0f}%  ({el:.0f}s)', flush=True)
@@ -138,5 +144,5 @@ L_ = np.array([x[1] for x in res]); so = np.array([x[2] for x in res]); pp = np.
 ref = np.maximum.reduce([L_, so, pp])
 print(f'\nSUMMARY {len(res)} tasks: OMPL ratio {np.mean(so/ref)*100:.1f} (full {sum(x[7] for x in res)}/{len(res)}, '
       f'mean plan time {np.mean([x[4] for x in res]):.0f}s)   policy ratio {np.mean(pp/ref)*100:.1f}', flush=True)
-np.savez(FU / 'ompl_force_10.npz', tasks=np.array([x[0] for x in res]), bound=L_, ompl=so, policy=pp,
+np.savez(FU / f'ompl_force_10_{TAG}.npz', tasks=np.array([x[0] for x in res]), bound=L_, ompl=so, policy=pp,
          t_plan=np.array([x[4] for x in res]), full=np.array([x[7] for x in res]))

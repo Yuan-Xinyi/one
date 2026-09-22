@@ -37,10 +37,17 @@ ex = dd; ez = -n; ey = np.cross(ez, ex); ey /= np.linalg.norm(ey)
 Rb = np.stack([ex, ey, ez], 1).astype(np.float32)
 LEN = max(grid[-1], 0.6) + 0.4
 bc = p0 + dd * (LEN / 2 - 0.15) + n * 0.012
-_cp = json.loads((FU / 'campick_offset.json').read_text())
-_off = np.array(_cp['pos']) - np.array(_cp['look_at'])
-look = (p0 + dd * (0.5 * grid[-1])).astype(np.float32)
-CAM = (look + 1.25 * _off).astype(np.float32)
+# camera per task: the surface normal points INTO the board, so the open side
+# is -n; view from that side, offset sideways away from the robot base so the
+# arm is not occluded, elevated toward -n -- for a horizontal table this is the
+# usual front-upper view, for a wall or ceiling it rotates with the board
+mid = (p0 + dd * (0.5 * grid[-1])).astype(np.float32)
+look = (0.5 * (mid + np.array([0, 0, 0.35], np.float32))).astype(np.float32)   # robot and line both in view
+w = np.cross(n, dd); w /= np.linalg.norm(w) + 1e-9
+if float(w @ mid) < 0: w = -w                    # away from the base at the origin
+u = 0.75 * w + 0.35 * (-n) + 0.30 * np.array([0, 0, 1.0])   # mostly side-on, slightly open-side and elevated
+u /= np.linalg.norm(u)
+CAM = (look + 2.4 * u).astype(np.float32)
 world = ovw.World(cam_pos=tuple(CAM), cam_lookat_pos=tuple(look), win_size=(1280, 720))
 builtins.base = world; scene = world.scene
 ossop.box(pos=tuple(bc), half_extents=(LEN / 2 + 0.05, 0.30, 0.012), rotmat=Rb,

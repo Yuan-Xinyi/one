@@ -180,7 +180,24 @@ if not OUTF.exists():
             ok = ok.reshape(len(search), M); q = q.reshape(len(search), M, 7)
             any_ok = ok.any(1); pick = ok.argmax(1)
             q_prev[search[any_ok]] = q[np.arange(len(search)), pick][any_ok]
-            first_bad[search[~any_ok]] = r
+            # second chance before declaring a task dead: a heavier search at
+            # this point only (more cone directions, more warm starts)
+            dead = search[~any_ok]
+            if len(dead):
+                M2 = 24
+                d2 = np.stack([np.concatenate([nt[i][None], _sample_in_cone(
+                    torch.as_tensor(nt[i]), CONE, 64, np.random.default_rng(900 + i)).numpy()[:M2 - 1]], 0)
+                    for i in dead]).astype(np.float32)
+                pts2 = np.repeat(p_march[dead] + s_ * dd[dead], M2, 0)
+                ok2, q2 = lb.feasible_rows(env0, tree, Td, pts2, d2.reshape(-1, 3), np.repeat(nt[dead], M2, 0),
+                                           cosc, tube, k_nn=200, n_try=24,
+                                           q_hint=None if r == 0 else np.repeat(q_prev[dead], M2, 0),
+                                           kn_lim=(None, KN_MAX), kn_descend=True,
+                                           t_rows=np.repeat(dd[dead], M2, 0), mu=MU)
+                ok2 = ok2.reshape(len(dead), M2); q2 = q2.reshape(len(dead), M2, 7)
+                any2 = ok2.any(1); pick2 = ok2.argmax(1)
+                q_prev[dead[any2]] = q2[np.arange(len(dead)), pick2][any2]
+                first_bad[dead[~any2]] = r
         alive = alive[first_bad[alive] < 0]
         if r % 10 == 0:
             print(f'[march] s={s_:.2f} alive {len(alive)}/{N} witness-certified {n_wc}', flush=True)

@@ -14,9 +14,12 @@ import numpy as np, torch, yaml
 from Yuan.IJRR.env.env import NSRLBatchedEnv, EnvConfig
 from Yuan.IJRR.env.line_distribution import ScriptedLineDistribution
 from Yuan.IJRR.stage2_traj.ppo import Agent
+import Yuan.IJRR.eval.horizon_ladder as hl
+from Yuan.IJRR.env.classical_nullspace import ClassicalNullspaceController, cn_action_fn
 
 _mu = [a for a in sys.argv[1:] if a.startswith('--mu=')]; MU = float(_mu[0][5:]) if _mu else 0.0
 CKPTS = [a[7:] for a in sys.argv[1:] if a.startswith('--ckpt=')] or ['force_mu03full']
+EXTRA = [a for a in ('--classical', '--flagship') if a in sys.argv[1:]]
 STEPM, NG = 0.02, 91
 dev = torch.device('cuda')
 FU = MAIN / 'runs/paper_fill/fam_unify'; A = MAIN / 'runs/paper_fill/ratio_assets'
@@ -28,48 +31,68 @@ nt = tz['cs_n_target'][sub].astype(np.float32); nt /= np.linalg.norm(nt, axis=1,
 W = np.full((N, NG, 7), np.nan, np.float32); P0 = np.full((N, 3), np.nan, np.float32)
 best = np.zeros(N, np.float32)
 B = 2000
-for ck in CKPTS:
-    key = 'pick_q' + ('' if ck == 'force' else '_' + ck) + (f'_mu{MU}' if MU > 0 else '')
-    pick = d[key]
-    y = yaml.safe_load(open(REPO / f'Yuan/IJRR/stage2_traj/config_line_cont_dirfrac_e8kXXL_{ck}.yaml'))
+def method_list():
+    out = []
+    for ck in CKPTS:
+        key = 'pick_q' + ('' if ck == 'force' else '_' + ck) + (f'_mu{MU}' if MU > 0 else '')
+        out.append((ck, f'config_line_cont_dirfrac_e8kXXL_{ck}.yaml', f'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_{ck}/agent.pt', d[key]))
+    if '--flagship' in EXTRA:
+        out.append(('flagship', 'config_line_cont_dirfrac_e8kXXL_rm.yaml', 'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_rm/agent.pt', d['q0_first']))
+    if '--classical' in EXTRA:
+        out.append(('classical', str(Path(hl.ROBOTS['fr3'][0]).name), None, d['q0_first']))
+    return out
+
+
+for name, cfg, ckpt, starts in method_list():
+    y = yaml.safe_load(open(REPO / 'Yuan/IJRR/stage2_traj' / cfg))
     keys = {f.name for f in dataclasses.fields(EnvConfig)}
     kw = {k: v for k, v in y['env'].items() if k in keys}
     kw['dt'] /= 2; kw['max_steps'] = int(y['env']['max_steps'] * 2)
-    kw.update(force_kn_max=2000.0, force_set=5.0, force_tol=2.0, k_lateral=5.0, force_mu=MU, n_envs=B)
+    kw.update(force_kn_max=2000.0, force_set=5.0, force_tol=2.0, k_lateral=5.0, force_mu=MU, n_envs=B, cone_deg=30.0)
     env = NSRLBatchedEnv(EnvConfig(**kw), None, dev)
-    ag = Agent(env.obs_dim, env.act_dim_policy, hidden_dim=y['ppo']['hidden_dim']).to(dev)
-    ag.load_state_dict(torch.load(REPO / f'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_{ck}/agent.pt', map_location=dev)); ag.eval()
+    if ckpt is None:
+        act = cn_action_fn(ClassicalNullspaceController(env.kin))
+    else:
+        ag = Agent(env.obs_dim, env.act_dim_policy, hidden_dim=y['ppo']['hidden_dim']).to(dev)
+        ag.load_state_dict(torch.load(REPO / ckpt, map_location=dev)); ag.eval()
+        act = lambda e: ag.actor_mean(e.current_obs())
     rdt = env.kin.dtype
     for lo in range(0, N, B):
         hi = min(lo + B, N); pad = B - (hi - lo)
         def _t(a):
             t = torch.tensor(a[lo:hi], dtype=rdt, device=dev)
             return torch.cat([t, t[-1:].expand(pad, *t.shape[1:])]) if pad else t
-        env.line_dist = ScriptedLineDistribution({'q0': _t(pick), 'line_dir': _t(dd), 'n_target': _t(nt)})
+        env.line_dist = ScriptedLineDistribution({'q0': _t(starts), 'line_dir': _t(dd), 'n_target': _t(nt)})
         env.reset()
-        Wb = np.full((B, NG, 7), np.nan, np.float32)
         p_start = env.p_start.float().cpu().numpy()
+        # full sample record (arc, q) per env, then linear interpolation onto the grid
+        arcs, qs = [env.arc_progress.float().cpu().numpy()], [env.q.float().cpu().numpy()]
+        alive_hist = [(~env.done_persistent).cpu().numpy()]
         with torch.no_grad():
-            def snap():
-                arc = env.arc_progress.float().cpu().numpy(); q = env.q.float().cpu().numpy()
-                alive = (~env.done_persistent).cpu().numpy()
-                r = np.rint(arc / STEPM).astype(int)
-                on = (np.abs(arc - r * STEPM) <= 0.0026) & alive & (r < NG)
-                for b in np.nonzero(on)[0]:
-                    if np.isnan(Wb[b, r[b], 0]):
-                        Wb[b, r[b]] = q[b]
-            snap()
             for _ in range(env.cfg.max_steps // 2):
-                a = ag.actor_mean(env.current_obs())
+                a = act(env)
                 for _ in range(2):
-                    env.step(a, auto_reset=False); snap()
+                    env.step(a, auto_reset=False)
+                    arcs.append(env.arc_progress.float().cpu().numpy()); qs.append(env.q.float().cpu().numpy())
+                    alive_hist.append((~env.done_persistent).cpu().numpy())
                 if bool(env.done_persistent.all()):
                     break
-        prog = env.arc_progress.float().cpu().numpy()[:hi - lo]
+        arcs = np.stack(arcs); qs = np.stack(qs); alive_hist = np.stack(alive_hist)
+        prog = env.arc_progress.float().cpu().numpy()
         for b in range(hi - lo):
-            if prog[b] > best[lo + b]:
-                best[lo + b] = prog[b]; W[lo + b] = Wb[b]; P0[lo + b] = p_start[b]
-        print(f'{ck}: witnesses {hi}/{N}', flush=True)
+            if prog[b] <= best[lo + b]:
+                continue
+            ok_steps = alive_hist[:, b] | np.concatenate([[True], alive_hist[:-1, b]])   # include the terminal step
+            ar, qq = arcs[ok_steps, b], qs[ok_steps, b]
+            keep_ = np.concatenate([[True], np.diff(ar) > 1e-6]); ar, qq = ar[keep_], qq[keep_]
+            Wb = np.full((NG, 7), np.nan, np.float32)
+            g = np.arange(NG) * STEPM; inside = g <= ar[-1] + 1e-9
+            if inside.any() and len(ar) >= 2:
+                Wb[inside] = np.stack([np.interp(g[inside], ar, qq[:, j]) for j in range(7)], 1)
+            elif inside.any():
+                Wb[inside] = qq[0]
+            best[lo + b] = prog[b]; W[lo + b] = Wb; P0[lo + b] = p_start[b]
+        print(f'{name}: witnesses {hi}/{N}', flush=True)
     del env; torch.cuda.empty_cache()
-np.savez(FU / f'force_witness_mu{MU}.npz', W=W, step=np.float32(STEPM), p_start=P0, best=best, ckpts=np.array(CKPTS))
+np.savez(FU / f'force_witness_mu{MU}.npz', W=W, step=np.float32(STEPM), p_start=P0, best=best, ckpts=np.array(CKPTS + EXTRA))
 print(f'saved: finite witness points {int(np.isfinite(W[:, :, 0]).sum())}, tasks with any {int(np.isfinite(W[:, 0, 0]).sum())}', flush=True)

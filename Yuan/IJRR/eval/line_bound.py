@@ -65,17 +65,25 @@ KQ_JOINT = {"fr3": (600.0, 600.0, 600.0, 600.0, 250.0, 150.0, 50.0)}
 
 
 @torch.no_grad()
-def stiffness_along(env, q, n, kq):
-    """End-effector translational stiffness along unit direction n [N/m]
-    under joint impedance kq: 1 / (n^T J_v K_q^-1 J_v^T n). The pen presses
-    along its own axis, so n is the tool z axis of the same posture."""
+def stiffness_along(env, q, n, kq, t=None, mu=0.0):
+    """Effective end-effector stiffness along unit direction n [N/m] under
+    joint impedance kq: 1 / (n^T C n + mu n^T C t), C = J_v K_q^-1 J_v^T.
+    The pen presses along its own axis, so n is the tool z axis; t is the
+    path tangent and only matters with Coulomb friction mu > 0 (same
+    clamp as the env: the denominator never drops below 0.2 n^T C n)."""
     _, _, J, _ = env.kin.tcp_fk_jac(q)
     a = torch.einsum('bi,bij->bj', n, J[:, :3, :])
-    return 1.0 / (a * a / kq).sum(-1)
+    c_nn = (a * a / kq).sum(-1)
+    if t is None or mu == 0.0:
+        return 1.0 / c_nn
+    b = torch.einsum('bi,bij->bj', t, J[:, :3, :])
+    c_nt = (a * b / kq).sum(-1)
+    return 1.0 / (c_nn + mu * c_nt).clamp_min(0.2 * c_nn)
 
 
 @torch.no_grad()
-def stiffness_descend(env, q, p_t, R_t, kn_lim, n_iter=4, step=0.12, eps=1e-3):
+def stiffness_descend(env, q, p_t, R_t, kn_lim, n_iter=4, step=0.12, eps=1e-3,
+                      t=None, mu=0.0):
     """Search completeness under a stiffness window: a projected posture that
     fails only the k_n cap is pushed down the finite-difference gradient of
     k_n and re-projected onto the point/direction, a few times. Without this
@@ -85,12 +93,12 @@ def stiffness_descend(env, q, p_t, R_t, kn_lim, n_iter=4, step=0.12, eps=1e-3):
     k_min, k_max = kn_lim
     for _ in range(n_iter):
         _, R0, J0, _ = env.kin.tcp_fk_jac(q)
-        k0 = stiffness_along(env, q, R0[:, :, 2], kq)
+        k0 = stiffness_along(env, q, R0[:, :, 2], kq, t, mu)
         g = torch.zeros_like(q)
         for i in range(q.shape[1]):
             qi = q.clone(); qi[:, i] += eps
             _, Ri, Ji, _ = env.kin.tcp_fk_jac(qi)
-            g[:, i] = (stiffness_along(env, qi, Ri[:, :, 2], kq) - k0) / eps
+            g[:, i] = (stiffness_along(env, qi, Ri[:, :, 2], kq, t, mu) - k0) / eps
         # move towards the window: down when above k_max, up when below k_min
         sgn = torch.where(k0 > (k_max if k_max is not None else float('inf')), -1.0,
                           torch.where(k0 < (k_min if k_min is not None else -1.0), 1.0, 0.0))
@@ -100,7 +108,7 @@ def stiffness_descend(env, q, p_t, R_t, kn_lim, n_iter=4, step=0.12, eps=1e-3):
     return q
 
 
-def _kn_ok(env, q_o, R_fk, kn_lim):
+def _kn_ok(env, q_o, R_fk, kn_lim, t=None, mu=0.0):
     """Implicit-force admissibility: constant force encoded as a virtual
     displacement needs the position tolerance eps_f / k_n(q) to stay above
     the executable precision, i.e. k_n <= k_max; a finite pen travel gives
@@ -109,7 +117,7 @@ def _kn_ok(env, q_o, R_fk, kn_lim):
     if k_min is None and k_max is None:
         return torch.ones(q_o.shape[0], dtype=torch.bool, device=q_o.device)
     kq = torch.as_tensor(env.kq_joint, device=q_o.device, dtype=q_o.dtype)
-    kn = stiffness_along(env, q_o, R_fk[:, :, 2], kq)
+    kn = stiffness_along(env, q_o, R_fk[:, :, 2], kq, t, mu)
     ok = torch.ones_like(kn, dtype=torch.bool)
     if k_min is not None:
         ok &= kn >= k_min
@@ -121,7 +129,7 @@ def _kn_ok(env, q_o, R_fk, kn_lim):
 @torch.no_grad()
 def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
                   k_nn=200, n_try=12, q_hint=None, chunk=8192,
-                  kn_lim=(None, None), kn_descend=True):
+                  kn_lim=(None, None), kn_descend=True, t_rows=None, mu=0.0):
     """Per row: is there a collision-free q at ``pts`` with the tool along
     ``zs`` and within the cone around ``n_refs``?
 
@@ -204,23 +212,27 @@ def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
             coll = env.collision.is_collided(env.kin.link_transforms(q_o))
             p_fk, R_fk, _, _ = env.kin.tcp_fk_jac(q_o)
             nt = torch.as_tensor(n_refs[rows], device=dev, dtype=dt)
+            tt = (None if t_rows is None else
+                  torch.as_tensor(t_rows[rows], device=dev, dtype=dt))
             in_lmt = ((q_o >= env.kin.lmt_lo - 1e-5)
                       & (q_o <= env.kin.lmt_up + 1e-5)).all(dim=-1)
             geom = ((~coll) & in_lmt
                     & ((p_fk - p_t).norm(dim=-1) <= tube)
                     & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim))
-            fine = geom & _kn_ok(env, q_o, R_fk, kn_lim)
+            fine = geom & _kn_ok(env, q_o, R_fk, kn_lim, tt, mu)
             if kn_lim != (None, None) and kn_descend:
                 retry = geom & ~fine
                 if retry.any():
-                    q_r = stiffness_descend(env, q_o[retry], p_t[retry], R_t[retry], kn_lim)
+                    q_r = stiffness_descend(env, q_o[retry], p_t[retry], R_t[retry], kn_lim,
+                                            t=None if tt is None else tt[retry], mu=mu)
                     coll_r = env.collision.is_collided(env.kin.link_transforms(q_r))
                     p_r, R_r, _, _ = env.kin.tcp_fk_jac(q_r)
                     ok_r = ((~coll_r)
                             & ((q_r >= env.kin.lmt_lo - 1e-5) & (q_r <= env.kin.lmt_up + 1e-5)).all(dim=-1)
                             & ((p_r - p_t[retry]).norm(dim=-1) <= tube)
                             & ((R_r[:, :, 2] * nt[retry]).sum(-1) >= cos_lim)
-                            & _kn_ok(env, q_r, R_r, kn_lim))
+                            & _kn_ok(env, q_r, R_r, kn_lim,
+                                     None if tt is None else tt[retry], mu))
                     idx = torch.nonzero(retry, as_tuple=False).squeeze(-1)[ok_r]
                     q_o[idx] = q_r[ok_r]
                     fine[idx] = True

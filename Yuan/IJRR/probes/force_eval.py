@@ -30,14 +30,16 @@ CONE = 30.0
 _kn = [a for a in sys.argv[1:] if a.startswith('--kn=')]
 KN_MAX = float(_kn[0][5:]) if _kn else 2000.0
 F_SET, F_TOL, K_LAT = 5.0, 2.0, 5.0
+_mu = [a for a in sys.argv[1:] if a.startswith('--mu=')]
+MU = float(_mu[0][5:]) if _mu else 0.0
 FORCE_KW = dict(force_kn_max=KN_MAX, force_set=F_SET, force_tol=F_TOL,
-                k_lateral=K_LAT)
+                k_lateral=K_LAT, force_mu=MU)
 dev = torch.device('cuda')
 A = MAIN / 'runs/paper_fill/ratio_assets'
 FU = MAIN / 'runs/paper_fill/fam_unify'
 FULL = '--all' in sys.argv[1:]
 extra = [a for a in sys.argv[1:] if not a.startswith('--')]
-_sfx = '' if KN_MAX == 2000.0 else f'_k{int(KN_MAX)}'
+_sfx = ('' if KN_MAX == 2000.0 else f'_k{int(KN_MAX)}') + ('' if MU == 0.0 else f'_mu{MU}')
 OUTF = FU / (f'force_eval_10k{_sfx}.npz' if FULL else (f'force_eval{_sfx}.npz' if _sfx else 'force_eval_v1.npz'))
 
 env0 = lb.build_env(dev, 'stock', 512)
@@ -61,8 +63,8 @@ nt /= np.linalg.norm(nt, axis=1, keepdims=True)
 N = len(sub)
 
 
-def stiffness(q_t, z_t):
-    return lb.stiffness_along(env0, q_t, z_t, kq0)
+def stiffness(q_t, z_t, t_t=None):
+    return lb.stiffness_along(env0, q_t, z_t, kq0, t_t, MU)
 
 
 if not OUTF.exists():
@@ -84,11 +86,12 @@ if not OUTF.exists():
             fp = torch.as_tensor(np.repeat(p0[lo:hi], 96, 0), device=dev, dtype=dt0)
             fz = torch.as_tensor(np.repeat(zs[lo:hi], 96, 0), device=dev, dtype=dt0)
             fn = torch.as_tensor(np.repeat(nt[lo:hi], 96, 0), device=dev, dtype=dt0)
+            ft = torch.as_tensor(np.repeat(dd[lo:hi], 96, 0), device=dev, dtype=dt0)
             q_o, _, _ = _batched_ik_project(env0.kin, fq, fp, _build_R_with_z(fz, hint),
                                             branch_action=None)
             coll = env0.collision.is_collided(env0.kin.link_transforms(q_o))
             p_fk, R_fk, J_fk, _ = env0.kin.tcp_fk_jac(q_o)
-            kn = stiffness(q_o, R_fk[:, :, 2])
+            kn = stiffness(q_o, R_fk[:, :, 2], ft)
             in_lmt = ((q_o >= env0.kin.lmt_lo - 1e-5) & (q_o <= env0.kin.lmt_up + 1e-5)).all(-1)
             fine = ((~coll) & in_lmt & ((p_fk - fp).norm(dim=-1) <= tube)
                     & ((R_fk[:, :, 2] * fn).sum(-1) >= cosc) & (kn <= KN_MAX))
@@ -127,7 +130,7 @@ if not OUTF.exists():
     lpwf = np.zeros(N, np.float32)
     for c0 in range(0, N, 2000):
         c1 = min(c0 + 2000, N)
-        pts_all, zs_all, nr_all, seg = [], [], [], []
+        pts_all, zs_all, nr_all, tg_all, seg = [], [], [], [], []
         for i in range(c0, c1):
             smax = min(float(ref30[sub[i]]) + 0.06, 1.8)
             ss = np.arange(0.02, smax, 0.02, dtype=np.float32)
@@ -137,10 +140,12 @@ if not OUTF.exists():
                 ).numpy()[:M - 1]], 0).astype(np.float32)
             pts_all.append(np.repeat(P, M, 0)); zs_all.append(np.tile(dirs, (len(ss), 1)))
             nr_all.append(np.repeat(nt[i][None], len(ss) * M, 0)); seg.append(len(ss))
+            tg_all.append(np.repeat(dd[i][None], len(ss) * M, 0))
         okr, _ = lb.feasible_rows(env0, tree, Td, np.concatenate(pts_all),
                                   np.concatenate(zs_all), np.concatenate(nr_all),
                                   cosc, tube, k_nn=100, n_try=12,
-                                  kn_lim=(None, KN_MAX))
+                                  kn_lim=(None, KN_MAX), kn_descend=False,
+                                  t_rows=np.concatenate(tg_all), mu=MU)
         lo = 0
         for i, npts in zip(range(c0, c1), seg):
             o = okr[lo:lo + npts * M].reshape(npts, M).any(1)

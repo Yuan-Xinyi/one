@@ -19,7 +19,7 @@ from Yuan.IJRR.env.classical_nullspace import ClassicalNullspaceController, cn_a
 
 _mu = [a for a in sys.argv[1:] if a.startswith('--mu=')]; MU = float(_mu[0][5:]) if _mu else 0.0
 CKPTS = [a[7:] for a in sys.argv[1:] if a.startswith('--ckpt=')] or ['force_mu03full']
-EXTRA = [a for a in ('--classical', '--flagship') if a in sys.argv[1:]]
+EXTRA = [a for a in ('--classical', '--flagship', '--first') if a in sys.argv[1:]]
 STEPM, NG = 0.02, 91
 dev = torch.device('cuda')
 FU = MAIN / 'runs/paper_fill/fam_unify'; A = MAIN / 'runs/paper_fill/ratio_assets'
@@ -36,6 +36,8 @@ def method_list():
     for ck in CKPTS:
         key = 'pick_q' + ('' if ck == 'force' else '_' + ck) + (f'_mu{MU}' if MU > 0 else '')
         out.append((ck, f'config_line_cont_dirfrac_e8kXXL_{ck}.yaml', f'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_{ck}/agent.pt', d[key]))
+        if '--first' in EXTRA:   # the same model from the first admissible candidate (the table's non-critic row)
+            out.append((ck + '_first', f'config_line_cont_dirfrac_e8kXXL_{ck}.yaml', f'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_{ck}/agent.pt', d['q0_first']))
     if '--flagship' in EXTRA:
         out.append(('flagship', 'config_line_cont_dirfrac_e8kXXL_rm.yaml', 'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_rm/agent.pt', d['q0_first']))
     if '--classical' in EXTRA:

@@ -39,7 +39,8 @@ A = MAIN / 'runs/paper_fill/ratio_assets'
 FU = MAIN / 'runs/paper_fill/fam_unify'
 FULL = '--all' in sys.argv[1:]
 extra = [a for a in sys.argv[1:] if not a.startswith('--')]
-_sfx = ('' if KN_MAX == 2000.0 else f'_k{int(KN_MAX)}') + ('' if MU == 0.0 else f'_mu{MU}')
+_tag = [a for a in sys.argv[1:] if a.startswith('--tag=')]
+_sfx = ('' if KN_MAX == 2000.0 else f'_k{int(KN_MAX)}') + ('' if MU == 0.0 else f'_mu{MU}') + (('_' + _tag[0][6:]) if _tag else '')
 OUTF = FU / (f'force_eval_10k{_sfx}.npz' if FULL else (f'force_eval{_sfx}.npz' if _sfx else 'force_eval_v1.npz'))
 
 env0 = lb.build_env(dev, 'stock', 512)
@@ -127,32 +128,64 @@ if not OUTF.exists():
         kn_tab.append(stiffness(qt, zt).float().cpu().numpy())
     Td = {k: T[k] for k in T.files}; Td['kn'] = np.concatenate(kn_tab)
     M = 8
-    lpwf = np.zeros(N, np.float32)
-    for c0 in range(0, N, 2000):
-        c1 = min(c0 + 2000, N)
-        pts_all, zs_all, nr_all, tg_all, seg = [], [], [], [], []
-        for i in range(c0, c1):
-            smax = min(float(ref30[sub[i]]) + 0.06, 1.8)
-            ss = np.arange(0.02, smax, 0.02, dtype=np.float32)
-            P = p0[i][None] + ss[:, None] * dd[i][None]
-            dirs = np.concatenate([nt[i][None], _sample_in_cone(
-                torch.as_tensor(nt[i]), CONE, 16, np.random.default_rng(50 + i)
-                ).numpy()[:M - 1]], 0).astype(np.float32)
-            pts_all.append(np.repeat(P, M, 0)); zs_all.append(np.tile(dirs, (len(ss), 1)))
-            nr_all.append(np.repeat(nt[i][None], len(ss) * M, 0)); seg.append(len(ss))
-            tg_all.append(np.repeat(dd[i][None], len(ss) * M, 0))
-        okr, _ = lb.feasible_rows(env0, tree, Td, np.concatenate(pts_all),
-                                  np.concatenate(zs_all), np.concatenate(nr_all),
-                                  cosc, tube, k_nn=100, n_try=12,
-                                  kn_lim=(None, KN_MAX), kn_descend=False,
-                                  t_rows=np.concatenate(tg_all), mu=MU)
-        lo = 0
-        for i, npts in zip(range(c0, c1), seg):
-            o = okr[lo:lo + npts * M].reshape(npts, M).any(1)
-            bad = np.nonzero(~o)[0]
-            lpwf[i] = (bad[0] + 1) * 0.02 if len(bad) else npts * 0.02 + 0.02
-            lo += npts * M
-        print(f'march {c1}/{N}', flush=True)
+    STEPM = 0.02
+    # chained march (iterative deepening, as line_bound.main): every alive task
+    # is probed at the same arc length; the witness found at the previous point
+    # seeds the next one; a stiffness-descent pass rescues postures that fail
+    # only the cap; executed rollouts (--witness=) certify points directly and
+    # the march then runs along the executed ray of that witness file
+    _wit = [a for a in sys.argv[1:] if a.startswith('--witness=')]
+    Wit = None; p_march = p0.copy()
+    if _wit:
+        wz = np.load(_wit[0][10:])
+        Wit = wz['W']; assert abs(float(wz['step']) - STEPM) < 1e-9
+        ps = wz['p_start'].astype(np.float32)
+        p_march = np.where(np.isfinite(ps).all(1)[:, None], ps, p0)
+        print(f'[march] witnesses: {int(np.isfinite(Wit[:, :, 0]).sum())} points from {_wit[0][10:]}', flush=True)
+    dirs = np.empty((N, M, 3), np.float32)
+    for i in range(N):
+        dirs[i] = np.concatenate([nt[i][None], _sample_in_cone(
+            torch.as_tensor(nt[i]), CONE, 16, np.random.default_rng(50 + i)).numpy()[:M - 1]], 0)
+    smax = np.minimum(ref30[sub] + 0.06, 1.8).astype(np.float32)
+    _sub = [a for a in sys.argv[1:] if a.startswith('--subset=')]
+    if _sub:   # validation on a few tasks: everything else drops out at once
+        keep = np.zeros(N, bool); keep[[int(v) for v in _sub[0][9:].split(',')]] = True
+        smax = np.where(keep, smax, -1.0).astype(np.float32)
+    n_steps = int(round(1.8 / STEPM))
+    first_bad = np.full(N, -1, np.int64); alive = np.arange(N)
+    q_prev = np.full((N, 7), np.nan, np.float32)
+    q_prev[has] = q0_first[has]
+    n_wc = 0
+    for r in range(n_steps + 1):
+        alive = alive[(r * STEPM) <= smax[alive] + 1e-9]
+        if not len(alive):
+            break
+        s_ = r * STEPM
+        certified = np.zeros(N, bool)
+        if Wit is not None and r < Wit.shape[1]:
+            w = Wit[alive, r]; have = np.isfinite(w).all(1)
+            if have.any():
+                rows = alive[have]
+                fine = lb.witness_rows(env0, w[have].astype(np.float32), p_march[rows] + s_ * dd[rows],
+                                       nt[rows], cosc, tube, kn_lim=(None, KN_MAX), t_rows=dd[rows], mu=MU)
+                certified[rows[fine]] = True; q_prev[rows[fine]] = w[have][fine]; n_wc += int(fine.sum())
+        search = alive[~certified[alive]]
+        if len(search):
+            pts = np.repeat(p_march[search] + s_ * dd[search], M, 0)
+            zs = dirs[search].reshape(-1, 3); nrf = np.repeat(nt[search], M, 0); trw = np.repeat(dd[search], M, 0)
+            hint = np.repeat(q_prev[search], M, 0)
+            ok, q = lb.feasible_rows(env0, tree, Td, pts, zs, nrf, cosc, tube, k_nn=100, n_try=12,
+                                     q_hint=None if r == 0 else hint, kn_lim=(None, KN_MAX),
+                                     kn_descend=True, t_rows=trw, mu=MU)
+            ok = ok.reshape(len(search), M); q = q.reshape(len(search), M, 7)
+            any_ok = ok.any(1); pick = ok.argmax(1)
+            q_prev[search[any_ok]] = q[np.arange(len(search)), pick][any_ok]
+            first_bad[search[~any_ok]] = r
+        alive = alive[first_bad[alive] < 0]
+        if r % 10 == 0:
+            print(f'[march] s={s_:.2f} alive {len(alive)}/{N} witness-certified {n_wc}', flush=True)
+    lpwf = np.where(first_bad < 0, smax + STEPM, first_bad * STEPM).astype(np.float32)
+    p0 = p_march
     print(f'lpw_force: mean {lpwf[has].mean():.3f} '
           f'(30-deg ref mean {ref30[sub][has].mean():.3f})', flush=True)
     np.savez(OUTF, sub=sub, q0_first=q0_first, has=has, lpwf=lpwf,

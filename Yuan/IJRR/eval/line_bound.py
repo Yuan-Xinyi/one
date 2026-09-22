@@ -82,30 +82,45 @@ def stiffness_along(env, q, n, kq, t=None, mu=0.0):
 
 
 @torch.no_grad()
-def stiffness_descend(env, q, p_t, R_t, kn_lim, n_iter=4, step=0.12, eps=1e-3,
+def stiffness_descend(env, q, p_t, R_t, kn_lim, n_iter=8, step=0.15, eps=1e-3,
                       t=None, mu=0.0):
     """Search completeness under a stiffness window: a projected posture that
     fails only the k_n cap is pushed down the finite-difference gradient of
-    k_n and re-projected onto the point/direction, a few times. Without this
-    the march certifies only what the nearest warm starts happen to land on
-    and the bound is biased low. Returns the improved q."""
+    k_n and re-projected onto the point/direction, with a per-row step that
+    halves whenever the move made things worse. Rows already inside the
+    window keep their posture. Without this the march certifies only what
+    the nearest warm starts happen to land on and the bound is biased low."""
     kq = torch.as_tensor(env.kq_joint, device=q.device, dtype=q.dtype)
     k_min, k_max = kn_lim
+    hi = k_max if k_max is not None else float('inf')
+    lo = k_min if k_min is not None else -1.0
+    st = torch.full((q.shape[0],), step, device=q.device, dtype=q.dtype)
+    _, R0, _, _ = env.kin.tcp_fk_jac(q)
+    k0 = stiffness_along(env, q, R0[:, :, 2], kq, t, mu)
+    best_q, best_k = q.clone(), k0.clone()
     for _ in range(n_iter):
-        _, R0, J0, _ = env.kin.tcp_fk_jac(q)
-        k0 = stiffness_along(env, q, R0[:, :, 2], kq, t, mu)
-        g = torch.zeros_like(q)
+        inside = (best_k <= hi) & (best_k >= lo)
+        if bool(inside.all()):
+            break
+        g = torch.zeros_like(best_q)
         for i in range(q.shape[1]):
-            qi = q.clone(); qi[:, i] += eps
-            _, Ri, Ji, _ = env.kin.tcp_fk_jac(qi)
-            g[:, i] = (stiffness_along(env, qi, Ri[:, :, 2], kq, t, mu) - k0) / eps
-        # move towards the window: down when above k_max, up when below k_min
-        sgn = torch.where(k0 > (k_max if k_max is not None else float('inf')), -1.0,
-                          torch.where(k0 < (k_min if k_min is not None else -1.0), 1.0, 0.0))
+            qi = best_q.clone(); qi[:, i] += eps
+            _, Ri, _, _ = env.kin.tcp_fk_jac(qi)
+            g[:, i] = (stiffness_along(env, qi, Ri[:, :, 2], kq, t, mu) - best_k) / eps
+        sgn = torch.where(best_k > hi, -1.0, torch.where(best_k < lo, 1.0, 0.0))
         d = sgn.unsqueeze(-1) * g / g.norm(dim=-1, keepdim=True).clamp_min(1e-9)
-        q = q + step * d
-        q, _, _ = _batched_ik_project(env.kin, q, p_t, R_t, branch_action=None)
-    return q
+        q_try = best_q + st.unsqueeze(-1) * d
+        q_try, _, _ = _batched_ik_project(env.kin, q_try, p_t, R_t, branch_action=None)
+        _, Rt_, _, _ = env.kin.tcp_fk_jac(q_try)
+        k_try = stiffness_along(env, q_try, Rt_[:, :, 2], kq, t, mu)
+        # distance to the window, smaller is better
+        def dist(k):
+            return torch.clamp(k - hi, min=0.0) + torch.clamp(lo - k, min=0.0)
+        better = dist(k_try) < dist(best_k)
+        best_q = torch.where(better.unsqueeze(-1), q_try, best_q)
+        best_k = torch.where(better, k_try, best_k)
+        st = torch.where(better, st, st * 0.5)
+    return best_q
 
 
 def _kn_ok(env, q_o, R_fk, kn_lim, t=None, mu=0.0):
@@ -246,7 +261,8 @@ def feasible_rows(env, tree, T, pts, zs, n_refs, cos_lim, tube,
 
 
 @torch.no_grad()
-def witness_rows(env, qw, pts, n_refs, cos_lim, tube, kn_lim=(None, None)):
+def witness_rows(env, qw, pts, n_refs, cos_lim, tube, kn_lim=(None, None),
+                 t_rows=None, mu=0.0):
     """Constraint check of externally supplied witness configurations,
     without any IK projection: a witness comes from an executed rollout, so
     it either satisfies the point's constraints as it stands or it does not
@@ -262,7 +278,8 @@ def witness_rows(env, qw, pts, n_refs, cos_lim, tube, kn_lim=(None, None)):
     fine = ((~coll) & in_lmt
             & ((p_fk - p_t).norm(dim=-1) <= tube)
             & ((R_fk[:, :, 2] * nt).sum(-1) >= cos_lim)
-            & _kn_ok(env, q_t, R_fk, kn_lim))
+            & _kn_ok(env, q_t, R_fk, kn_lim,
+                     None if t_rows is None else torch.as_tensor(t_rows, device=dev, dtype=dt), mu))
     return fine.cpu().numpy()
 
 

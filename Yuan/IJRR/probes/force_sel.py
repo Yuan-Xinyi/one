@@ -27,7 +27,7 @@ FORCE_KW = dict(force_kn_max=KN_MAX, force_set=5.0, force_tol=2.0, k_lateral=5.0
 dev = torch.device('cuda')
 A = MAIN / 'runs/paper_fill/ratio_assets'
 FU = MAIN / 'runs/paper_fill/fam_unify'
-_sfx = '' if KN_MAX == 2000.0 else f'_k{int(KN_MAX)}'
+_sfx = ('' if KN_MAX == 2000.0 else f'_k{int(KN_MAX)}') + ('' if MU == 0.0 else f'_mu{MU}')
 FULL = '--all' in sys.argv[1:]
 OUTF = FU / (f'force_eval_10k{_sfx}.npz' if FULL else (f'force_eval{_sfx}.npz' if _sfx else 'force_eval_v1.npz'))
 d = dict(np.load(OUTF))
@@ -113,12 +113,10 @@ np.savez(OUTF, **d)
 print(f'picked-start k_n median {np.median(pick_kn[has]):.0f} N/m '
       f'(first-candidate {np.median(first_kn[has]):.0f})', flush=True)
 
-rows = [('classical', d['p_cls']), ('flagship-0shot', d['p_rl']),
-        ('force', d['p_force']), ('force+critic', d['p_sel'])] if CKPT != 'force' else \
-       [('classical', d['p_cls']), ('flagship-0shot', d['p_rl']), ('force', d['p_force'])]
-rows.append((CKPT if CKPT != 'force' else 'force+critic', p_sel) if CKPT == 'force' else (CKPT + '+critic', p_sel))
+rows = [(k[2:], d[k]) for k in ('p_cls', 'p_rl', 'p_force', 'p_sel') if k in d and not (k == 'p_sel' and CKPT == 'force')]
 if CKPT != 'force' and f'p_{CKPT}' in d:
-    rows.insert(-1, (CKPT, d[f'p_{CKPT}']))
+    rows.append((CKPT, d[f'p_{CKPT}']))
+rows.append((('force' if CKPT == 'force' else CKPT) + '+critic', p_sel))
 ref = np.maximum.reduce([lpwf] + [v for _, v in rows])
 for tag, v in rows:
     rt = v[has] / np.maximum(ref[has], 1e-9)
@@ -129,5 +127,6 @@ if MU > 0.0:
     rt = p_sel[has] / np.maximum(ref0[has], 1e-9)
     print(f'[mu={MU}] {CKPT}+critic, friction-screened starts: stroke {p_sel[has].mean():.3f}  '
           f'ratio {rt.mean()*100:.1f} / {np.percentile(rt,10)*100:.1f}  (tasks {has.sum()})', flush=True)
-imp = (p_sel[has] > d['p_force'][has] + 0.01).mean(); wor = (p_sel[has] < d['p_force'][has] - 0.01).mean()
-print(f'critic pick vs first candidate: better {imp * 100:.1f}% / worse {wor * 100:.1f}% of tasks', flush=True)
+if 'p_force' in d:
+    imp = (p_sel[has] > d['p_force'][has] + 0.01).mean(); wor = (p_sel[has] < d['p_force'][has] - 0.01).mean()
+    print(f'critic pick vs first candidate: better {imp * 100:.1f}% / worse {wor * 100:.1f}% of tasks', flush=True)

@@ -123,7 +123,7 @@ for tag, v in rows:
     print(f'{tag:15s} stroke {v[has].mean():.3f}  ratio {rt.mean() * 100:.1f} / '
           f'{np.percentile(rt, 10) * 100:.1f}', flush=True)
 if MU > 0.0:
-    ref0 = np.maximum(np.maximum(lpwf, d['p_sel']), p_sel)
+    ref0 = np.maximum(np.maximum(lpwf, d.get('p_sel', lpwf)), p_sel)
     rt = p_sel[has] / np.maximum(ref0[has], 1e-9)
     print(f'[mu={MU}] {CKPT}+critic, friction-screened starts: stroke {p_sel[has].mean():.3f}  '
           f'ratio {rt.mean()*100:.1f} / {np.percentile(rt,10)*100:.1f}  (tasks {has.sum()})', flush=True)

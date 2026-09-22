@@ -146,7 +146,9 @@ if not OUTF.exists():
     for i in range(N):
         dirs[i] = np.concatenate([nt[i][None], _sample_in_cone(
             torch.as_tensor(nt[i]), CONE, 16, np.random.default_rng(50 + i)).numpy()[:M - 1]], 0)
-    smax = np.minimum(ref30[sub] + 0.06, 1.8).astype(np.float32)
+    # no horizon inherited from the position-only bound: that bound is itself a
+    # search estimate and rollouts exceed it (task 4657: 1.56 m vs 0.88 m)
+    smax = np.full(N, 1.8, np.float32)
     _sub = [a for a in sys.argv[1:] if a.startswith('--subset=')]
     if _sub:   # validation on a few tasks: everything else drops out at once
         keep = np.zeros(N, bool); keep[[int(v) for v in _sub[0][9:].split(',')]] = True

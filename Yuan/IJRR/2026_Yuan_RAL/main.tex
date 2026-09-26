@@ -776,7 +776,152 @@ Type
 \end{threeparttable}
 \end{table*}
 
+\begin{table*}[!htbp]
+\centering
+\caption{Comparison of MPC and MPPI under Different Prediction Horizons across Path Families
+($10{,}000$ Straight and $2{,}500$ Tasks per Curved Family per Manipulator)}
+\label{tab:horizon}
+\begin{threeparttable}
+\footnotesize
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{lllcccccc}
+\toprule
+& & & \multicolumn{2}{c}{Franka Research 3}
+& \multicolumn{2}{c}{xArm7}
+& \multicolumn{2}{c}{Cobotta} \\
+\cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+Family
+& Method
+& $H$
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
+\midrule
+\multirow{7}{*}{Straight} & \multirow{3}{*}{MPC} & 10 & 0.507 & 80.7 / 41.8 & 0.446 & 80.8 / 44.3 & [XX] & [XX] \\
+  &   & 20 & 0.573 & 87.8 / 58.5 & 0.503 & 87.6 / 59.0 & [XX] & [XX] \\
+  &   & 30 & 0.603 & 90.7 / 67.4 & 0.526 & 90.1 / 64.9 & [XX] & [XX] \\
+\cmidrule(lr){2-9}
+  & \multirow{3}{*}{MPPI} & 16 & 0.621 & 92.1 / 73.1 & 0.533 & 90.7 / 67.4 & [XX] & [XX] \\
+  &   & 32 & 0.621 & 92.2 / 73.0 & 0.532 & 90.7 / 67.2 & [XX] & [XX] \\
+  &   & 64 & 0.621 & 92.2 / 72.5 & 0.532 & 90.7 / 66.9 & [XX] & [XX] \\
+\cmidrule(lr){2-9}
+ & \textbf{Ours} & -- & \textbf{0.628} & \textbf{93.3 / 77.3} & \textbf{0.540} & \textbf{91.9 / 68.8} & \textbf{[XX]} & \textbf{[XX]} \\
+\midrule
+\multirow{7}{*}{Serpentine} & \multirow{3}{*}{MPC} & 10 & 0.553 & 83.6 / 45.3 & 0.478 & 83.0 / 46.7 & [XX] & [XX] \\
+  &   & 20 & 0.601 & 88.4 / 64.4 & 0.519 & 87.4 / 60.7 & [XX] & [XX] \\
+  &   & 30 & 0.615 & 89.7 / 68.5 & 0.529 & 88.4 / 63.4 & [XX] & [XX] \\
+\cmidrule(lr){2-9}
+  & \multirow{3}{*}{MPPI} & 16 & 0.628 & 90.6 / 72.1 & 0.534 & 88.7 / 64.8 & [XX] & [XX] \\
+  &   & 32 & 0.632 & 91.1 / 73.9 & 0.535 & 88.8 / 64.5 & [XX] & [XX] \\
+  &   & 64 & 0.634 & 91.2 / 74.3 & 0.537 & 89.2 / 65.1 & [XX] & [XX] \\
+\cmidrule(lr){2-9}
+ & \textbf{Ours} & -- & \textbf{0.636} & \textbf{91.6 / 76.3} & \textbf{0.543} & \textbf{89.9 / 67.1} & \textbf{[XX]} & \textbf{[XX]} \\
+\midrule
+\multirow{7}{*}{Rot.-Axis} & \multirow{3}{*}{MPC} & 10 & 0.546 & 84.6 / 45.4 & 0.486 & 85.6 / 53.1 & [XX] & [XX] \\
+  &   & 20 & 0.590 & 89.0 / 62.3 & 0.523 & 89.7 / 64.0 & [XX] & [XX] \\
+  &   & 30 & 0.609 & 90.9 / 69.5 & 0.531 & 90.7 / 67.1 & [XX] & [XX] \\
+\cmidrule(lr){2-9}
+  & \multirow{3}{*}{MPPI} & 16 & 0.615 & 91.2 / 70.0 & 0.534 & 91.0 / 67.2 & [XX] & [XX] \\
+  &   & 32 & 0.620 & 91.7 / 71.2 & 0.536 & 91.2 / 67.3 & [XX] & [XX] \\
+  &   & 64 & 0.621 & 91.9 / 71.0 & 0.536 & 91.2 / 67.1 & [XX] & [XX] \\
+\cmidrule(lr){2-9}
+ & \textbf{Ours} & -- & \textbf{0.625} & \textbf{92.4 / 72.8} & \textbf{0.541} & \textbf{91.9 / 68.5} & \textbf{[XX]} & \textbf{[XX]} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item[Note 1] All methods share the same per-task initial configuration.
+    Ratio is the per-task ratio of the executed stroke to the task's
+    pointwise-reachable length $\ell^{\mathrm{pw}}$, reported in percent
+    as mean / p10.
+    \item[Note 2] $H$ denotes the prediction horizon in control steps;
+    the proposed reactive controller has no horizon (--).
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
 
+\subsection{Comparison with Receding-Horizon Optimization}
+\label{sec:horizon}
+
+To examine whether the long-horizon information that the proposed
+controller acquires through training can instead be recovered at run
+time by explicit lookahead, we compare it with two receding-horizon
+optimizers that plan on an exact model of the environment. Both
+optimizers command the manipulator through the same physically
+normalized interface as the proposed controller, i.e., a joint-space
+direction that is projected exactly onto the null space of the position
+Jacobian and executed at the largest admissible fraction of the residual
+joint-velocity budget, and both are evaluated under the protocol of
+Section~\ref{sec:ladder}: the same per-task initial configuration, the
+same task-space controller and constraint set, the same $50$\,ms control
+period, and the same references $\ell^{\mathrm{pw}}$. The planning model
+reproduces the environment's kinematic update, constraint margins, and
+termination rule; replaying random command sequences through the model
+and the environment agrees to within $2\times10^{-5}$\,rad over $80$
+commands with identical termination on every task, so neither optimizer
+can exploit a discrepancy between planner and plant.
+
+\begin{itemize}[leftmargin=1em]
+\renewcommand{\labelitemi}{$\triangleright$}
+
+    \item \uline{Nonlinear MPC (MPC):}
+    Direct single shooting over $H$ commands. The objective is the
+    exit-time objective of Section~\ref{sec:traj} smoothed for gradient
+    optimization, $\sum_{h=1}^{H} A_h\,\Delta s_h + w_T A_H\, m(\mathbf{q}_H)$,
+    where $\Delta s_h$ is the stroke gained in period $h$, $m$ is the
+    softmin constraint margin of Eq.~(\ref{eq:margin-field}), and
+    $A_h=\prod_{j\le h}\sigma(m(\mathbf{q}_j)/\varepsilon)$ is the
+    probability that the stroke is still alive at period $h$
+    ($\varepsilon=0.05$, $w_T=0.05$\,m). The commands are optimized by
+    eight Adam iterations with gradients propagated through the model;
+    the first command is executed and the shifted solution warm-starts
+    the next period. Horizons $H\in\{10,20,30\}$ ($0.5$--$1.5$\,s).
+
+    \item \uline{MPPI:}
+    Model predictive path integral control~\cite{williams2018mppi} with
+    $K=64$ perturbed command sequences (noise standard deviation $0.5$
+    on the unit command box), scored by the exact truncated exit-time
+    objective (stroke gained until the first violation within $H$
+    periods, plus the same terminal margin term) and combined with
+    weights $\exp(-\mathrm{cost}/\lambda)$, $\lambda=0.01$\,m; the shifted
+    weighted mean warm-starts the next period. Horizons
+    $H\in\{16,32,64\}$ ($0.8$--$3.2$\,s).
+\end{itemize}
+
+Table~\ref{tab:horizon} presents the results on FR3 and xArm7 for the
+three path families; the proposed controller is repeated from
+Table~\ref{tab:mainresult}. The results show that the proposed
+controller leads every row of the table, and that the lead is largest
+at the 10th percentile: on FR3 straight tasks it reaches a p10 Ratio of
+$77.3\%$ against $73.1\%$ for the best MPPI setting and $67.4\%$ for
+the best MPC setting, and the same ordering holds zero-shot on the
+serpentine and rotating-axis families. Two further observations
+characterize the optimizers. First, MPPI saturates at its shortest
+horizon: extending $H$ from $16$ to $64$ changes the mean Ratio by at
+most $0.7$ points on any row, at a fourfold increase in
+rollouts. Second, MPC improves monotonically with the horizon, from
+$80.7\%$ to $90.7\%$ mean Ratio on FR3 straight tasks between $H=10$
+and $H=30$, but remains below MPPI-16 and the proposed controller at
+every horizon tested. The reason is that both optimizers act on a
+truncated objective: a constraint that binds beyond the horizon is
+invisible to the plan, and the terminal margin can only approximate the
+value of the remaining stroke, whereas the trained policy amortizes the
+complete exit-time objective over the training distribution and
+evaluates it in one forward pass.
+
+The cost of the lookahead is substantial. Each control period MPPI
+rolls the model over $K\times H$ command sequences and MPC over $H$
+commands for every gradient iteration. Measured on one RTX 4090 with
+the model batched over $2{,}500$ tasks, this amounts to $0.7$--$2.8$\,ms
+per task and period for MPPI ($H=16$ to $64$) and $1.9$--$10.3$\,ms for
+MPC ($H=10$ to $30$); in single-task operation the per-period latency is
+$0.21$--$0.73$\,s for MPPI and $4.2$--$11.2$\,s for MPC, one to two
+orders of magnitude above the $50$\,ms control period. The proposed
+controller needs $0.15$\,ms per period for a single task and
+$0.6$\,$\mu$s per task when batched. These results demonstrate that the
+long-horizon information the interface makes learnable is not
+recoverable by run-time optimization at a real-time budget: the trained
+reactive policy exceeds explicit lookahead in stroke while deciding
+three orders of magnitude faster than the shortest-horizon optimizer.
 
 \subsection{Ablation Study}
 

@@ -54,10 +54,25 @@ Family
     as mean / p10.
     \item[Note 2] $H$ denotes the prediction horizon in control steps;
     the proposed reactive controller has no horizon (--).
+    \item[Note 3] Cobotta is evaluated at the commanded speed
+    $v=0.05$\,m/s for all methods, matched to its joint-velocity limits
+    ($0.39$--$1.11$\,rad/s); FR3 and xArm7 use $v=0.2$\,m/s.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
 """
+
+
+def ours(robot, fam):
+    """Ours: tab:mainresult numbers for FR3/xArm7; for Cobotta the v = 0.05
+    m/s rows written by probes/cobotta_v005_ours.py."""
+    if (robot, fam) in OURS:
+        return OURS[(robot, fam)]
+    f = OUT / f'{robot}_{fam}_ours.json'
+    if not f.exists():
+        return None
+    r = json.load(open(f))
+    return r['stroke'], r['ratio_mean'], r['ratio_p10']
 
 
 def cell(robot, fam, method, H):
@@ -90,7 +105,7 @@ def rows():
                 cells = ' & '.join(fmt(cell(r, fam, m, H)) for r in ROBOTS)
                 lines.append(f'{lead} & {meth} & {H} & {cells} \\\\')
             lines.append('\\cmidrule(lr){2-9}')
-        cells = ' & '.join(fmt(OURS.get((r, fam)), bold=True) for r in ROBOTS)
+        cells = ' & '.join(fmt(ours(r, fam), bold=True) for r in ROBOTS)
         lines.append(f' & \\textbf{{Ours}} & -- & {cells} \\\\')
         lines.append('\\bottomrule' if fi == len(FAMS) - 1 else '\\midrule')
     return '\n'.join(lines)

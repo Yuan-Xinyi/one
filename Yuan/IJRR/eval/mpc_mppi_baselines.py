@@ -62,7 +62,7 @@ A = MAIN / 'runs/paper_fill/ratio_assets'
 OUT = MAIN / 'runs/paper_fill/horizon'
 CFG = {'fr3': 'config_line_cont_dirfrac_e8kXXL_rm.yaml',
        'xarm7': 'config_line_cont_dirfrac_xarm7_e8kXXL_rm.yaml',
-       'cobotta': 'config_line_cont_dirfrac_cobotta.yaml'}
+       'cobotta': 'config_line_cont_dirfrac_cobotta_e8kXXL_v005.yaml'}
 SUB = 2                    # integration substeps per held 50 ms command
 CHUNK = 32768              # rollout states per model call
 TAU = 0.1                  # softmin temperature of the margin objective

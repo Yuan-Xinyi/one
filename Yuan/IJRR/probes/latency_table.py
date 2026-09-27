@@ -16,9 +16,20 @@ ROWS = [('MPC', ['mpc10', 'mpc20', 'mpc30']),
         ('MPPI', ['mppi16', 'mppi32', 'mppi64'])]
 
 
+BASE = [('zero', 'Zero Null-Space'), ('classical', 'Classical Gradient'),
+        ('cont', 'Continuous PPO'), ('hybrid', 'PPO + Classical')]
+
+
 def load():
-    return {r: json.load(open(OUT / f'latency_{r}.json'))
-            for r in ROBOTS if (OUT / f'latency_{r}.json').exists()}
+    L = {}
+    for r in ROBOTS:
+        d = {}
+        for f in (f'latency_{r}.json', f'latency_base_{r}.json'):
+            if (OUT / f).exists():
+                d.update(json.load(open(OUT / f)))
+        if d:
+            L[r] = d
+    return L
 
 
 def f_ms(x):
@@ -50,6 +61,9 @@ def cells(L, key, bold=False):
 
 def body(L):
     lines = []
+    for key, name in BASE:
+        lines.append(f'{name} & -- & {cells(L, key)} \\\\')
+    lines.append('\\midrule')
     for name, keys in ROWS:
         for i, k in enumerate(keys):
             H = re.sub(r'\D', '', k)
@@ -63,9 +77,8 @@ def body(L):
 
 TEMPLATE = r"""\begin{table*}[!htbp]
 \centering
-\caption{Decision Time per $50$\,ms Control Period of the Receding-Horizon
-Optimizers and the Proposed Reactive Controller (Median over $20$
-Periods on One RTX 4090)}
+\caption{Decision Time per $50$\,ms Control Period of All Compared
+Resolution Laws (Median over $20$ Periods on One RTX 4090)}
 \label{tab:latency}
 \begin{threeparttable}
 \footnotesize
@@ -89,9 +102,11 @@ Method & $H$
     every period. Batched per task: wall time per task when $2{,}500$
     tasks are decided together on the GPU (the evaluation batch), i.e.,
     the throughput-amortized cost.
-    \item[Note 2] All rows exclude the null-space projection and
-    amplitude bound, which are shared by every method inside the control
-    step. MPC uses eight Adam iterations; MPPI uses $K=64$ rollouts.
+    \item[Note 2] All rows time the action selection only; the
+    null-space projection inside the control step is shared by every
+    method and excluded. Continuous PPO and PPO + Classical use the
+    width-$512$ policies of Table~\ref{tab:mainresult}; MPC uses eight
+    Adam iterations; MPPI uses $K=64$ rollouts.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}

@@ -30,7 +30,8 @@ from Yuan.IJRR.stage2_traj.ppo import Agent
 
 WT = Path('/home/lqin/one/Yuan/IJRR/.claude/worktrees/vigilant-hertz-799b05')
 CKPT = {'fr3': WT / 'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_rm/agent.pt',
-        'xarm7': WT / 'Yuan/IJRR/runs/rl_dirfrac_xarm7_e8kXXL_rm/agent.pt'}
+        'xarm7': WT / 'Yuan/IJRR/runs/rl_dirfrac_xarm7_e8kXXL_rm/agent.pt',
+        'cobotta': WT / 'Yuan/IJRR/runs/rl_dirfrac_cobotta_e8kXXL_v005/agent.pt'}
 
 
 def time_planner(env, planner, spec, N, periods):

@@ -1157,6 +1157,191 @@ transfers with the task geometry rather than memorizing the training
 family.
 
 
+\subsubsection{One-Stroke Drawing of Planar Figures}
+\label{sec:onestroke}
+
+The straight-line results transfer directly to closed planar figures
+drawn in a single stroke, the setting of writing, engraving, and surface
+finishing: a figure is completed only if the whole contour is traced
+without lifting the pen, so any change of kinematic branch mid-stroke
+counts as failure, and the quantity of interest is the largest figure
+size a fixed-base manipulator can complete. For seven figures (circle,
+square, triangle, five-pointed star, envelope, figure-eight, and spiral)
+the size and workpiece placement are first screened pointwise with the
+same numerical search as $\ell^{\mathrm{pw}}$, which gives a pointwise
+bound on the completable size; the candidate pool and the critic then
+select the start configuration and the controller draws the figure, and
+the size is lowered on a $2$\,cm ladder until the stroke completes. We
+compare with the classical gradient law and with a native OMPL
+planner~\cite{sucan2012ompl} on the same task: rapidly-exploring random
+trees on the projected constrained state space of joint configuration
+and arc length, with the tolerance tube as constraint tolerance, the
+whole candidate pool as start states of one query, motions required to
+advance along the figure inside the joint-velocity box, and an informed
+sampler drawn from cone-admissible configurations along the figure where
+the plain sampler starves. Every solution is re-verified with the
+environment model; planner failures are one-sided evidence and are
+reported as such.
+
+Tables~\ref{tab:onestroke30} and~\ref{tab:onestroke5} report the largest
+completed size, the computation required before the pen starts moving,
+and two trajectory-quality measures at tilt tolerances of $30^\circ$ and
+$5^\circ$. At $30^\circ$ the reactive controller completes every figure
+within $2$\,cm of its pointwise bound, and the planner reaches the bound
+on five of the seven figures, so the loose cone does not separate the two
+in capability; what separates them is the cost of a query. The
+controller's preparation time is $0.6$--$2.2$\,s, dominated by candidate
+construction and selection, whereas the planner needs $81$--$287$\,s per
+query and finds no solution for the two sharp-cornered figures within
+$20$--$30$ minutes. At $5^\circ$ the capability gap appears: with the
+tilt cone entering the sampler as rejection, the planner completes two
+of the seven figures even with the informed sampler, while the reactive
+controller completes all seven at $94$--$100\%$ of their pointwise
+bounds, and the classical gradient law collapses to $4$--$8$\,cm.
+Trajectory quality is comparable where both complete: joint travel of
+$8$--$16$\,rad per metre of stroke on either side, and stroke-averaged
+joint-limit margins of the same order ($0.3$--$0.8$\,rad); the planner's
+offline solutions are smoother on some figures and the closed-loop
+controller's on others. The same framework produced the coverage-path
+and lettering demonstrations of the supplementary video (spanning-tree
+coverage mazes of up to $784$ cells and $16.8$\,m in one stroke, and
+letter strokes of $50$--$54$\,cm height), each executed as a single
+uninterrupted stroke at the largest size the pointwise screen admitted.
+
+\begin{table*}[!htbp]
+\centering
+\caption{One-Stroke Drawing of Planar Figures at Tilt Tolerance
+$\theta_{\max}=30^\circ$: Largest Completable Size, Time to First Motion,
+and Trajectory Quality ($7$ Figures, $2$\,cm Size Ladder)}
+\label{tab:onestroke30}
+\begin{threeparttable}
+\footnotesize
+\setlength{\tabcolsep}{3.8pt}
+\begin{tabular}{lcccccccccccc}
+\toprule
+& & \multicolumn{3}{c}{Classical Gradient}
+& \multicolumn{4}{c}{OMPL}
+& \multicolumn{4}{c}{\textbf{DirFrac Reactive (Ours)}} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-9} \cmidrule(lr){10-13}
+Figure
+& \shortstack{Pointwise\\Bound\\(cm)}
+& \shortstack{Largest\\Size\\(cm)}
+& \shortstack{Joint\\Travel\\(rad/m)}
+& \shortstack{Limit\\Margin\\(rad)}
+& \shortstack{Largest\\Size\\(cm)} & \shortstack{Planning\\Time\tnote{a}\\(s)}
+& \shortstack{Joint\\Travel\\(rad/m)}
+& \shortstack{Limit\\Margin\\(rad)}
+& \shortstack{Largest\\Size\\(cm)} & \shortstack{Preparation\\Time\tnote{a}\\(s)}
+& \shortstack{Joint\\Travel\\(rad/m)}
+& \shortstack{Limit\\Margin\\(rad)} \\
+\midrule
+Circle            &  70 & 36 & --- & --- & 70 & 81 & 9.0 & 0.64
+                  & \limebox{\textbf{68}} & \limebox{2.0} & 16.2 & 0.34 \\
+Square            &  60 & 28 & --- & --- & 60 & 119 & 8.7 & 0.27
+                  & \limebox{\textbf{60}} & \limebox{0.6} & 11.5 & 0.35 \\
+Triangle          &  94 & 68 & --- & --- & \pinkbox{None Found\tnote{b}} & \pinkbox{$>$1200} & --- & ---
+                  & \limebox{\textbf{92}} & \limebox{2.1} & 11.5 & 0.36 \\
+Five-Pointed Star &  94 & 52 & --- & --- & \pinkbox{None Found\tnote{b}} & \pinkbox{$>$1800} & --- & ---
+                  & \limebox{\textbf{92}} & \limebox{1.9} & 13.1 & 0.59 \\
+Envelope          &  74 & 44 & --- & --- & 74\tnote{e} & 287 & 13.6 & 0.62
+                  & \limebox{\textbf{74}} & \limebox{2.2} & 10.4 & 0.75 \\
+Figure-Eight      & 140 & 54 & --- & --- & 140 & 110 & 8.2 & 0.50
+                  & \limebox{\textbf{138}} & \limebox{0.8} & 11.3 & 0.51 \\
+Spiral            &  86 & 34 & --- & --- & 86 & 124 & 9.1 & 0.40
+                  & \limebox{\textbf{86}} & \limebox{1.3} & 13.0 & 0.32 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item[Note 1] Largest Size is the largest figure size at which the whole
+figure is drawn in a single continuous stroke; any change of the kinematic
+branch mid-stroke counts as failure. All methods rank the same
+start-candidate pool, and every reported size is a lower bound with respect
+to the search over start configurations and workpiece placements. Joint
+Travel is the joint-space path length summed over all seven joints per metre
+of stroke; Limit Margin is the stroke-average distance from the closest
+joint to its nearest hardware limit, both over the completed stroke.
+Execution time equals stroke length divided by the $0.2$\,m\,s$^{-1}$ feed
+and is identical across methods at equal size.
+\item[a] Computation required before the pen can start moving. Ours:
+candidate-pool construction plus critic start selection; the Classical
+Gradient baseline shares this selection stage, so its time is identical
+and omitted. Online inference costs one forward pass per control period
+(Table~\ref{tab:latency}); the one-off training is amortised over all
+queries. OMPL: time until a
+solution is found (Rapidly-Exploring Random Tree on a projected constrained
+state space; the $10$\,mm constraint tolerance plus corner fillets of at
+most $6.4$\,mm deviation keep its reference curve inside the same $20$\,mm
+tolerance tube every method is graded in; the full candidate pool enters as
+start states of one query).
+\item[b] ``None found'': no solution within the stated budget. Sampling-based
+planning yields one-sided evidence, so these entries do not certify
+infeasibility.
+\item[e] Solved with the informed state sampler of
+Table~\ref{tab:onestroke5}; the plain sampler found no solution in $900$\,s.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
+\begin{table*}[!htbp]
+\centering
+\caption{One-Stroke Drawing of Planar Figures at Tilt Tolerance
+$\theta_{\max}=5^\circ$: Largest Completable Size, Time to First Motion,
+and Trajectory Quality}
+\label{tab:onestroke5}
+\begin{threeparttable}
+\footnotesize
+\setlength{\tabcolsep}{3.8pt}
+\begin{tabular}{lcccccccccccc}
+\toprule
+& & \multicolumn{3}{c}{Classical Gradient}
+& \multicolumn{4}{c}{OMPL with Informed Sampler\tnote{c}}
+& \multicolumn{4}{c}{\textbf{DirFrac Reactive (Ours)}} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-9} \cmidrule(lr){10-13}
+Figure
+& \shortstack{Pointwise\\Bound\\(cm)}
+& \shortstack{Largest\\Size\\(cm)}
+& \shortstack{Joint\\Travel\\(rad/m)}
+& \shortstack{Limit\\Margin\\(rad)}
+& \shortstack{Largest\\Size\\(cm)} & \shortstack{Planning\\Time\tnote{a}\\(s)}
+& \shortstack{Joint\\Travel\\(rad/m)}
+& \shortstack{Limit\\Margin\\(rad)}
+& \shortstack{Largest\\Size\\(cm)} & \shortstack{Preparation\\Time\tnote{a}\\(s)}
+& \shortstack{Joint\\Travel\\(rad/m)}
+& \shortstack{Limit\\Margin\\(rad)} \\
+\midrule
+Circle            &  60 & \pinkbox{4} & 4.8 & 0.11 & 60 & 30 & 14.6 & 0.52
+                  & \limebox{\textbf{60}} & \limebox{1.5} & 10.3 & 0.48 \\
+Square            &  54 & \pinkbox{8} & --- & --- & \pinkbox{None Found\tnote{b}} & \pinkbox{$>$900} & --- & ---
+                  & \limebox{\textbf{52}} & \limebox{0.5} & 10.2 & 0.46 \\
+Triangle          &  80 & \pinkbox{8} & --- & --- & 80 & 95 & 12.9 & 0.44
+                  & \limebox{\textbf{80}} & \limebox{0.4} & 12.3 & 0.51 \\
+Five-Pointed Star &  80 & \pinkbox{4} & --- & --- & \pinkbox{None Found\tnote{b}} & \pinkbox{$>$900} & --- & ---
+                  & \limebox{\textbf{76}} & \limebox{1.0} & 11.1 & 0.56 \\
+Envelope          &  66 & \pinkbox{4} & --- & --- & \pinkbox{None Found\tnote{b}} & \pinkbox{$>$900} & --- & ---
+                  & \limebox{\textbf{62}} & \limebox{1.2} & --- & --- \\
+Figure-Eight      & 128 & \pinkbox{6} & 5.1 & 0.26 & \pinkbox{None Found\tnote{b}} & \pinkbox{$>$900} & --- & ---
+                  & \limebox{\textbf{124}} & \limebox{0.9} & 10.3 & 0.53 \\
+Spiral            &  74 & \pinkbox{4} & --- & --- & \pinkbox{None Found\tnote{b}} & \pinkbox{$>$900} & --- & ---
+                  & \limebox{\textbf{72}} & \limebox{1.3} & 15.2 & 0.64 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item[Note 1] Definitions follow Table~\ref{tab:onestroke30}. Quality
+metrics are reported where the separate replay used to measure them
+completes the figure; ``---'' otherwise.
+\item[a] As in Table~\ref{tab:onestroke30}.
+\item[b] ``None found'': no solution at the size reached by Ours within
+$900$\,s (three placements, $300$\,s each); larger sizes were not attempted.
+One-sided evidence, as in Table~\ref{tab:onestroke30}.
+\item[c] In a $5^\circ$ cone the plain formulation starves: the tilt cone
+enters it as rejection sampling. The sampler therefore draws from a bank of
+cone-admissible configurations along the figure, built with the same
+cone-constrained inverse kinematics that builds every method's candidate
+pool and the pointwise bound.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
 \subsubsection{Extension to Constant-Force Contact}
 \label{sec:force}
 

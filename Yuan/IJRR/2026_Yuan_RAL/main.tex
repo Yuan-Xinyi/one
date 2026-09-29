@@ -126,7 +126,7 @@ However, extreme motion generation, especially under task-constrained path-follo
 
 We carefully investigate extreme motion generation and identify two factors that determine the maximum stroke length: initial joint configuration selection and real-time redundancy resolution. The former is a one-time decision that can be learned through supervised learning, whereas the latter is more challenging due to the aforementioned dilemma between instantaneous margins and long-horizon foresight. Therefore, we formulate real-time redundancy resolution as an exit-time optimal control problem and leverage reinforcement learning for long-horizon decision-making. Specifically, we restrict the policy to the null space of the position Jacobian, isolating redundancy resolution from task-space tracking. Meanwhile, we constrain the output action by the residual joint velocity after accounting for task-space motion, thereby ensuring physical feasibility. More importantly, the reward function is aligned directly with the exit-time objective, without shaping terms that may induce greedy behavior.
 
-The proposed framework has been evaluated across three manipulators on $10{,}000$ unseen straight-line path-following tasks and $7{,}500$ unseen and Out-Of-Distribution curve tasks.\xinyi{写到这里了。}
+The proposed framework has been evaluated across three manipulators on $10{,}000$ unseen straight-line path-following tasks and $5{,}000$ unseen and Out-Of-Distribution curve tasks.\xinyi{写到这里了。}
 
 We evaluate the proposed framework on a large set of straight-line path-following tasks for a 7-DoF Franka FR3, measuring performance as the achieved path length relative to a per-task reference length. The contribution of each component is then analyzed through the seed-by-controller protocol. For the initial joint configuration, the diffusion-based selection is compared against several hand-designed heuristic seeds; for the controller, the hybrid framework is compared against the classical and the learning-based controllers in isolation. We further conduct ablation studies on the guidance scale, the number of diffusion sampling steps, and the hysteresis switching thresholds, providing practical insights into the effect of each design choice.
 
@@ -540,7 +540,10 @@ disjoint.
     $\epsilon_{\mathrm{pos}}=20$\,mm, the commanded speed is
     $v=0.2$\,m/s ($0.05$\,m/s on the Cobotta, whose joint-velocity
     limits of $0.39$--$1.11$\,rad/s leave no residual budget at
-    $0.2$\,m/s), and the control period is $\Delta t=50$\,ms. The
+    $0.2$\,m/s; the proposed Cobotta controller is trained at
+    $0.05$\,m/s, while its learned baselines are trained at $0.2$\,m/s
+    and evaluated at $0.05$\,m/s), and the control period is
+    $\Delta t=50$\,ms. The
     proposed controller bounds its amplitude by the per-joint velocity
     limits $\dot{\mathbf{q}}^{\lim}$ (FR3: $2.175$\,rad/s for joints 1--4
     and $2.61$\,rad/s for joints 5--7); box-parameterized baselines use
@@ -570,7 +573,8 @@ disjoint.
     \item \uline{Learned controllers:}
     The proposed reactive controller is a three-layer MLP of width
     $2048$ trained with PPO for $240$M environment steps
-    ($\gamma=0.99$, $8192$ parallel environments) on straight tasks; it
+    ($\gamma=0.99$, raised to $0.9975$ on the Cobotta to match its lower
+    speed; $8192$ parallel environments) on straight tasks; it
     deploys as one forward pass and one null-space projection per
     control period. The Continuous-PPO baseline and the policy
     inside the hybrid are trained for $30$M steps at width $512$ under
@@ -593,7 +597,8 @@ disjoint.
     the orientation cone, and which respects the joint limits and
     self-collision clearance. The search projects warm starts drawn from a
     precomputed configuration table over $96$ cone-sampled tool directions
-    with $16$ retries per sample, together with the previous sample's
+    with $16$ retries per sample ($32$ on the FR3 sets and the xArm7
+    straight set), together with the previous sample's
     solution, and configurations traversed by the evaluated rollouts are
     additionally injected as feasibility witnesses;
     $\ell^{\mathrm{pw}}$ is the arc length of the first sample at which no
@@ -601,9 +606,10 @@ disjoint.
     prove infeasibility, the reference is finally taken per task as the
     maximum of the search estimate and the executed stroke, so every
     reported Ratio is at most one by construction. With feasibility
-    witnesses collected from every evaluated controller, $98\%$ of tasks
-    lie within one march step of the search estimate and the median
-    binding adjustment is $4$\,mm.
+    witnesses collected from every evaluated controller, $94\%$ of tasks
+    pooled over the nine straight and curved sets lie within one march
+    step of the search estimate and the median binding adjustment is
+    $4.5$\,mm.
 \end{itemize}
 
 All evaluation tables compare the three path families illustrated in
@@ -717,7 +723,7 @@ over zero-shot to the curved families it never saw during training
 sets). On the Cobotta, where every method runs at the reduced
 speed, the margin is the widest of the three manipulators: $90.5\%$
 mean Ratio against $76.8\%$ for the hybrid, and a 10th percentile of
-$75.8\%$ against $33.8\%$.
+$75.8\%$ against $33.5\%$.
 
 The Continuous PPO and DirFrac rows share the same learning algorithm,
 reward, and training distribution; they differ only in the action and
@@ -749,22 +755,22 @@ Type
 & \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
 \multirow{6}{*}{Classical} & \multirow{3}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \multirow{3}{*}{$2.7\times10^{-5}$} & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \multirow{3}{*}{$2.7\times10^{-5}$} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \multirow{3}{*}{$2.5\times10^{-5}$} & \pinkbox{0.157} & \pinkbox{59.3 / 25.2} \\
- &  & Serpentine &  & \pinkbox{0.303} & \pinkbox{54.0 / 14.9} &  & \pinkbox{0.258} & \pinkbox{53.1 / 14.5} &  & \pinkbox{0.149} & \pinkbox{55.3 / 23.2} \\
- &  & Rot.-Axis &  & \pinkbox{0.315} & \pinkbox{56.3 / 16.7} &  & \pinkbox{0.261} & \pinkbox{54.9 / 15.5} &  & \pinkbox{0.156} & \pinkbox{58.3 / 25.6} \\
+ &  & Serpentine &  & \pinkbox{0.303} & \pinkbox{54.1 / 14.9} &  & \pinkbox{0.258} & \pinkbox{53.1 / 14.5} &  & \pinkbox{0.149} & \pinkbox{55.3 / 23.2} \\
+ &  & Rot.-Axis &  & \pinkbox{0.315} & \pinkbox{56.4 / 16.7} &  & \pinkbox{0.261} & \pinkbox{54.9 / 15.5} &  & \pinkbox{0.156} & \pinkbox{58.3 / 25.6} \\
 \cmidrule(lr){2-12}
  & \multirow{3}{*}{\shortstack[l]{Classical Gradient}} & Straight & \multirow{3}{*}{0.02} & 0.332 & 60.4 / 17.9 & \multirow{3}{*}{0.02} & 0.269 & 56.4 / 17.8 & \multirow{3}{*}{0.01} & 0.158 & 58.4 / 26.8 \\
- &  & Serpentine &  & 0.326 & 57.4 / 16.4 &  & 0.268 & 54.6 / 16.3 &  & 0.152 & 54.9 / 24.6 \\
- &  & Rot.-Axis &  & 0.339 & 59.9 / 18.4 &  & 0.273 & 56.7 / 17.9 &  & 0.158 & 57.8 / 27.3 \\
+ &  & Serpentine &  & 0.326 & 57.5 / 16.4 &  & 0.268 & 54.6 / 16.3 &  & 0.152 & 54.9 / 24.6 \\
+ &  & Rot.-Axis &  & 0.339 & 60.0 / 18.4 &  & 0.273 & 56.7 / 17.9 &  & 0.158 & 57.8 / 27.3 \\
 \midrule
 \multirow{9}{*}{Learned} & \multirow{3}{*}{\shortstack[l]{Continuous PPO}} & Straight & \multirow{3}{*}{$1.7\times10^{-4}$} & 0.408 & 69.4 / 17.4 & \multirow{3}{*}{$1.6\times10^{-4}$} & 0.340 & 66.7 / 16.8 & \multirow{3}{*}{$1.6\times10^{-4}$} & 0.200 & 69.9 / 22.5 \\
  &  & Serpentine &  & 0.407 & 67.0 / 16.0 &  & 0.337 & 64.5 / 16.1 &  & 0.196 & 67.3 / 20.7 \\
- &  & Rot.-Axis &  & 0.411 & 68.4 / 17.4 &  & 0.344 & 66.9 / 17.2 &  & 0.202 & 69.9 / 24.6 \\
+ &  & Rot.-Axis &  & 0.411 & 68.6 / 17.5 &  & 0.344 & 66.9 / 17.2 &  & 0.202 & 69.9 / 24.6 \\
 \cmidrule(lr){2-12}
  & \multirow{3}{*}{\shortstack[l]{PPO + Classical}} & Straight & \multirow{3}{*}{0.02} & 0.458 & 75.7 / 23.6 & \multirow{3}{*}{0.02} & 0.374 & 71.5 / 20.9 & \multirow{3}{*}{0.02} & 0.222 & 76.8 / 33.5 \\
  &  & Serpentine &  & 0.457 & 73.0 / 21.4 &  & 0.370 & 69.2 / 19.6 &  & 0.215 & 73.2 / 31.9 \\
- &  & Rot.-Axis &  & 0.458 & 74.4 / 23.3 &  & 0.374 & 71.3 / 20.5 &  & 0.220 & 75.8 / 33.3 \\
+ &  & Rot.-Axis &  & 0.458 & 74.5 / 23.3 &  & 0.374 & 71.3 / 20.5 &  & 0.220 & 75.8 / 33.3 \\
 \cmidrule(lr){2-12}
- & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \multirow{3}{*}{\textbf{$1.5\times10^{-4}$}} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \multirow{3}{*}{\textbf{$1.9\times10^{-4}$}} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.9 / 68.8}} & \multirow{3}{*}{\textbf{$1.7\times10^{-4}$}} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
+ & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \multirow{3}{*}{\textbf{$1.5\times10^{-4}$}} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \multirow{3}{*}{\textbf{$1.9\times10^{-4}$}} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.7 / 68.4}} & \multirow{3}{*}{\textbf{$1.7\times10^{-4}$}} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
  &  & \textbf{Serpentine} &  & \limebox{\textbf{0.636}} & \limebox{\textbf{91.6 / 76.3}} &  & \limebox{\textbf{0.543}} & \limebox{\textbf{89.9 / 67.1}} &  & \limebox{\textbf{0.264}} & \limebox{\textbf{86.8 / 70.2}} \\
  &  & \textbf{Rot.-Axis} &  & \limebox{\textbf{0.625}} & \limebox{\textbf{92.4 / 72.8}} &  & \limebox{\textbf{0.541}} & \limebox{\textbf{91.9 / 68.5}} &  & \limebox{\textbf{0.271}} & \limebox{\textbf{89.9 / 76.9}} \\
 \bottomrule
@@ -813,7 +819,7 @@ Family
   &   & 32 & 0.42 & 0.621 & 92.2 / 73.0 & 0.42 & 0.532 & 90.7 / 67.2 & 0.41 & 0.258 & 87.1 / 64.3 \\
   &   & 64 & 0.73 & 0.621 & 92.2 / 72.5 & 1.0 & 0.532 & 90.7 / 66.9 & 0.78 & 0.263 & 88.4 / 69.4 \\
 \cmidrule(lr){2-12}
- & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.628} & \textbf{93.3 / 77.3} & \textbf{$1.9\times10^{-4}$} & \textbf{0.540} & \textbf{91.9 / 68.8} & \textbf{$1.7\times10^{-4}$} & \textbf{0.271} & \textbf{90.5 / 75.8} \\
+ & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.628} & \textbf{93.3 / 77.3} & \textbf{$1.9\times10^{-4}$} & \textbf{0.540} & \textbf{91.7 / 68.4} & \textbf{$1.7\times10^{-4}$} & \textbf{0.271} & \textbf{90.5 / 75.8} \\
 \midrule
 \multirow{7}{*}{Serpentine} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.553 & 83.6 / 45.3 & 4.5 & 0.478 & 83.0 / 46.7 & 4.5 & 0.223 & 74.9 / 33.9 \\
   &   & 20 & 8.1 & 0.601 & 88.4 / 64.4 & 8.9 & 0.519 & 87.4 / 60.7 & 8.2 & 0.242 & 81.0 / 48.6 \\
@@ -921,7 +927,8 @@ same task-space controller and constraint set, the same $50$\,ms control
 period, and the same references $\ell^{\mathrm{pw}}$. The planning model
 reproduces the environment's kinematic update, constraint margins, and
 termination rule; replaying random command sequences through the model
-and the environment agrees to within $2\times10^{-5}$\,rad over $80$
+and the environment agrees to within $6\times10^{-5}$\,rad (within
+$1\times10^{-5}$\,rad on six of the nine manipulator--family sets) over $80$
 commands with identical termination on every task, so neither optimizer
 can exploit a discrepancy between planner and plant.
 
@@ -966,7 +973,7 @@ optimizers differ in how Eq.~(\ref{eq:horizon-obj}) is maximized.
     \item \uline{MPPI:}
     Model predictive path integral control~\cite{williams2018mppi}, a
     sampling-based (derivative-free) optimizer. Around the warm-started
-    nominal sequence, $K=64$ perturbed sequences
+    nominal sequence, $K=64$ sequences (the nominal one and $63$ perturbations)
     $\mathbf{U}_k=\mathrm{clip}(\bar{\mathbf{U}}+\boldsymbol{\epsilon}_k)$,
     $\boldsymbol{\epsilon}_k\sim\mathcal{N}(0,\sigma^2\mathbf{I})$ with
     $\sigma=0.5$, are rolled out on the model and scored by the exact
@@ -994,7 +1001,7 @@ ordering holds zero-shot on the serpentine and rotating-axis families.
 Two further observations characterize the optimizers. First, MPPI gains
 little from a longer horizon: extending $H$ from $16$ to $64$ changes
 the mean Ratio by at most $0.7$ points on the two 7-DoF arms and by
-$3.5$ points on the Cobotta, at a fourfold increase in rollouts, and the
+$3.5$ points on the Cobotta, at a fourfold increase in rollout length, and the
 $H=64$ setting remains below the proposed controller on every row.
 Second, MPC improves monotonically with the horizon, from $80.7\%$ to
 $90.7\%$ mean Ratio on FR3 straight tasks between $H=10$ and $H=30$,

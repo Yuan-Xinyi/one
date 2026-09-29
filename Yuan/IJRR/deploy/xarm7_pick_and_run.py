@@ -301,6 +301,7 @@ def build_app(args):
             self.meas_tips = []
             self.cands, self.sel = [], 0
             self.q_now = self.arm.q()
+            self._report_pose('startup')
             self.n = self._cone_axis()
             self.world = PickWorld(self, cam_pos=(1.5, 1.5, 1.2),
                                    cam_lookat_pos=(0.3, 0.0, 0.3), win_size=(1400, 850))
@@ -324,6 +325,12 @@ def build_app(args):
             self.world.schedule_interval(self.tick, interval=1 / 20.0)
 
         # ---- helpers
+        def _report_pose(self, tag):
+            tip, R = self.ctrl.fk(self.q_now)
+            print(f'[pick] {tag}: joints read from the arm (deg) '
+                  f'{np.degrees(self.q_now).round(1).tolist()}; tool tip {tip.round(3).tolist()} m, '
+                  f'tool axis {R[:, 2].round(3).tolist()}', flush=True)
+
         def _cone_axis(self):
             return (unit(args.normal) if args.normal is not None
                     else self.ctrl.fk(self.q_now)[1][:, 2])
@@ -395,6 +402,7 @@ def build_app(args):
                 return
             if not first:
                 self.q_now = self.arm.q()
+                self._report_pose('regenerate')
                 self._set_robot(self.q_now)
                 self.n = self._cone_axis()
             e1, e2 = plane_basis(self.n)

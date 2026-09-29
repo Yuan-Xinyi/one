@@ -113,7 +113,10 @@ class XArm:
         code, ang = self.arm.get_servo_angle(is_radian=True)
         if code != 0:
             raise RuntimeError(f'get_servo_angle failed, code {code}')
-        return np.asarray(ang[:N_J], np.float64)
+        q = np.asarray(ang[:N_J], np.float64)
+        if np.abs(q).max() > 2.0 * math.pi + 0.1:
+            raise RuntimeError(f'joint readout looks like degrees, not radians: {q}')
+        return q
 
     def velocity_mode(self):
         self.arm.set_mode(4)

@@ -612,15 +612,20 @@ disjoint.
     $4.5$\,mm.
 \end{itemize}
 
-All evaluation tables compare the three path families illustrated in
-Fig.~\ref{fig:families}: straight, serpentine, and rotating-axis. Every
-learned component is trained on straight-line tasks only, and every
-evaluated task instance is held out from training. Straight results
-therefore measure generalization to \emph{unseen but in-distribution}
-tasks, whereas serpentine and rotating-axis results measure zero-shot
-generalization to \emph{out-of-distribution} (OOD) families.
-Straight-line results use $10{,}000$ tasks per manipulator, and each
-curved family uses $2{,}500$ tasks.
+Every learned component is trained on straight-line tasks only, and
+every evaluated task instance is held out from training. The evaluation
+proceeds in four parts. Section~\ref{sec:main} compares the resolution
+laws and the selection rules on the straight-line family ($10{,}000$
+tasks per manipulator), where the results measure generalization to
+\emph{unseen but in-distribution} tasks, and then applies the same
+components unchanged to the serpentine and rotating-axis families of
+Fig.~\ref{fig:families} ($2{,}500$ tasks per family per manipulator),
+where the results measure zero-shot generalization to
+\emph{out-of-distribution} (OOD) path types. Section~\ref{sec:horizon}
+compares the reactive controller with receding-horizon optimization,
+Section~\ref{sec:onestroke} with offline trajectory planning on
+one-stroke figures, and Section~\ref{sec:ext} extends the framework to
+constant-force contact and to manipulator base placement.
 
 \begin{figure*}[!tbp]
     \centering
@@ -649,7 +654,10 @@ curved family uses $2{,}500$ tasks.
     \label{fig:families}
 \end{figure*}
 
-\subsection{Redundancy-Resolution Comparison}
+\subsection{From Straight Lines to Curved Paths}
+\label{sec:main}
+
+\subsubsection{Redundancy-Resolution Comparison}
 \label{sec:ladder}
 
 We first isolate the motion-generation stage by comparing the proposed
@@ -711,19 +719,16 @@ attributable to the redundancy-resolution law.
     deployment.
 \end{itemize}
 
-Table~\ref{tab:mainresult} reports the results per path family for each
-manipulator; on the curved families every learned method runs zero-shot.
-Classical gradient resolution provides only a modest improvement over
-zero null-space motion, and the classical takeover patch of the hybrid
-adds a few points over its underlying policy. The proposed controller
-leads every row on the densest benchmark---$93.3\%$ mean Ratio with a
-10th percentile of $77.3\%$ on FR3 straight tasks---and the lead carries
-over zero-shot to the curved families it never saw during training
-($91.6$ and $92.4$ mean Ratio on the FR3 serpentine and rotating-axis
-sets). On the Cobotta, where every method runs at the reduced
-speed, the margin is the widest of the three manipulators: $90.5\%$
-mean Ratio against $76.8\%$ for the hybrid, and a 10th percentile of
-$75.8\%$ against $33.5\%$.
+Table~\ref{tab:mainresult} reports the results on the straight-line
+sets. Classical gradient resolution provides only a modest improvement
+over zero null-space motion, and the classical takeover patch of the
+hybrid adds a few points over its underlying policy. The proposed
+controller leads every column: $93.3\%$ mean Ratio with a 10th
+percentile of $77.3\%$ on the FR3 and $91.7\%$ with $68.4\%$ on the
+xArm7. On the Cobotta, where every method runs at the reduced speed,
+the margin is the widest of the three manipulators: $90.5\%$ mean Ratio
+against $76.8\%$ for the hybrid, and a 10th percentile of $75.8\%$
+against $33.5\%$.
 
 The Continuous PPO row and Ours share the same learning algorithm,
 reward, and training distribution; they differ only in the action and
@@ -735,44 +740,30 @@ interface is physically grounded.
 
 \begin{table*}[!htbp]
 \centering
-\caption{Comparison of the Resolution Laws across Path Families
-($10{,}000$ Straight and $2{,}500$ Tasks per Curved Family per Manipulator)}
+\caption{Comparison of the Resolution Laws on Straight-Line Tasks
+($10{,}000$ Tasks per Manipulator)}
 \label{tab:mainresult}
 \begin{threeparttable}
 \footnotesize
-\setlength{\tabcolsep}{3.2pt}
-\begin{tabular}{lllcccccccccc}
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{llccccccccc}
 \toprule
-& & & \multicolumn{3}{c}{Franka Research 3}
+& & \multicolumn{3}{c}{Franka Research 3}
 & \multicolumn{3}{c}{xArm7}
 & \multicolumn{3}{c}{Cobotta} \\
-\cmidrule(lr){4-6} \cmidrule(lr){7-9} \cmidrule(lr){10-12}
+\cmidrule(lr){3-5} \cmidrule(lr){6-8} \cmidrule(lr){9-11}
 Type
 & Method
-& Family
 & \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
 & \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
 & \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
-\multirow{6}{*}{Classical} & \multirow{3}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \multirow{3}{*}{$2.7\times10^{-5}$} & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \multirow{3}{*}{$2.7\times10^{-5}$} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \multirow{3}{*}{$2.5\times10^{-5}$} & \pinkbox{0.157} & \pinkbox{59.3 / 25.2} \\
- &  & Serpentine &  & \pinkbox{0.303} & \pinkbox{54.1 / 14.9} &  & \pinkbox{0.258} & \pinkbox{53.1 / 14.5} &  & \pinkbox{0.149} & \pinkbox{55.3 / 23.2} \\
- &  & Rot.-Axis &  & \pinkbox{0.315} & \pinkbox{56.4 / 16.7} &  & \pinkbox{0.261} & \pinkbox{54.9 / 15.5} &  & \pinkbox{0.156} & \pinkbox{58.3 / 25.6} \\
-\cmidrule(lr){2-12}
- & \multirow{3}{*}{\shortstack[l]{Classical Gradient}} & Straight & \multirow{3}{*}{0.02} & 0.332 & 60.4 / 17.9 & \multirow{3}{*}{0.02} & 0.269 & 56.4 / 17.8 & \multirow{3}{*}{0.01} & 0.158 & 58.4 / 26.8 \\
- &  & Serpentine &  & 0.326 & 57.5 / 16.4 &  & 0.268 & 54.6 / 16.3 &  & 0.152 & 54.9 / 24.6 \\
- &  & Rot.-Axis &  & 0.339 & 60.0 / 18.4 &  & 0.273 & 56.7 / 17.9 &  & 0.158 & 57.8 / 27.3 \\
+\multirow{2}{*}{Classical} & Zero Null-Space & $2.7\times10^{-5}$ & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & $2.7\times10^{-5}$ & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & $2.5\times10^{-5}$ & \pinkbox{0.157} & \pinkbox{59.3 / 25.2} \\
+ & Classical Gradient & 0.02 & 0.332 & 60.4 / 17.9 & 0.02 & 0.269 & 56.4 / 17.8 & 0.01 & 0.158 & 58.4 / 26.8 \\
 \midrule
-\multirow{9}{*}{Learned} & \multirow{3}{*}{\shortstack[l]{Continuous PPO}} & Straight & \multirow{3}{*}{$1.7\times10^{-4}$} & 0.408 & 69.4 / 17.4 & \multirow{3}{*}{$1.6\times10^{-4}$} & 0.340 & 66.7 / 16.8 & \multirow{3}{*}{$1.6\times10^{-4}$} & 0.200 & 69.9 / 22.5 \\
- &  & Serpentine &  & 0.407 & 67.0 / 16.0 &  & 0.337 & 64.5 / 16.1 &  & 0.196 & 67.3 / 20.7 \\
- &  & Rot.-Axis &  & 0.411 & 68.6 / 17.5 &  & 0.344 & 66.9 / 17.2 &  & 0.202 & 69.9 / 24.6 \\
-\cmidrule(lr){2-12}
- & \multirow{3}{*}{\shortstack[l]{PPO + Classical}} & Straight & \multirow{3}{*}{0.02} & 0.458 & 75.7 / 23.6 & \multirow{3}{*}{0.02} & 0.374 & 71.5 / 20.9 & \multirow{3}{*}{0.02} & 0.222 & 76.8 / 33.5 \\
- &  & Serpentine &  & 0.457 & 73.0 / 21.4 &  & 0.370 & 69.2 / 19.6 &  & 0.215 & 73.2 / 31.9 \\
- &  & Rot.-Axis &  & 0.458 & 74.5 / 23.3 &  & 0.374 & 71.3 / 20.5 &  & 0.220 & 75.8 / 33.3 \\
-\cmidrule(lr){2-12}
- & \multirow{3}{*}{\shortstack[l]{\textbf{Ours}}} & \textbf{Straight} & \multirow{3}{*}{\textbf{$1.5\times10^{-4}$}} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \multirow{3}{*}{\textbf{$1.9\times10^{-4}$}} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.7 / 68.4}} & \multirow{3}{*}{\textbf{$1.7\times10^{-4}$}} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
- &  & \textbf{Serpentine} &  & \limebox{\textbf{0.636}} & \limebox{\textbf{91.6 / 76.3}} &  & \limebox{\textbf{0.543}} & \limebox{\textbf{89.9 / 67.1}} &  & \limebox{\textbf{0.264}} & \limebox{\textbf{86.8 / 70.2}} \\
- &  & \textbf{Rot.-Axis} &  & \limebox{\textbf{0.625}} & \limebox{\textbf{92.4 / 72.8}} &  & \limebox{\textbf{0.541}} & \limebox{\textbf{91.9 / 68.5}} &  & \limebox{\textbf{0.271}} & \limebox{\textbf{89.9 / 76.9}} \\
+\multirow{3}{*}{Learned} & Continuous PPO & $1.7\times10^{-4}$ & 0.408 & 69.4 / 17.4 & $1.6\times10^{-4}$ & 0.340 & 66.7 / 16.8 & $1.6\times10^{-4}$ & 0.200 & 69.9 / 22.5 \\
+ & PPO + Classical & 0.02 & 0.458 & 75.7 / 23.6 & 0.02 & 0.374 & 71.5 / 20.9 & 0.02 & 0.222 & 76.8 / 33.5 \\
+ & \textbf{Ours} & \textbf{$1.5\times10^{-4}$} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \textbf{$1.9\times10^{-4}$} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.7 / 68.4}} & \textbf{$1.7\times10^{-4}$} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -790,125 +781,173 @@ Type
 \end{threeparttable}
 \end{table*}
 
-\begin{table*}[!htbp]
-\centering
-\caption{Comparison of MPC and MPPI under Different Prediction Horizons across Path Families
-($10{,}000$ Straight and $2{,}500$ Tasks per Curved Family per Manipulator)}
-\label{tab:horizon}
-\begin{threeparttable}
-\footnotesize
-\setlength{\tabcolsep}{3.2pt}
-\begin{tabular}{lllcccccccccc}
-\toprule
-& & & \multicolumn{3}{c}{Franka Research 3}
-& \multicolumn{3}{c}{xArm7}
-& \multicolumn{3}{c}{Cobotta} \\
-\cmidrule(lr){4-6} \cmidrule(lr){7-9} \cmidrule(lr){10-12}
-Family
-& Method
-& $H$
-& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
-\midrule
-\multirow{7}{*}{Straight} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.507 & 80.7 / 41.8 & 4.5 & 0.446 & 80.8 / 44.3 & 4.5 & 0.227 & 77.8 / 33.5 \\
-  &   & 20 & 8.1 & 0.573 & 87.8 / 58.5 & 8.9 & 0.503 & 87.6 / 59.0 & 8.2 & 0.247 & 84.4 / 50.1 \\
-  &   & 30 & 11.2 & 0.603 & 90.7 / 67.4 & 12.9 & 0.526 & 90.1 / 64.9 & 12.2 & 0.256 & 86.9 / 59.8 \\
-\cmidrule(lr){2-12}
-  & \multirow{3}{*}{MPPI} & 16 & 0.21 & 0.621 & 92.1 / 73.1 & 0.22 & 0.533 & 90.7 / 67.4 & 0.20 & 0.249 & 84.9 / 55.2 \\
-  &   & 32 & 0.42 & 0.621 & 92.2 / 73.0 & 0.42 & 0.532 & 90.7 / 67.2 & 0.41 & 0.258 & 87.1 / 64.3 \\
-  &   & 64 & 0.73 & 0.621 & 92.2 / 72.5 & 1.0 & 0.532 & 90.7 / 66.9 & 0.78 & 0.263 & 88.4 / 69.4 \\
-\cmidrule(lr){2-12}
- & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.628} & \textbf{93.3 / 77.3} & \textbf{$1.9\times10^{-4}$} & \textbf{0.540} & \textbf{91.7 / 68.4} & \textbf{$1.7\times10^{-4}$} & \textbf{0.271} & \textbf{90.5 / 75.8} \\
-\midrule
-\multirow{7}{*}{Serpentine} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.553 & 83.6 / 45.3 & 4.5 & 0.478 & 83.0 / 46.7 & 4.5 & 0.223 & 74.9 / 33.9 \\
-  &   & 20 & 8.1 & 0.601 & 88.4 / 64.4 & 8.9 & 0.519 & 87.4 / 60.7 & 8.2 & 0.242 & 81.0 / 48.6 \\
-  &   & 30 & 11.2 & 0.615 & 89.7 / 68.5 & 12.9 & 0.529 & 88.4 / 63.4 & 12.2 & 0.250 & 83.3 / 56.4 \\
-\cmidrule(lr){2-12}
-  & \multirow{3}{*}{MPPI} & 16 & 0.21 & 0.628 & 90.6 / 72.1 & 0.22 & 0.534 & 88.7 / 64.8 & 0.20 & 0.246 & 81.7 / 55.0 \\
-  &   & 32 & 0.42 & 0.632 & 91.1 / 73.9 & 0.42 & 0.535 & 88.8 / 64.5 & 0.41 & 0.253 & 83.8 / 62.7 \\
-  &   & 64 & 0.73 & 0.634 & 91.2 / 74.3 & 1.0 & 0.537 & 89.2 / 65.1 & 0.78 & 0.257 & 84.8 / 65.1 \\
-\cmidrule(lr){2-12}
- & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.636} & \textbf{91.6 / 76.3} & \textbf{$1.9\times10^{-4}$} & \textbf{0.543} & \textbf{89.9 / 67.1} & \textbf{$1.7\times10^{-4}$} & \textbf{0.264} & \textbf{86.8 / 70.2} \\
-\midrule
-\multirow{7}{*}{Rot.-Axis} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.546 & 84.6 / 45.4 & 4.5 & 0.486 & 85.6 / 53.1 & 4.5 & 0.225 & 76.8 / 35.8 \\
-  &   & 20 & 8.1 & 0.590 & 89.0 / 62.3 & 8.9 & 0.523 & 89.7 / 64.0 & 8.2 & 0.247 & 83.7 / 51.4 \\
-  &   & 30 & 11.2 & 0.609 & 90.9 / 69.5 & 12.9 & 0.531 & 90.7 / 67.1 & 12.2 & 0.255 & 86.1 / 62.7 \\
-\cmidrule(lr){2-12}
-  & \multirow{3}{*}{MPPI} & 16 & 0.21 & 0.615 & 91.2 / 70.0 & 0.22 & 0.534 & 91.0 / 67.2 & 0.20 & 0.250 & 84.1 / 58.3 \\
-  &   & 32 & 0.42 & 0.620 & 91.7 / 71.2 & 0.42 & 0.536 & 91.2 / 67.3 & 0.41 & 0.258 & 86.4 / 68.9 \\
-  &   & 64 & 0.73 & 0.621 & 91.9 / 71.0 & 1.0 & 0.536 & 91.2 / 67.1 & 0.78 & 0.262 & 87.6 / 72.6 \\
-\cmidrule(lr){2-12}
- & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.625} & \textbf{92.4 / 72.8} & \textbf{$1.9\times10^{-4}$} & \textbf{0.541} & \textbf{91.9 / 68.5} & \textbf{$1.7\times10^{-4}$} & \textbf{0.271} & \textbf{89.9 / 76.9} \\
-\bottomrule
-\end{tabular}
-\begin{tablenotes}
-    \item[Note 1] All methods share the same per-task initial configuration.
-    Ratio is the per-task ratio of the executed stroke to the task's
-    pointwise-reachable length $\ell^{\mathrm{pw}}$, reported in percent
-    as mean / p10. Time is the single-task decision time per $50$\,ms
-    control period (action selection only, median over $20$ periods on
-    one RTX 4090; see Table~\ref{tab:latency}).
-    \item[Note 2] $H$ denotes the prediction horizon in control steps;
-    the proposed reactive controller has no horizon (--).
-    \item[Note 3] Cobotta is evaluated at the commanded speed
-    $v=0.05$\,m/s for all methods, matched to its joint-velocity limits
-    ($0.39$--$1.11$\,rad/s); FR3 and xArm7 use $v=0.2$\,m/s.
-\end{tablenotes}
-\end{threeparttable}
-\end{table*}
 
+
+
+
+
+\subsubsection{Initial-Configuration Selection}
+\label{sec:branch}
+\label{sec:ablate_seed}
+
+To isolate the selection stage, we fix each manipulator's
+motion-generation controller and compare ranking rules on the same
+candidate pools. As the strongest training-free reference we use the
+analytic constraint-margin field
+\begin{equation}
+\label{eq:margin-field}
+\Phi_{\mathrm{m}}(\mathbf{q})
+=
+-\tau_{\mathrm{m}}
+\log
+\sum_{j}
+\exp\left(
+-m_{j}(\mathbf{q})/\tau_{\mathrm{m}}
+\right),
+\end{equation}
+where $m_j$ denotes a normalized joint-limit or orientation-cone margin:
+exact about nearby constraint boundaries, but blind to their long-horizon
+consequences. Table~\ref{tab:ablate_seed} reports results on the
+$10{,}000$-task straight sets of the FR3 and the xArm7. Selection
+decides the tail: on the xArm7 the first feasible candidate leaves a
+10th-percentile Ratio of $5.3\%$, and the geometric heuristics recover
+only part of it. The shared critic is the best non-oracle rule on both
+manipulators, reaching mean Ratios of $97.9\%$ on the FR3 and $97.1\%$
+on the xArm7 with 10th percentiles of $96.7\%$ and $96.1\%$---above the
+margin field and every geometric heuristic---and placing $78.3\%$ and
+$60.7\%$ of the tasks within $1$\,cm of the within-pool oracle, without
+any selection-specific training.
 
 \begin{table*}[!htbp]
 \centering
-\caption{Decision Time per $50$\,ms Control Period of All Compared
-Resolution Laws (Median over $20$ Periods on One RTX 4090)}
-\label{tab:latency}
+\caption{Initial-Configuration Selection without Selection-Specific
+Training on Straight-Line Tasks ($10{,}000$ Tasks per Manipulator)}
+\label{tab:ablate_seed}
 \begin{threeparttable}
 \footnotesize
-\setlength{\tabcolsep}{4.5pt}
+\setlength{\tabcolsep}{5pt}
 \begin{tabular}{llcccccc}
 \toprule
-& & \multicolumn{2}{c}{Franka Research 3}
-& \multicolumn{2}{c}{xArm7}
-& \multicolumn{2}{c}{Cobotta} \\
-\cmidrule(lr){3-4} \cmidrule(lr){5-6} \cmidrule(lr){7-8}
-Method & $H$
-& \shortstack{Single\\task} & \shortstack{Batched\\per task}
-& \shortstack{Single\\task} & \shortstack{Batched\\per task}
-& \shortstack{Single\\task} & \shortstack{Batched\\per task} \\
+& & \multicolumn{3}{c}{Franka Research 3}
+& \multicolumn{3}{c}{xArm7} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-8}
+Type
+& Candidate Ranking Rule
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Near-Orc.\\(\%)}
+& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Near-Orc.\\(\%)} \\
 \midrule
-Zero Null-Space & -- & 0.03\,ms & 0.0\,$\mu$s & 0.03\,ms & 0.0\,$\mu$s & 0.03\,ms & 0.0\,$\mu$s \\
-Classical Gradient & -- & 22\,ms & 8.3\,$\mu$s & 16\,ms & 7.9\,$\mu$s & 12\,ms & 7.3\,$\mu$s \\
-Continuous PPO & -- & 0.17\,ms & 0.1\,$\mu$s & 0.16\,ms & 0.1\,$\mu$s & 0.16\,ms & 0.1\,$\mu$s \\
-PPO + Classical & -- & 23\,ms & 8.6\,$\mu$s & 17\,ms & 8.4\,$\mu$s & 16\,ms & 8.4\,$\mu$s \\
+\textemdash & First Feasible Candidate & 0.676 & 94.2 / 80.8 & 62.7 & \pinkbox{0.423} & \pinkbox{73.9 / 5.3} & 28.3 \\
 \midrule
-\multirow{3}{*}{MPC} & 10 & 4.2\,s & 1.93\,ms & 4.5\,s & 2.31\,ms & 4.5\,s & 1.89\,ms \\
-  & 20 & 8.1\,s & 3.51\,ms & 8.9\,s & 4.13\,ms & 8.2\,s & 3.34\,ms \\
-  & 30 & 11.2\,s & 10\,ms & 12.9\,s & 13\,ms & 12.2\,s & 10\,ms \\
+Random & Random Valid Candidate & \pinkbox{0.672} & 94.0 / 86.1 & \pinkbox{27.7} & 0.485 & 83.8 / 69.5 & \pinkbox{1.7} \\
 \midrule
-\multirow{3}{*}{MPPI} & 16 & 207\,ms & 0.70\,ms & 223\,ms & 1.86\,ms & 198\,ms & 0.68\,ms \\
-  & 32 & 421\,ms & 1.41\,ms & 424\,ms & 3.65\,ms & 412\,ms & 1.35\,ms \\
-  & 64 & 728\,ms & 2.82\,ms & 1.0\,s & 7.36\,ms & 777\,ms & 2.70\,ms \\
+\multirow{4}{*}{Heuristic} & Max Directional Manipulability & 0.673 & \pinkbox{93.9 / 79.9} & 64.0 & 0.510 & 87.0 / 47.6 & 42.6 \\
+ & Max Orientation Margin & 0.674 & 94.2 / 82.2 & 65.1 & 0.505 & 86.6 / 50.2 & 39.0 \\
+ & Max Joint-Limit Margin & 0.695 & 96.8 / 95.0 & 72.4 & 0.568 & 95.6 / 93.0 & 54.0 \\
+ & Margin Field $\Phi_{\mathrm{m}}$ & 0.696 & 96.9 / 94.9 & 72.3 & 0.569 & 95.9 / 91.5 & 53.6 \\
 \midrule
-\textbf{Ours} & -- & \textbf{0.15\,ms} & \textbf{0.6\,$\mu$s} & \textbf{0.19\,ms} & \textbf{0.6\,$\mu$s} & \textbf{0.17\,ms} & \textbf{0.6\,$\mu$s} \\
+Value & \textbf{Shared Critic $\widehat{V}_{\phi}$ (Ours)} & \limebox{\textbf{0.705}} & \limebox{\textbf{97.9 / 96.7}} & \limebox{\textbf{78.3}} & \limebox{\textbf{0.578}} & \limebox{\textbf{97.1 / 96.1}} & \limebox{\textbf{60.7}} \\
+\midrule
+\textemdash & Within-Pool Oracle ($K$ Rollouts) & 0.719 & 99.3 / 98.7 & 100.0 & 0.604 & 99.7 / 99.6 & 100.0 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-    \item[Note 1] Single task: wall time of one decision for one
-    manipulator (batch size $1$), the latency a real-time controller pays
-    every period. Batched per task: wall time per task when $2{,}500$
-    tasks are decided together on the GPU (the evaluation batch), i.e.,
-    the throughput-amortized cost.
-    \item[Note 2] All rows time the action selection only; the
-    null-space projection inside the control step is shared by every
-    method and excluded. Continuous PPO and PPO + Classical use the
-    width-$512$ policies of Table~\ref{tab:mainresult}; MPC uses eight
-    Adam iterations; MPPI uses $K=64$ rollouts.
+\item[Note 1] All rules rank the same candidate pools and use the same
+motion-generation controller per manipulator. Ratio is the per-task
+ratio of the achieved stroke to the task's pointwise-reachable length
+$\ell^{\mathrm{pw}}$ (mean / p10, percent). Near-Orc.\ is the share of
+tasks within $1$\,cm of the within-pool oracle stroke. The shared
+critic is taken from the manipulator's own controller training run; no
+row trains a model specifically for selection.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
 
+
+
+
+
+\subsubsection{Zero-Shot Generalization to Curved Paths}
+\label{sec:ood}
+
+Neither the policy nor the critic observes a curved task during
+training, so the serpentine and rotating-axis families of
+Fig.~\ref{fig:families} are zero-shot for both stages.
+Table~\ref{tab:curves} lists, next to the straight-line results of
+Tables~\ref{tab:mainresult} and~\ref{tab:ablate_seed}, the Ratio of every
+resolution law and every selection rule on the two curved families. The
+proposed controller keeps its lead in every curved cell: $91.6\%$ and
+$92.4\%$ mean Ratio on the FR3 serpentine and rotating-axis sets against
+$93.3\%$ in distribution, $89.9\%$ and $91.9\%$ on the xArm7 against
+$91.7\%$, and $86.8\%$ and $89.9\%$ on the Cobotta against $90.5\%$. The
+change from the training family to an unseen family is at most $3.7$
+points, and the serpentine family lowers every law, including the
+training-free ones, by a similar amount, so the shift reflects the
+family rather than the learned component; the gap to the strongest
+baseline stays between $14$ and $21$ points on every curved set. The
+selection score likewise requires no retraining: the critic remains the
+strongest non-oracle rule on both OOD families and both manipulators,
+$95.6\%$ and $97.3\%$ mean Ratio on the FR3 and $95.0\%$ and $97.6\%$ on
+the xArm7, and its share of tasks within $1$\,cm of the within-pool
+oracle shifts by at most $2.3$ points from in-distribution to OOD,
+indicating that the learned value transfers with the task geometry
+rather than memorizing the training family.
+
+\begin{table*}[!htbp]
+\centering
+\caption{Zero-Shot Generalization from Straight-Line Training to Curved
+Path Families: Ratio (\%, mean / p10) of the Resolution Laws and of the
+Selection Rules ($10{,}000$ Straight and $2{,}500$ Tasks per Curved
+Family per Manipulator)}
+\label{tab:curves}
+\begin{threeparttable}
+\footnotesize
+\setlength{\tabcolsep}{1.6pt}
+\begin{tabular}{llccccccccc}
+\toprule
+& & \multicolumn{3}{c}{Franka Research 3}
+& \multicolumn{3}{c}{xArm7}
+& \multicolumn{3}{c}{Cobotta} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-8} \cmidrule(lr){9-11}
+Stage
+& Method
+& Straight & Serpentine & Rot.-Axis
+& Straight & Serpentine & Rot.-Axis
+& Straight & Serpentine & Rot.-Axis \\
+\midrule
+\multirow{5}{*}{\shortstack[l]{Redundancy\\resolution\\(fixed start)}}
+ & Zero Null-Space & 56.8 / 16.5 & \pinkbox{54.1 / 14.9} & \pinkbox{56.4 / 16.7} & 55.0 / 15.7 & \pinkbox{53.1 / 14.5} & \pinkbox{54.9 / 15.5} & 59.3 / 25.2 & \pinkbox{55.3 / 23.2} & \pinkbox{58.3 / 25.6} \\
+ & Classical Gradient & 60.4 / 17.9 & 57.5 / 16.4 & 60.0 / 18.4 & 56.4 / 17.8 & 54.6 / 16.3 & 56.7 / 17.9 & 58.4 / 26.8 & 54.9 / 24.6 & 57.8 / 27.3 \\
+ & Continuous PPO & 69.4 / 17.4 & 67.0 / 16.0 & 68.6 / 17.5 & 66.7 / 16.8 & 64.5 / 16.1 & 66.9 / 17.2 & 69.9 / 22.5 & 67.3 / 20.7 & 69.9 / 24.6 \\
+ & PPO + Classical & 75.7 / 23.6 & 73.0 / 21.4 & 74.5 / 23.3 & 71.5 / 20.9 & 69.2 / 19.6 & 71.3 / 20.5 & 76.8 / 33.5 & 73.2 / 31.9 & 75.8 / 33.3 \\
+ & \textbf{Ours} & \textbf{93.3 / 77.3} & \limebox{\textbf{91.6 / 76.3}} & \limebox{\textbf{92.4 / 72.8}} & \textbf{91.7 / 68.4} & \limebox{\textbf{89.9 / 67.1}} & \limebox{\textbf{91.9 / 68.5}} & \textbf{90.5 / 75.8} & \limebox{\textbf{86.8 / 70.2}} & \limebox{\textbf{89.9 / 76.9}} \\
+\midrule
+\multirow{8}{*}{\shortstack[l]{Initial-\\configuration\\selection}}
+ & First Feasible Candidate & 94.2 / 80.8 & 91.7 / 76.0 & 92.4 / 72.6 & 73.9 / 5.3 & \pinkbox{73.0 / 5.3} & \pinkbox{74.9 / 5.7} & \multicolumn{3}{c}{\multirow{8}{*}{---\tnote{a}}} \\
+ & Random Valid Candidate & 94.0 / 86.1 & 92.2 / 82.4 & 93.4 / 83.3 & 83.8 / 69.5 & 82.0 / 67.5 & 84.3 / 70.4 & & & \\
+ & Max Directional Manipulability & 93.9 / 79.9 & \pinkbox{91.7 / 75.3} & \pinkbox{92.9 / 76.4} & 87.0 / 47.6 & 85.4 / 46.6 & 87.4 / 49.5 & & & \\
+ & Max Orientation Margin & 94.2 / 82.2 & 92.1 / 78.4 & 93.6 / 80.2 & 86.6 / 50.2 & 85.0 / 47.4 & 87.2 / 50.0 & & & \\
+ & Max Joint-Limit Margin & 96.8 / 95.0 & 94.8 / 90.9 & 95.8 / 92.2 & 95.6 / 93.0 & 93.9 / 89.6 & 96.1 / 93.8 & & & \\
+ & Margin Field $\Phi_{\mathrm{m}}$ & 96.9 / 94.9 & 94.8 / 90.9 & 95.9 / 92.6 & 95.9 / 91.5 & 94.1 / 88.7 & 96.1 / 92.8 & & & \\
+ & \textbf{Shared Critic $\widehat{V}_{\phi}$ (Ours)} & \textbf{97.9 / 96.7} & \limebox{\textbf{95.6 / 93.1}} & \limebox{\textbf{97.3 / 95.7}} & \textbf{97.1 / 96.1} & \limebox{\textbf{95.0 / 92.2}} & \limebox{\textbf{97.6 / 97.0}} & & & \\
+ & Within-Pool Oracle ($K$ Rollouts) & 99.3 / 98.7 & 98.1 / 95.6 & 99.3 / 99.4 & 99.7 / 99.6 & 98.4 / 95.3 & 99.7 / 99.6 & & & \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\item[Note 1] Every learned component is trained on straight tasks
+only; the serpentine and rotating-axis columns are zero-shot. Ratio is
+the per-task ratio of the executed stroke to the task's
+pointwise-reachable length $\ell^{\mathrm{pw}}$ (mean / p10, percent).
+The Straight columns repeat Tables~\ref{tab:mainresult}
+and~\ref{tab:ablate_seed}. The resolution-law block uses the same
+per-task initial configuration for all methods; the selection block
+uses the manipulator's own controller for all rules.
+\item[a] The selection experiments are reported for the two 7-DoF
+manipulators.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
 
 \subsection{Comparison with Receding-Horizon Optimization}
 \label{sec:horizon}
@@ -989,7 +1028,7 @@ optimizers differ in how Eq.~(\ref{eq:horizon-obj}) is maximized.
 
 Table~\ref{tab:horizon} presents the results on the three manipulators
 and the three path families; the rows of the proposed controller are
-repeated from Table~\ref{tab:mainresult}, and the Cobotta rows of all
+repeated from Tables~\ref{tab:mainresult} and~\ref{tab:curves}, and the Cobotta rows of all
 methods use the reduced commanded speed $v=0.05$\,m/s of
 Section~\ref{sec:setup}. The
 results show that the proposed controller leads every row of the table,
@@ -1040,124 +1079,125 @@ optimization at a real-time budget: the trained reactive policy exceeds
 explicit lookahead in stroke while deciding three orders of magnitude
 faster than the shortest-horizon optimizer.
 
-\subsection{Ablation Study}
-
-\subsubsection{Initial Configuration Selection}
-\label{sec:branch}
-\label{sec:ablate_seed}
-
-To isolate the selection stage, we fix each manipulator's
-motion-generation controller and compare ranking rules on the same
-candidate pools. As the strongest training-free reference we use the
-analytic constraint-margin field
-\begin{equation}
-\label{eq:margin-field}
-\Phi_{\mathrm{m}}(\mathbf{q})
-=
--\tau_{\mathrm{m}}
-\log
-\sum_{j}
-\exp\left(
--m_{j}(\mathbf{q})/\tau_{\mathrm{m}}
-\right),
-\end{equation}
-where $m_j$ denotes a normalized joint-limit or orientation-cone margin:
-exact about nearby constraint boundaries, but blind to their long-horizon
-consequences. Table~\ref{tab:ablate_seed} reports results on the
-$10{,}000$-task straight sets and $2{,}500$ tasks per curved family, for
-both the FR3 and the xArm7. The shared critic is the best non-oracle
-rule in every family--manipulator cell, reaching mean Ratios of
-$97.9/95.6/97.3$ on the FR3 and $97.1/95.0/97.6$ on the xArm7---above
-the margin field and every geometric heuristic---without any
-selection-specific training.
-
 \begin{table*}[!htbp]
 \centering
-\caption{Initial-Configuration Selection without Selection-Specific
-Training ($10{,}000$ Straight and $2{,}500$ Tasks per Curved Family per
-Manipulator)}
-\label{tab:ablate_seed}
+\caption{Comparison of MPC and MPPI under Different Prediction Horizons across Path Families
+($10{,}000$ Straight and $2{,}500$ Tasks per Curved Family per Manipulator)}
+\label{tab:horizon}
 \begin{threeparttable}
 \footnotesize
-\setlength{\tabcolsep}{3.6pt}
-\begin{tabular}{lllcccccc}
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{lllcccccccccc}
 \toprule
 & & & \multicolumn{3}{c}{Franka Research 3}
-& \multicolumn{3}{c}{xArm7} \\
-\cmidrule(lr){4-6} \cmidrule(lr){7-9}
-Type
-& Candidate Ranking Rule
-& Family
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Near-Orc.\\(\%)}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Near-Orc.\\(\%)} \\
+& \multicolumn{3}{c}{xArm7}
+& \multicolumn{3}{c}{Cobotta} \\
+\cmidrule(lr){4-6} \cmidrule(lr){7-9} \cmidrule(lr){10-12}
+Family
+& Method
+& $H$
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
- \multirow{3}{*}{\textemdash} & \multirow{3}{*}{\shortstack[l]{First Feasible Candidate}} & Straight & 0.676 & 94.2 / 80.8 & 62.7 & \pinkbox{0.423} & \pinkbox{73.9 / 5.3} & 28.3 \\
-  &  & Serpentine & \pinkbox{0.636} & 91.7 / 76.0 & 60.8 & \pinkbox{0.429} & \pinkbox{73.0 / 5.3} & 29.8 \\
-  &  & Rot.-Axis & \pinkbox{0.626} & \pinkbox{92.4 / 72.6} & 60.3 & \pinkbox{0.432} & \pinkbox{74.9 / 5.7} & 29.2 \\
+\multirow{7}{*}{Straight} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.507 & 80.7 / 41.8 & 4.5 & 0.446 & 80.8 / 44.3 & 4.5 & 0.227 & 77.8 / 33.5 \\
+  &   & 20 & 8.1 & 0.573 & 87.8 / 58.5 & 8.9 & 0.503 & 87.6 / 59.0 & 8.2 & 0.247 & 84.4 / 50.1 \\
+  &   & 30 & 11.2 & 0.603 & 90.7 / 67.4 & 12.9 & 0.526 & 90.1 / 64.9 & 12.2 & 0.256 & 86.9 / 59.8 \\
+\cmidrule(lr){2-12}
+  & \multirow{3}{*}{MPPI} & 16 & 0.21 & 0.621 & 92.1 / 73.1 & 0.22 & 0.533 & 90.7 / 67.4 & 0.20 & 0.249 & 84.9 / 55.2 \\
+  &   & 32 & 0.42 & 0.621 & 92.2 / 73.0 & 0.42 & 0.532 & 90.7 / 67.2 & 0.41 & 0.258 & 87.1 / 64.3 \\
+  &   & 64 & 0.73 & 0.621 & 92.2 / 72.5 & 1.0 & 0.532 & 90.7 / 66.9 & 0.78 & 0.263 & 88.4 / 69.4 \\
+\cmidrule(lr){2-12}
+ & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.628} & \textbf{93.3 / 77.3} & \textbf{$1.9\times10^{-4}$} & \textbf{0.540} & \textbf{91.7 / 68.4} & \textbf{$1.7\times10^{-4}$} & \textbf{0.271} & \textbf{90.5 / 75.8} \\
 \midrule
- \multirow{3}{*}{Random} & \multirow{3}{*}{\shortstack[l]{Random Valid Candidate}} & Straight & \pinkbox{0.672} & 94.0 / 86.1 & \pinkbox{27.7} & 0.485 & 83.8 / 69.5 & \pinkbox{1.7} \\
-  &  & Serpentine & 0.638 & 92.2 / 82.4 & \pinkbox{31.3} & 0.488 & 82.0 / 67.5 & \pinkbox{1.9} \\
-  &  & Rot.-Axis & 0.630 & 93.4 / 83.3 & \pinkbox{31.8} & 0.488 & 84.3 / 70.4 & \pinkbox{1.7} \\
+\multirow{7}{*}{Serpentine} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.553 & 83.6 / 45.3 & 4.5 & 0.478 & 83.0 / 46.7 & 4.5 & 0.223 & 74.9 / 33.9 \\
+  &   & 20 & 8.1 & 0.601 & 88.4 / 64.4 & 8.9 & 0.519 & 87.4 / 60.7 & 8.2 & 0.242 & 81.0 / 48.6 \\
+  &   & 30 & 11.2 & 0.615 & 89.7 / 68.5 & 12.9 & 0.529 & 88.4 / 63.4 & 12.2 & 0.250 & 83.3 / 56.4 \\
+\cmidrule(lr){2-12}
+  & \multirow{3}{*}{MPPI} & 16 & 0.21 & 0.628 & 90.6 / 72.1 & 0.22 & 0.534 & 88.7 / 64.8 & 0.20 & 0.246 & 81.7 / 55.0 \\
+  &   & 32 & 0.42 & 0.632 & 91.1 / 73.9 & 0.42 & 0.535 & 88.8 / 64.5 & 0.41 & 0.253 & 83.8 / 62.7 \\
+  &   & 64 & 0.73 & 0.634 & 91.2 / 74.3 & 1.0 & 0.537 & 89.2 / 65.1 & 0.78 & 0.257 & 84.8 / 65.1 \\
+\cmidrule(lr){2-12}
+ & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.636} & \textbf{91.6 / 76.3} & \textbf{$1.9\times10^{-4}$} & \textbf{0.543} & \textbf{89.9 / 67.1} & \textbf{$1.7\times10^{-4}$} & \textbf{0.264} & \textbf{86.8 / 70.2} \\
 \midrule
- \multirow{12}{*}{Heuristic} & \multirow{3}{*}{\shortstack[l]{Max Directional Manipulability}} & Straight & 0.673 & \pinkbox{93.9 / 79.9} & 64.0 & 0.510 & 87.0 / 47.6 & 42.6 \\
-  &  & Serpentine & 0.637 & \pinkbox{91.7 / 75.3} & 62.8 & 0.516 & 85.4 / 46.6 & 41.8 \\
-  &  & Rot.-Axis & 0.629 & 92.9 / 76.4 & 65.0 & 0.516 & 87.4 / 49.5 & 42.0 \\
-\cmidrule(lr){2-9}
-  & \multirow{3}{*}{\shortstack[l]{Max Orientation Margin}} & Straight & 0.674 & 94.2 / 82.2 & 65.1 & 0.505 & 86.6 / 50.2 & 39.0 \\
-  &  & Serpentine & 0.638 & 92.1 / 78.4 & 63.2 & 0.507 & 85.0 / 47.4 & 40.0 \\
-  &  & Rot.-Axis & 0.636 & 93.6 / 80.2 & 65.3 & 0.509 & 87.2 / 50.0 & 39.3 \\
-\cmidrule(lr){2-9}
-  & \multirow{3}{*}{\shortstack[l]{Max Joint-Limit Margin}} & Straight & 0.695 & 96.8 / 95.0 & 72.4 & 0.568 & 95.6 / 93.0 & 54.0 \\
-  &  & Serpentine & 0.662 & 94.8 / 90.9 & 71.6 & 0.571 & 93.9 / 89.6 & 55.4 \\
-  &  & Rot.-Axis & 0.653 & 95.8 / 92.2 & 71.1 & 0.573 & 96.1 / 93.8 & 54.6 \\
-\cmidrule(lr){2-9}
-  & \multirow{3}{*}{\shortstack[l]{Margin Field $\Phi_{\mathrm{m}}$}} & Straight & 0.696 & 96.9 / 94.9 & 72.3 & 0.569 & 95.9 / 91.5 & 53.6 \\
-  &  & Serpentine & 0.663 & 94.8 / 90.9 & 71.4 & 0.572 & 94.1 / 88.7 & 54.9 \\
-  &  & Rot.-Axis & 0.655 & 95.9 / 92.6 & 71.1 & 0.572 & 96.1 / 92.8 & 54.5 \\
-\midrule
- \multirow{3}{*}{Value} & \multirow{3}{*}{\shortstack[l]{\textbf{Shared Critic $\widehat{V}_{\phi}$ (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.705}} & \limebox{\textbf{97.9 / 96.7}} & \limebox{\textbf{78.3}} & \limebox{\textbf{0.578}} & \limebox{\textbf{97.1 / 96.1}} & \limebox{\textbf{60.7}} \\
-  &  & \textbf{Serpentine} & \limebox{\textbf{0.671}} & \limebox{\textbf{95.6 / 93.1}} & \limebox{\textbf{76.0}} & \limebox{\textbf{0.578}} & \limebox{\textbf{95.0 / 92.2}} & \limebox{\textbf{60.6}} \\
-  &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.669}} & \limebox{\textbf{97.3 / 95.7}} & \limebox{\textbf{77.0}} & \limebox{\textbf{0.583}} & \limebox{\textbf{97.6 / 97.0}} & \limebox{\textbf{61.8}} \\
-\midrule
- \multirow{3}{*}{\textemdash} & \multirow{3}{*}{\shortstack[l]{Within-Pool Oracle ($K$ Rollouts)}} & Straight & 0.719 & 99.3 / 98.7 & 100.0 & 0.604 & 99.7 / 99.6 & 100.0 \\
-  &  & Serpentine & 0.696 & 98.1 / 95.6 & 100.0 & 0.609 & 98.4 / 95.3 & 100.0 \\
-  &  & Rot.-Axis & 0.691 & 99.3 / 99.4 & 100.0 & 0.606 & 99.7 / 99.6 & 100.0 \\
+\multirow{7}{*}{Rot.-Axis} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.546 & 84.6 / 45.4 & 4.5 & 0.486 & 85.6 / 53.1 & 4.5 & 0.225 & 76.8 / 35.8 \\
+  &   & 20 & 8.1 & 0.590 & 89.0 / 62.3 & 8.9 & 0.523 & 89.7 / 64.0 & 8.2 & 0.247 & 83.7 / 51.4 \\
+  &   & 30 & 11.2 & 0.609 & 90.9 / 69.5 & 12.9 & 0.531 & 90.7 / 67.1 & 12.2 & 0.255 & 86.1 / 62.7 \\
+\cmidrule(lr){2-12}
+  & \multirow{3}{*}{MPPI} & 16 & 0.21 & 0.615 & 91.2 / 70.0 & 0.22 & 0.534 & 91.0 / 67.2 & 0.20 & 0.250 & 84.1 / 58.3 \\
+  &   & 32 & 0.42 & 0.620 & 91.7 / 71.2 & 0.42 & 0.536 & 91.2 / 67.3 & 0.41 & 0.258 & 86.4 / 68.9 \\
+  &   & 64 & 0.73 & 0.621 & 91.9 / 71.0 & 1.0 & 0.536 & 91.2 / 67.1 & 0.78 & 0.262 & 87.6 / 72.6 \\
+\cmidrule(lr){2-12}
+ & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.625} & \textbf{92.4 / 72.8} & \textbf{$1.9\times10^{-4}$} & \textbf{0.541} & \textbf{91.9 / 68.5} & \textbf{$1.7\times10^{-4}$} & \textbf{0.271} & \textbf{89.9 / 76.9} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
-\item[Note 1] All rules rank the same candidate pools and use the same
-motion-generation controller per manipulator. Ratio is the per-task
-ratio of the achieved stroke to the task's pointwise-reachable length
-$\ell^{\mathrm{pw}}$ (mean / p10, percent). Near-Orc.\ is the share of
-tasks within $1$\,cm of the within-pool oracle stroke. The shared
-critic is taken from the manipulator's own controller training run; no
-row trains a model specifically for selection.
+    \item[Note 1] All methods share the same per-task initial configuration.
+    Ratio is the per-task ratio of the executed stroke to the task's
+    pointwise-reachable length $\ell^{\mathrm{pw}}$, reported in percent
+    as mean / p10. Time is the single-task decision time per $50$\,ms
+    control period (action selection only, median over $20$ periods on
+    one RTX 4090; see Table~\ref{tab:latency}).
+    \item[Note 2] $H$ denotes the prediction horizon in control steps;
+    the proposed reactive controller has no horizon (--).
+    \item[Note 3] Cobotta is evaluated at the commanded speed
+    $v=0.05$\,m/s for all methods, matched to its joint-velocity limits
+    ($0.39$--$1.11$\,rad/s); FR3 and xArm7 use $v=0.2$\,m/s.
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
 
+\begin{table*}[!htbp]
+\centering
+\caption{Decision Time per $50$\,ms Control Period of All Compared
+Resolution Laws (Median over $20$ Periods on One RTX 4090)}
+\label{tab:latency}
+\begin{threeparttable}
+\footnotesize
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{llcccccc}
+\toprule
+& & \multicolumn{2}{c}{Franka Research 3}
+& \multicolumn{2}{c}{xArm7}
+& \multicolumn{2}{c}{Cobotta} \\
+\cmidrule(lr){3-4} \cmidrule(lr){5-6} \cmidrule(lr){7-8}
+Method & $H$
+& \shortstack{Single\\task} & \shortstack{Batched\\per task}
+& \shortstack{Single\\task} & \shortstack{Batched\\per task}
+& \shortstack{Single\\task} & \shortstack{Batched\\per task} \\
+\midrule
+Zero Null-Space & -- & 0.03\,ms & 0.0\,$\mu$s & 0.03\,ms & 0.0\,$\mu$s & 0.03\,ms & 0.0\,$\mu$s \\
+Classical Gradient & -- & 22\,ms & 8.3\,$\mu$s & 16\,ms & 7.9\,$\mu$s & 12\,ms & 7.3\,$\mu$s \\
+Continuous PPO & -- & 0.17\,ms & 0.1\,$\mu$s & 0.16\,ms & 0.1\,$\mu$s & 0.16\,ms & 0.1\,$\mu$s \\
+PPO + Classical & -- & 23\,ms & 8.6\,$\mu$s & 17\,ms & 8.4\,$\mu$s & 16\,ms & 8.4\,$\mu$s \\
+\midrule
+\multirow{3}{*}{MPC} & 10 & 4.2\,s & 1.93\,ms & 4.5\,s & 2.31\,ms & 4.5\,s & 1.89\,ms \\
+  & 20 & 8.1\,s & 3.51\,ms & 8.9\,s & 4.13\,ms & 8.2\,s & 3.34\,ms \\
+  & 30 & 11.2\,s & 10\,ms & 12.9\,s & 13\,ms & 12.2\,s & 10\,ms \\
+\midrule
+\multirow{3}{*}{MPPI} & 16 & 207\,ms & 0.70\,ms & 223\,ms & 1.86\,ms & 198\,ms & 0.68\,ms \\
+  & 32 & 421\,ms & 1.41\,ms & 424\,ms & 3.65\,ms & 412\,ms & 1.35\,ms \\
+  & 64 & 728\,ms & 2.82\,ms & 1.0\,s & 7.36\,ms & 777\,ms & 2.70\,ms \\
+\midrule
+\textbf{Ours} & -- & \textbf{0.15\,ms} & \textbf{0.6\,$\mu$s} & \textbf{0.19\,ms} & \textbf{0.6\,$\mu$s} & \textbf{0.17\,ms} & \textbf{0.6\,$\mu$s} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item[Note 1] Single task: wall time of one decision for one
+    manipulator (batch size $1$), the latency a real-time controller pays
+    every period. Batched per task: wall time per task when $2{,}500$
+    tasks are decided together on the GPU (the evaluation batch), i.e.,
+    the throughput-amortized cost.
+    \item[Note 2] All rows time the action selection only; the
+    null-space projection inside the control step is shared by every
+    method and excluded. Continuous PPO and PPO + Classical use the
+    width-$512$ policies of Table~\ref{tab:mainresult}; MPC uses eight
+    Adam iterations; MPPI uses $K=64$ rollouts.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
 
-\subsection{Generalization and Applications}
-
-\subsubsection{Path-Type Generalization}
-\label{sec:ood}
-
-The selection score requires no retraining across path families: the
-critic is applied unchanged although it never observes a curved task
-during training. It remains the strongest non-oracle ranking on both
-OOD families and both manipulators (Table~\ref{tab:ablate_seed}): on
-the FR3 it reaches $95.6\%$ and $97.3\%$ mean Ratio on the serpentine
-and rotating-axis sets against $97.9\%$ on in-distribution straight
-tasks, and on the xArm7 $95.0\%$ and $97.6\%$ against $97.1\%$. The
-near-oracle share shifts by at most $2.3$ points from in-distribution
-to OOD on either manipulator, indicating that the learned value
-transfers with the task geometry rather than memorizing the training
-family.
-
-
-\subsubsection{One-Stroke Drawing of Planar Figures}
+\subsection{Comparison with Offline Trajectory Planning on One-Stroke Drawing}
 \label{sec:onestroke}
 
 The straight-line results transfer directly to closed planar figures
@@ -1342,7 +1382,10 @@ pool and the pointwise bound.
 \end{threeparttable}
 \end{table*}
 
-\subsubsection{Extension to Constant-Force Contact}
+\subsection{Extensions}
+\label{sec:ext}
+
+\subsubsection{Constant-Force Contact}
 \label{sec:force}
 
 Writing, polishing, and similar path-following tasks additionally require
@@ -1478,7 +1521,7 @@ Friction & Method & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p1
 \end{table*}
 
 
-\subsubsection{Implication for Manipulator Base Placement}
+\subsubsection{Manipulator Base Placement}
 \label{sec:place}
 
 Continuous kinematic reachability also induces a task-aware criterion for

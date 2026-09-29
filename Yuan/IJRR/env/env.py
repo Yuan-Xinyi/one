@@ -69,6 +69,9 @@ class EnvConfig:
     cone_deg: float = 30.0
     max_steps: int = 10000
     tcp_offset: float = 0.0
+    # General tool point (x, y, z) in the flange frame for the chain arms
+    # (xArm7 / Cobotta); empty keeps the on-axis pen at tcp_offset.
+    tool_xyz: tuple = ()
     # Reset-time randomization of the wrist-roll joint (last joint). The TCP
     # position and tool axis are exactly invariant to it (rotation about the
     # tool axis), so this is a free symmetry augmentation that exposes the
@@ -447,8 +450,10 @@ class NSRLBatchedEnv:
             self.collision = FR3SphereCollision(device=self.device)
             self.n_joints = 7
         else:
-            self.kin = BatchedChainKinematics(robot, device=self.device,
-                                              tcp_offset=cfg.tcp_offset)
+            self.kin = BatchedChainKinematics(
+                robot, device=self.device, tcp_offset=cfg.tcp_offset,
+                tool_xyz=(tuple(cfg.tool_xyz) if getattr(cfg, 'tool_xyz', ())
+                          else None))
             self.collision = ChainSphereCollision(
                 robot, self.kin.n_joints + 1, device=self.device)
             self.n_joints = self.kin.n_joints

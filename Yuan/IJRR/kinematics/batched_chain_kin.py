@@ -98,7 +98,7 @@ class BatchedChainKinematics:
     """
 
     def __init__(self, spec: dict | str, device=None, dtype=torch.float32,
-                 tcp_offset: float = PEN_LENGTH):
+                 tcp_offset: float = PEN_LENGTH, tool_xyz=None):
         if isinstance(spec, str):
             spec = SPECS[spec]
         self.name = spec['name']
@@ -128,10 +128,19 @@ class BatchedChainKinematics:
                                         dtype=dtype)
         base = torch.as_tensor(spec['flange_pos'], device=self.device,
                                dtype=dtype)
-        self.flange_p = base + torch.as_tensor([0.0, 0.0, tcp_offset],
-                                               device=self.device, dtype=dtype)
+        # tool_xyz: general tool point in the flange frame (e.g. the XHand
+        # index fingertip, which sits 2.7 cm off the flange axis); the tool
+        # axis stays the flange z. None keeps the on-axis pen at tcp_offset.
+        if tool_xyz is not None:
+            tool = torch.as_tensor(list(tool_xyz), device=self.device, dtype=dtype)
+            tcp_offset = float(tool[2])
+        else:
+            tool = torch.as_tensor([0.0, 0.0, tcp_offset], device=self.device,
+                                   dtype=dtype)
+        self.flange_p = base + tool
         self.flange_R = torch.eye(3, device=self.device, dtype=dtype)
         self.tcp_offset = float(tcp_offset)
+        self.tool_xyz = tuple(float(v) for v in tool)
 
     @property
     def jnt_ranges(self) -> torch.Tensor:

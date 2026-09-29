@@ -72,6 +72,22 @@ _CKPT_CANDIDATES = [
 ]
 CKPT = next(p for p in _CKPT_CANDIDATES if p is not None and p.exists())
 N_J = 7
+DEFAULT_IP = os.environ.get('ONE_ARM_IP', '192.168.1.205')
+# Tool presets: point of the tool tip in the flange frame (tool axis = flange z).
+# xhand_index: XHand mounted with Rz(270 deg), hand open (all finger joints 0),
+# index fingertip = far end of index_rota_link2, from the hand model.
+TOOLS = {
+    'pen': (0.0, 0.0, 0.10),
+    'xhand_index': (-0.0065, -0.0265, 0.206),
+}
+
+
+def tool_xyz_from_args(args):
+    if getattr(args, 'tool_xyz', None):
+        return tuple(float(v) for v in args.tool_xyz)
+    if getattr(args, 'tool', None):
+        return TOOLS[args.tool]
+    return (0.0, 0.0, float(args.tcp))
 
 
 def unit(v):
@@ -185,14 +201,19 @@ class SimArm:
 class Controller:
     """One-env copy of the training environment driven by measured joints."""
 
-    def __init__(self, period: float, tcp: float, cone_deg: float,
+    def __init__(self, period: float, tcp, cone_deg: float,
                  k_lateral: float, device: str = 'cuda', n_envs: int = 1):
+        """tcp: on-axis tool length, or an (x, y, z) tool point in the
+        flange frame."""
         y = yaml.safe_load(open(CFG))
         keys = {f.name for f in dataclasses.fields(EnvConfig)}
         kw = {k: v for k, v in y['env'].items() if k in keys}
-        kw.update(dt=float(period), max_steps=10 ** 7, tcp_offset=float(tcp),
-                  cone_deg=float(cone_deg), k_lateral=float(k_lateral),
-                  n_envs=n_envs)
+        tool = (tuple(float(v) for v in tcp) if hasattr(tcp, '__len__')
+                else (0.0, 0.0, float(tcp)))
+        kw.update(dt=float(period), max_steps=10 ** 7, tcp_offset=tool[2],
+                  tool_xyz=tool, cone_deg=float(cone_deg),
+                  k_lateral=float(k_lateral), n_envs=n_envs)
+        self.tool_xyz = tool
         self.dev = torch.device(device)
         self.env = NSRLBatchedEnv(EnvConfig(**kw), None, self.dev)
         self.rdt = self.env.kin.dtype
@@ -289,6 +310,15 @@ def cone_ik_candidates(ctrl: Controller, p0, d, n, cone_deg, n_dirs=8,
     from Yuan.IJRR.kinematics.batched_rollout import _batched_ik_project
     env, dev, rdt = ctrl.env, ctrl.dev, ctrl.rdt
     T = np.load(ASSETS / 'fk_table_xarm7.npz')
+    T = {k: T[k] for k in T.files}
+    if np.linalg.norm(np.asarray(ctrl.tool_xyz) - np.asarray(TOOLS['pen'])) > 1e-6:
+        # the table stores tip positions for the on-axis pen; re-evaluate the
+        # stored configurations with the actual tool (seconds on the GPU)
+        pos = np.empty_like(T['pos'])
+        for lo in range(0, len(T['q']), 65536):
+            qq = torch.as_tensor(T['q'][lo:lo + 65536], device=dev, dtype=rdt)
+            pos[lo:lo + 65536] = env.kin.tcp_fk_jac(qq)[0].cpu().numpy()
+        T['pos'] = pos
     tree = cKDTree(np.concatenate([T['pos'] * POS_SCALE, T['zax']], 1)
                    .astype(np.float32))
     n = unit(n).astype(np.float32)
@@ -408,7 +438,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('mode', choices=['run', 'select'])
-    ap.add_argument('--ip', default='192.168.1.203')
+    ap.add_argument('--ip', default=DEFAULT_IP)
     ap.add_argument('--sim', action='store_true', help='simulated arm, no hardware')
     ap.add_argument('--sim-task', type=int, default=0,
                     help='--sim: start from this task of the 10k xArm7 pool')
@@ -428,7 +458,11 @@ def main():
     ap.add_argument('--qd-cap', type=float, default=1.0,
                     help='uniform cap on the commanded joint speed [rad/s]')
     ap.add_argument('--tcp', type=float, default=0.10,
-                    help='pen tip offset along the flange z [m] (model: 0.10)')
+                    help='on-axis tool length along the flange z [m] (model: 0.10)')
+    ap.add_argument('--tool', choices=sorted(TOOLS), default=None,
+                    help='tool preset (overrides --tcp): ' + ', '.join(sorted(TOOLS)))
+    ap.add_argument('--tool-xyz', type=float, nargs=3, default=None,
+                    help='tool tip (x y z) in the flange frame (overrides --tool)')
     ap.add_argument('--cone', type=float, default=30.0)
     ap.add_argument('--k-lateral', type=float, default=5.0,
                     help='task-space feedback gain on the path error [1/s]')
@@ -443,7 +477,8 @@ def main():
 
     if args.device == 'cpu':
         torch.set_num_threads(1)     # 7x7 problems: threading only adds overhead
-    ctrl = Controller(args.period, args.tcp, args.cone, args.k_lateral, args.device)
+    ctrl = Controller(args.period, tool_xyz_from_args(args), args.cone,
+                      args.k_lateral, args.device)
 
     if args.sim:
         tz = np.load(ASSETS / 'tasks_pool_xarm7.npz')

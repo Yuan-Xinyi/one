@@ -82,14 +82,21 @@ def server_main(conn, args):
     import torch
     torch.set_num_threads(1)
     from Yuan.IJRR.deploy.xarm7_realtime import (Controller, SimArm, XArm,
-                                                 ASSETS, run_loop)
-    ctrl = Controller(args.period, args.tcp, args.cone, args.k_lateral, 'cpu')
-    if args.sim:
-        tz = np.load(ASSETS / 'tasks_pool_xarm7.npz')
-        arm = SimArm(tz['q0_seed'][args.sim_task].astype(np.float64),
-                     lag=args.sim_lag)
-    else:
-        arm = XArm(args.ip)
+                                                 ASSETS, run_loop,
+                                                 tool_xyz_from_args)
+    ctrl = Controller(args.period, tool_xyz_from_args(args), args.cone,
+                      args.k_lateral, 'cpu')
+    try:
+        if args.sim:
+            tz = np.load(ASSETS / 'tasks_pool_xarm7.npz')
+            arm = SimArm(tz['q0_seed'][args.sim_task].astype(np.float64),
+                         lag=args.sim_lag)
+        else:
+            arm = XArm(args.ip)
+    except Exception as e:                  # noqa: BLE001
+        conn.send(('error', f'cannot connect to the arm at {args.ip}: {e}'))
+        return
+    conn.send(('ready',))
     try:
         while True:
             msg = conn.recv()
@@ -129,6 +136,9 @@ class RemoteArm:
         self.conn, child = ctx.Pipe()
         self.proc = ctx.Process(target=server_main, args=(child, args), daemon=True)
         self.proc.start()
+        m = self.conn.recv()
+        if m[0] != 'ready':
+            raise SystemExit(f'[pick] {m[1]}')
 
     def q(self):
         self.conn.send(('q',))
@@ -220,7 +230,7 @@ def build_app(args):
     import torch
     import one.scene.scene_object_primitive as ossop
     import one.viewer.world as ovw
-    from Yuan.IJRR.deploy.xarm7_realtime import Controller
+    from Yuan.IJRR.deploy.xarm7_realtime import Controller, tool_xyz_from_args
 
     class MeshArm:
         """xArm7 link meshes (URDF visuals, identity visual origins) placed
@@ -282,7 +292,8 @@ def build_app(args):
         def __init__(self):
             self.args = args
             torch.set_num_threads(1)
-            self.ctrl = Controller(args.period, args.tcp, args.cone, args.k_lateral, 'cpu')
+            self.tool = tool_xyz_from_args(args)
+            self.ctrl = Controller(args.period, self.tool, args.cone, args.k_lateral, 'cpu')
             self.arm = RemoteArm(args)
             self.running = False
             self.result = None
@@ -297,11 +308,12 @@ def build_app(args):
             self.scene = self.world.scene
             ossop.frame(axis_length=0.15).attach_to(self.scene)
             self.robot = MeshArm(self.ctrl.env.kin, self.scene, (0.86, 0.86, 0.89), 1.0)
-            self.pen = ossop.cylinder(spos=(0, 0, 0), epos=(0, 0, PEN_LEN), radius=0.007,
+            self.tool_len = float(self.tool[2])
+            self.pen = ossop.cylinder(spos=(0, 0, 0), epos=(0, 0, self.tool_len), radius=0.007,
                                       rgb=(0.1, 0.1, 0.1), alpha=0.98)
             self.pen.attach_to(self.scene)
             self.ghost = MeshArm(self.ctrl.env.kin, self.scene, COL_PRED, 0.35)
-            self.ghost_pen = ossop.cylinder(spos=(0, 0, 0), epos=(0, 0, PEN_LEN),
+            self.ghost_pen = ossop.cylinder(spos=(0, 0, 0), epos=(0, 0, self.tool_len),
                                             radius=0.007, rgb=COL_PRED, alpha=0.5)
             self.ghost_pen.attach_to(self.scene)
             self.dyn = []
@@ -320,7 +332,7 @@ def build_app(args):
             self.robot.fk(q)
             tip, R = self.ctrl.fk(np.asarray(q, np.float64))
             z = R[:, 2]
-            self.pen.set_rotmat_pos(rot_with_z(z), (tip - PEN_LEN * z).astype(np.float32))
+            self.pen.set_rotmat_pos(rot_with_z(z), (tip - self.tool_len * z).astype(np.float32))
 
         def _clear_dyn(self):
             for o in self.dyn:
@@ -346,7 +358,7 @@ def build_app(args):
             self.ghost.fk(q_end)
             tip, R = self.ctrl.fk(np.asarray(q_end, np.float64))
             z = R[:, 2]
-            self.ghost_pen.set_rotmat_pos(rot_with_z(z), (tip - PEN_LEN * z).astype(np.float32))
+            self.ghost_pen.set_rotmat_pos(rot_with_z(z), (tip - self.tool_len * z).astype(np.float32))
             self._update_label()
 
         def _update_label(self):
@@ -481,7 +493,7 @@ def build_app(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--ip', default='192.168.1.203')
+    ap.add_argument('--ip', default=None, help='default: $ONE_ARM_IP or 192.168.1.205')
     ap.add_argument('--sim', action='store_true')
     ap.add_argument('--sim-task', type=int, default=0)
     ap.add_argument('--sim-lag', type=float, default=0.03)
@@ -492,7 +504,11 @@ def main():
     ap.add_argument('--period', type=float, default=0.05)
     ap.add_argument('--time-scale', type=float, default=0.5)
     ap.add_argument('--qd-cap', type=float, default=1.0)
-    ap.add_argument('--tcp', type=float, default=0.10)
+    ap.add_argument('--tcp', type=float, default=0.10, help='on-axis tool length [m]')
+    ap.add_argument('--tool', choices=['pen', 'xhand_index'], default=None,
+                    help='tool preset; xhand_index = XHand index fingertip, hand open')
+    ap.add_argument('--tool-xyz', type=float, nargs=3, default=None,
+                    help='tool tip (x y z) in the flange frame')
     ap.add_argument('--cone', type=float, default=30.0)
     ap.add_argument('--k-lateral', type=float, default=5.0)
     ap.add_argument('--log-dir', default=None)
@@ -505,6 +521,9 @@ def main():
     if args.sim_device is None:
         import torch
         args.sim_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if args.ip is None:
+        from Yuan.IJRR.deploy.xarm7_realtime import DEFAULT_IP
+        args.ip = DEFAULT_IP
     app = build_app(args)
     try:
         app.world.run()

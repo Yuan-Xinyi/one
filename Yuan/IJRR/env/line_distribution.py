@@ -36,7 +36,9 @@ class LineDistribution:
                  batch_size: int = 8192,
                  swing_max_deg: float = 0.0,
                  wavelen_range: tuple[float, float] = (0.4, 1.2),
-                 min_radius_m: float = 0.15):
+                 min_radius_m: float = 0.15,
+                 cone_range: tuple[float, float] | None = None,
+                 cone_log: bool = False):
         # Require explicit seed: cache_key() hashes the seed value, so a None
         # seed yields a fixed cache_path but a non-deterministic pool — the
         # first build wins and later "different" calls silently get the cached
@@ -53,6 +55,9 @@ class LineDistribution:
         self.swing_max_deg = float(swing_max_deg)
         self.wavelen_range = tuple(wavelen_range)
         self.min_radius_m = float(min_radius_m)
+        self.cone_range = (None if cone_range is None
+                           else (float(cone_range[0]), float(cone_range[1])))
+        self.cone_log = bool(cone_log)
 
         gen = torch.Generator(device=self.device)
         gen.manual_seed(int(seed))
@@ -73,6 +78,26 @@ class LineDistribution:
         self.z_pool = torch.cat(z_pool, dim=0)[:n_pool]
         n_pool = self.q_pool.shape[0]
 
+        # Per-task cone half-angle [deg] for mixed-tolerance training. Drawn
+        # before the n_target noise so the noise can be capped at half the
+        # task's own cone: every start is admissible under its own tolerance.
+        # Absent (the historical pools) nothing below changes.
+        if self.cone_range is not None:
+            lo, hi = self.cone_range
+            u = torch.rand((n_pool,), device=self.device, dtype=self.dtype,
+                           generator=gen)
+            if self.cone_log:
+                cone = torch.exp(math.log(lo) + u * (math.log(hi) - math.log(lo)))
+            else:
+                cone = lo + u * (hi - lo)
+            self.cone_pool = cone
+            _noise_amp = torch.minimum(
+                torch.full_like(cone, self.n_target_noise),
+                0.5 * cone * (math.pi / 180.0))
+        else:
+            self.cone_pool = None
+            _noise_amp = self.n_target_noise
+
         # Pre-generate full line spec for every pool entry (deterministic per index).
         # n_target = z_tool + small angular noise about a random axis ⊥ z.
         if self.n_target_noise > 0:
@@ -80,7 +105,7 @@ class LineDistribution:
             axis = axis - (axis * self.z_pool).sum(-1, keepdim=True) * self.z_pool
             axis = axis / axis.norm(dim=-1, keepdim=True).clamp(min=1e-8)
             angle = (torch.rand((n_pool,), device=self.device, dtype=self.dtype, generator=gen)
-                     * 2 - 1) * self.n_target_noise
+                     * 2 - 1) * _noise_amp
             self.n_target_pool = (self.z_pool * torch.cos(angle).unsqueeze(-1)
                                   + axis * torch.sin(angle).unsqueeze(-1))
         else:
@@ -144,13 +169,16 @@ class LineDistribution:
             raise RuntimeError("LineDistribution has no valid lines (filter removed all)")
         pick = torch.randint(0, n_valid, (n,), device=self.device, generator=gen)
         idx = valid_idx[pick]
-        return {
+        out = {
             "q0": self.q_pool[idx],
             "line_dir": self.line_dir_pool[idx],
             "n_target": self.n_target_pool[idx],
             "amp": self.amp_pool[idx],
             "wavelen": self.wavelen_pool[idx],
         }
+        if self.cone_pool is not None:
+            out["cone_deg"] = self.cone_pool[idx]
+        return out
 
     # ---- disk cache ------------------------------------------------------
 
@@ -166,6 +194,8 @@ class LineDistribution:
             "amp_pool": self.amp_pool.cpu(),
             "wavelen_pool": self.wavelen_pool.cpu(),
             "n_target_noise": self.n_target_noise,
+            "cone_pool": (None if self.cone_pool is None
+                          else self.cone_pool.cpu()),
         }, path)
 
     @classmethod
@@ -190,12 +220,16 @@ class LineDistribution:
                             else torch.full((n,), 0.8, device=kin.device,
                                             dtype=kin.dtype))
         obj.n_pool = obj.q_pool.shape[0]
+        _cp = data.get("cone_pool", None)
+        obj.cone_pool = (None if _cp is None
+                         else _cp.to(kin.device, dtype=kin.dtype))
         obj._gen = torch.Generator(device=kin.device)
         return obj
 
     @staticmethod
     def cache_key(seed, n_pool, n_target_noise_deg, env_cfg,
-                  feasibility_threshold_m=None) -> str:
+                  feasibility_threshold_m=None, cone_range=None,
+                  cone_log=False) -> str:
         """Deterministic short key for cache filename. Include a_max since
         the feasibility filter's classical controller is clamped by it."""
         sig = (f"robot={getattr(env_cfg, 'robot', 'fr3')}|"
@@ -204,6 +238,11 @@ class LineDistribution:
                f"amax={env_cfg.a_max}|thr={feasibility_threshold_m}|"
                f"swing={getattr(env_cfg, '_swing_max_deg', 0.0)}|"
                f"lam={getattr(env_cfg, '_wavelen_range', (0.4, 1.2))}")
+        if cone_range is not None:
+            # appended only for mixed-cone pools so every historical key
+            # (and cached pool) stays exactly what it was
+            sig += (f"|cone={tuple(float(c) for c in cone_range)}"
+                    f"|clog={bool(cone_log)}")
         return hashlib.md5(sig.encode()).hexdigest()[:10]
 
     @classmethod
@@ -212,7 +251,7 @@ class LineDistribution:
                       feasibility_threshold_m=None,
                       cache_dir="Yuan/IJRR/runs/_pool_cache",
                       swing_max_deg=0.0, wavelen_range=(0.4, 1.2),
-                      min_radius_m=0.15,
+                      min_radius_m=0.15, cone_range=None, cone_log=False,
                       verbose=True) -> "LineDistribution":
         """Try to load pool from cache; otherwise build (+ filter) and save.
 
@@ -222,7 +261,8 @@ class LineDistribution:
         env_cfg._swing_max_deg = swing_max_deg
         env_cfg._wavelen_range = tuple(wavelen_range)
         key = cls.cache_key(seed, n_pool, n_target_noise_deg,
-                            env_cfg, feasibility_threshold_m)
+                            env_cfg, feasibility_threshold_m,
+                            cone_range=cone_range, cone_log=cone_log)
         cache_path = cache_dir / f"pool_{key}.pt"
         if cache_path.exists():
             if verbose:
@@ -237,7 +277,8 @@ class LineDistribution:
                   seed=seed,
                   swing_max_deg=swing_max_deg,
                   wavelen_range=wavelen_range,
-                  min_radius_m=min_radius_m)
+                  min_radius_m=min_radius_m,
+                  cone_range=cone_range, cone_log=cone_log)
         if feasibility_threshold_m is not None:
             obj.filter_by_classical_controller(
                 env_cfg, threshold_m=float(feasibility_threshold_m),
@@ -281,8 +322,17 @@ class LineDistribution:
                 "amp": self.amp_pool[start:end].clone(),
                 "wavelen": self.wavelen_pool[start:end].clone(),
             }
-            # Build a temp env with chunk_n envs, scripted to these chunk specs
-            chunk_cfg = replace(env_cfg, n_envs=chunk_n)
+            # Build a temp env with chunk_n envs, scripted to these chunk specs.
+            # The classical law emits basis-box actions, so the temp env is
+            # always built with the basis-box interface whatever the training
+            # config uses (a dir-frac config would otherwise crash here).
+            # The cone stays cfg.cone_deg for every task: a mixed-cone pool
+            # is screened at the relaxed tolerance, so the tight-cone tasks
+            # are the same geometric tasks under a tighter cone, not a
+            # differently filtered subset.
+            chunk_cfg = replace(env_cfg, n_envs=chunk_n, dir_frac_action=0,
+                                rho_from_norm=False, a_prev_executed=False,
+                                task_gate=False, speed_levels=())
             env = NSRLBatchedEnv(chunk_cfg, line_dist=None, device=self.device)
             env.line_dist = ScriptedLineDistribution(chunk_specs)
             ctrl = ClassicalNullspaceController(env.kin)

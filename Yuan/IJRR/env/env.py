@@ -213,6 +213,13 @@ class EnvConfig:
     # changes sign within an episode, so unlike a constant-curvature arc it
     # cannot be inferred from a few steps of experience and has to be observed.
     observe_curvature: bool = False
+    # Per-task orientation-cone half-angle. A line distribution may carry a
+    # 'cone_deg' per task (mixed-tolerance training); every other env uses
+    # cfg.cone_deg, so existing pools and checkpoints are untouched.
+    # observe_cone appends theta_max / 30 deg (1 channel): the tolerance is
+    # part of the task specification c, and a policy/critic that sees it can
+    # serve every tolerance it was trained on instead of one per checkpoint.
+    observe_cone: bool = False
     # Implicit-force constraint. A constant contact force force_set is
     # encoded, without any force sensing, as a virtual displacement of the
     # commanded tip below the surface, d(q) = force_set / k_n(q), where
@@ -491,6 +498,7 @@ class NSRLBatchedEnv:
                            else 0)
                         + (2 if getattr(cfg, 'observe_force', False) else 0)
                         + (1 if getattr(cfg, 'observe_curvature', False) else 0)
+                        + (1 if getattr(cfg, 'observe_cone', False) else 0)
                         + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
                         + (2 ** self.act_dim
                            if getattr(cfg, 'observe_prior_logits', False)
@@ -537,6 +545,15 @@ class NSRLBatchedEnv:
         self.n0_target = torch.zeros((B, 3), device=self.device, dtype=d)
         self.n_rot_axis = torch.zeros((B, 3), device=self.device, dtype=d)
         self.n_rot_rate = torch.zeros((B,), device=self.device, dtype=d)
+        # Per-env cone: cfg.cone_deg unless the task spec overrides it.
+        self.cone_deg_b = torch.full((B,), float(cfg.cone_deg),
+                                     device=self.device, dtype=d)
+        self.cos_cone_b = torch.full((B,), self.cos_cone,
+                                     device=self.device, dtype=d)
+        # Set once a task spec carries its own cone; until then every cone
+        # expression uses the Python scalar, so the historical configs stay
+        # bit-identical (a float32 tensor rounds 1 - cos differently).
+        self._cone_mixed = False
         self.t = torch.zeros((B,), device=self.device, dtype=torch.long)
         self.a_prev = torch.zeros((B, self.act_dim_policy),
                                   device=self.device,
@@ -667,6 +684,8 @@ class NSRLBatchedEnv:
                                      self.path_wavelen),
                 self.path_kappa)
             obs_parts.append(kap.unsqueeze(-1) * CURV_SCALE)   # 1
+        if getattr(self.cfg, 'observe_cone', False):
+            obs_parts.append((self.cone_deg_b / 30.0).unsqueeze(-1))  # 1
         if getattr(self.cfg, 'observe_prior_logits', False):
             obs_parts.append(self._prior_scores(q))
         if self.cfg.observe_ray_error:
@@ -680,6 +699,13 @@ class NSRLBatchedEnv:
             obs_parts.append(-lateral_vec / LATERAL_SAFETY_NET)  # 3
         return torch.cat(obs_parts, dim=-1)
 
+    def _cc(self, mask=None):
+        """cos(theta_max): the Python scalar unless tasks carry their own
+        cone, then the per-env tensor (optionally masked)."""
+        if not self._cone_mixed:
+            return self.cos_cone
+        return self.cos_cone_b if mask is None else self.cos_cone_b[mask]
+
     def _prior_scores(self, q: torch.Tensor) -> torch.Tensor:
         """Analytic sigma_margin^T v for every vertex v, shape (B, 2^m).
 
@@ -692,7 +718,8 @@ class NSRLBatchedEnv:
         m_jl_per = (self.q_half - (q - self.q_mid).abs()) / self.q_half
         m_jl, j_star = m_jl_per.min(dim=-1)
         cos = (z * self.n_target).sum(-1).clamp(-1.0, 1.0)
-        m_cone = (cos - self.cos_cone) / (1.0 - self.cos_cone)
+        _cc = self._cc()
+        m_cone = (cos - _cc) / (1.0 - _cc)
         tau = self.cfg.margin_tau
         w = torch.softmax(
             -torch.stack([m_jl, m_cone], dim=-1) / tau, dim=-1)
@@ -702,7 +729,8 @@ class NSRLBatchedEnv:
                       torch.gather(slope, 1, j_star.unsqueeze(-1)))
         zxn = torch.linalg.cross(z, self.n_target, dim=-1)
         g_cone = torch.einsum('bij,bi->bj', J[:, 3:, :], zxn) \
-            / (1.0 - self.cos_cone)
+            / ((1.0 - _cc).unsqueeze(-1) if torch.is_tensor(_cc)
+               else (1.0 - _cc))
         g_phi = w[:, :1] * g_jl + w[:, 1:] * g_cone
         B_basis, _ = build_task_aligned_basis(
             self.kin, q, self.line_dir, self.n_target,
@@ -737,7 +765,7 @@ class NSRLBatchedEnv:
         tangent, _, lat = self._path_frame(p_t)
         cos = (R_t[:, :, 2] * self.n_target).sum(-1).clamp(-1.0, 1.0)
         feas = ((~coll) & lmt & (lat <= LATERAL_SAFETY_NET)
-                & (cos >= self.cos_cone))
+                & (cos >= self._cc()))
         mm = self.collision.min_margin(tfs) / 0.05
         return feas, p_t, R_t, tangent, lat, cos, mm
 
@@ -838,7 +866,8 @@ class NSRLBatchedEnv:
         if getattr(self.cfg, 'observe_margins', False):
             m_jl = ((self.q_half - (q_t - self.q_mid).abs())
                     / self.q_half).amin(dim=-1)
-            m_cone = (cos - self.cos_cone) / (1.0 - self.cos_cone)
+            _cc = self._cc()
+            m_cone = (cos - _cc) / (1.0 - _cc)
             m_lat = (LATERAL_SAFETY_NET - lat) / LATERAL_SAFETY_NET
             _tw_mg = torch.stack([m_jl, m_cone, m_lat, mm], dim=-1)
             if margin_floor > 0.0:
@@ -900,6 +929,15 @@ class NSRLBatchedEnv:
         else:
             self.n_rot_axis[mask] = 0.0
             self.n_rot_rate[mask] = 0.0
+        if "cone_deg" in spec:
+            _cd = spec["cone_deg"].to(device=self.device,
+                                      dtype=self.kin.dtype).reshape(n_reset)
+            self.cone_deg_b[mask] = _cd
+            self.cos_cone_b[mask] = torch.cos(_cd * (math.pi / 180.0))
+            self._cone_mixed = True
+        else:
+            self.cone_deg_b[mask] = float(self.cfg.cone_deg)
+            self.cos_cone_b[mask] = self.cos_cone
         # Curvature is optional: distributions that predate the curved-path
         # extension describe straight rays only.
         if "kappa" in spec:
@@ -964,7 +1002,8 @@ class NSRLBatchedEnv:
                         ).sum(-1).clamp(-1., 1.)
                 _m_jl = ((self.q_half - (q0 - self.q_mid).abs())
                          / self.q_half).amin(dim=-1)
-                _m_cone = (cos0 - self.cos_cone) / (1.0 - self.cos_cone)
+                _cc = self._cc(mask)
+                _m_cone = (cos0 - _cc) / (1.0 - _cc)
                 _, _, lat0 = path_frame(p0f, self.p_start[mask],
                                         self.path_d0[mask],
                                         self.n_target[mask],
@@ -993,7 +1032,8 @@ class NSRLBatchedEnv:
             cos0 = (R0[:, :, 2] * self.n_target[mask]).sum(-1).clamp(-1., 1.)
             m_jl = ((self.q_half - (q0 - self.q_mid).abs())
                     / self.q_half).amin(dim=-1)
-            m_cone = (cos0 - self.cos_cone) / (1.0 - self.cos_cone)
+            _cc = self._cc(mask)
+            m_cone = (cos0 - _cc) / (1.0 - _cc)
             tau = self.cfg.margin_tau
             _ms = [m_jl, m_cone]
             if getattr(self.cfg, 'force_in_margin', False):
@@ -1187,7 +1227,8 @@ class NSRLBatchedEnv:
         is_coll = self.collision.is_collided(link_tfs)
         jl_viol = ((q_new < self.lmt_lo) | (q_new > self.lmt_up)).any(dim=-1)
         cos_angle = (z_new * self.n_target).sum(-1).clamp(-1.0, 1.0)
-        cone_viol = cos_angle < self.cos_cone
+        _cc = self._cc()
+        cone_viol = cos_angle < _cc
 
         # Distance from the TCP to the path — NOT to the initial tangent ray.
         # On a straight ray the two coincide; on an arc of radius R the ray
@@ -1217,7 +1258,7 @@ class NSRLBatchedEnv:
         if getattr(self.cfg, 'observe_margins', False):
             _m_jl = ((self.q_half - (q_new - self.q_mid).abs())
                      / self.q_half).amin(dim=-1)
-            _m_cone = (cos_angle - self.cos_cone) / (1.0 - self.cos_cone)
+            _m_cone = (cos_angle - _cc) / (1.0 - _cc)
             _m_lat = ((LATERAL_SAFETY_NET - lateral_err)
                       / LATERAL_SAFETY_NET)
             _m_coll = self.collision.min_margin(link_tfs) / 0.05
@@ -1261,7 +1302,7 @@ class NSRLBatchedEnv:
         if self.cfg.w_margin != 0.0:
             m_jl = ((self.q_half - (q_new - self.q_mid).abs())
                     / self.q_half).amin(dim=-1)
-            m_cone = (cos_angle - self.cos_cone) / (1.0 - self.cos_cone)
+            m_cone = (cos_angle - _cc) / (1.0 - _cc)
             tau = self.cfg.margin_tau
             _ms = [m_jl, m_cone]
             if getattr(self.cfg, 'force_in_margin', False):

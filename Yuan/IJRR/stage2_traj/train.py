@@ -152,6 +152,8 @@ def main():
             swing_max_deg=line_cfg.get("swing_max_deg", 0.0),
             wavelen_range=tuple(line_cfg.get("wavelen_range", (0.4, 1.2))),
             min_radius_m=line_cfg.get("min_radius_m", 0.15),
+            cone_range=line_cfg.get("cone_range"),
+            cone_log=bool(line_cfg.get("cone_log", False)),
         )
         if getattr(train_env, "_force_on", False):
             _apply_stiffness_filter(train_env.line_dist, train_env, "train")
@@ -182,6 +184,8 @@ def main():
             swing_max_deg=line_cfg.get("swing_max_deg", 0.0),
             wavelen_range=tuple(line_cfg.get("wavelen_range", (0.4, 1.2))),
             min_radius_m=line_cfg.get("min_radius_m", 0.15),
+            cone_range=line_cfg.get("cone_range"),
+            cone_log=bool(line_cfg.get("cone_log", False)),
         )
         if getattr(eval_env, "_force_on", False):
             _apply_stiffness_filter(eval_env.line_dist, eval_env, "holdout")

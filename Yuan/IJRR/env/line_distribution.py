@@ -38,7 +38,8 @@ class LineDistribution:
                  wavelen_range: tuple[float, float] = (0.4, 1.2),
                  min_radius_m: float = 0.15,
                  cone_range: tuple[float, float] | None = None,
-                 cone_log: bool = False):
+                 cone_log: bool = False,
+                 curve_cfg: dict | None = None):
         # Require explicit seed: cache_key() hashes the seed value, so a None
         # seed yields a fixed cache_path but a non-deterministic pool — the
         # first build wins and later "different" calls silently get the cached
@@ -152,6 +153,22 @@ class LineDistribution:
             lam = torch.full((n_pool,), 0.8, device=self.device, dtype=self.dtype)
         self.amp_pool, self.wavelen_pool = amp, lam
 
+        # ---- table paths (generic curves) -------------------------------
+        # One random curve per task, starting at the task's own tip position
+        # with its tangent d and normal n; kept on the CPU (100k x 201 x 9
+        # floats) and moved to the device per sampled batch.
+        self.curve_cfg = dict(curve_cfg) if curve_cfg is not None else None
+        if self.curve_cfg is not None:
+            from Yuan.IJRR.env.path_table import build_tables
+            p0 = torch.empty((n_pool, 3), device=self.device, dtype=self.dtype)
+            for lo in range(0, n_pool, 16384):
+                p0[lo:lo + 16384] = kin.tcp_fk_jac(self.q_pool[lo:lo + 16384])[0]
+            pts, tan, nrm = build_tables(p0, self.line_dir_pool, self.n_target_pool,
+                                         gen, self.curve_cfg)
+            self.tab_pts = pts.cpu(); self.tab_tan = tan.cpu(); self.tab_nrm = nrm.cpu()
+        else:
+            self.tab_pts = self.tab_tan = self.tab_nrm = None
+
         self.valid_mask = torch.ones(n_pool, dtype=torch.bool, device=self.device)
         self.n_pool = n_pool
         self._gen = gen
@@ -178,6 +195,12 @@ class LineDistribution:
         }
         if self.cone_pool is not None:
             out["cone_deg"] = self.cone_pool[idx]
+        if self.tab_pts is not None:
+            ic = idx.cpu()
+            out["path_pts"] = self.tab_pts[ic].to(self.device)
+            out["path_tan"] = self.tab_tan[ic].to(self.device)
+            out["path_nrm"] = self.tab_nrm[ic].to(self.device)
+            out["p0"] = out["path_pts"][:, 0].clone()
         return out
 
     # ---- disk cache ------------------------------------------------------
@@ -196,6 +219,8 @@ class LineDistribution:
             "n_target_noise": self.n_target_noise,
             "cone_pool": (None if self.cone_pool is None
                           else self.cone_pool.cpu()),
+            "curve_cfg": self.curve_cfg,
+            "tab_pts": self.tab_pts, "tab_tan": self.tab_tan, "tab_nrm": self.tab_nrm,
         }, path)
 
     @classmethod
@@ -223,13 +248,17 @@ class LineDistribution:
         _cp = data.get("cone_pool", None)
         obj.cone_pool = (None if _cp is None
                          else _cp.to(kin.device, dtype=kin.dtype))
+        obj.curve_cfg = data.get("curve_cfg", None)
+        obj.tab_pts = data.get("tab_pts", None)
+        obj.tab_tan = data.get("tab_tan", None)
+        obj.tab_nrm = data.get("tab_nrm", None)
         obj._gen = torch.Generator(device=kin.device)
         return obj
 
     @staticmethod
     def cache_key(seed, n_pool, n_target_noise_deg, env_cfg,
                   feasibility_threshold_m=None, cone_range=None,
-                  cone_log=False) -> str:
+                  cone_log=False, curve_cfg=None) -> str:
         """Deterministic short key for cache filename. Include a_max since
         the feasibility filter's classical controller is clamped by it."""
         sig = (f"robot={getattr(env_cfg, 'robot', 'fr3')}|"
@@ -243,6 +272,8 @@ class LineDistribution:
             # (and cached pool) stays exactly what it was
             sig += (f"|cone={tuple(float(c) for c in cone_range)}"
                     f"|clog={bool(cone_log)}")
+        if curve_cfg is not None:
+            sig += "|curves=" + repr(sorted((str(k), v) for k, v in dict(curve_cfg).items()))
         return hashlib.md5(sig.encode()).hexdigest()[:10]
 
     @classmethod
@@ -252,7 +283,7 @@ class LineDistribution:
                       cache_dir="Yuan/IJRR/runs/_pool_cache",
                       swing_max_deg=0.0, wavelen_range=(0.4, 1.2),
                       min_radius_m=0.15, cone_range=None, cone_log=False,
-                      verbose=True) -> "LineDistribution":
+                      curve_cfg=None, verbose=True) -> "LineDistribution":
         """Try to load pool from cache; otherwise build (+ filter) and save.
 
         `feasibility_threshold_m=None` skips the filter (raw pool).
@@ -262,7 +293,8 @@ class LineDistribution:
         env_cfg._wavelen_range = tuple(wavelen_range)
         key = cls.cache_key(seed, n_pool, n_target_noise_deg,
                             env_cfg, feasibility_threshold_m,
-                            cone_range=cone_range, cone_log=cone_log)
+                            cone_range=cone_range, cone_log=cone_log,
+                            curve_cfg=curve_cfg)
         cache_path = cache_dir / f"pool_{key}.pt"
         if cache_path.exists():
             if verbose:
@@ -278,7 +310,8 @@ class LineDistribution:
                   swing_max_deg=swing_max_deg,
                   wavelen_range=wavelen_range,
                   min_radius_m=min_radius_m,
-                  cone_range=cone_range, cone_log=cone_log)
+                  cone_range=cone_range, cone_log=cone_log,
+                  curve_cfg=curve_cfg)
         if feasibility_threshold_m is not None:
             obj.filter_by_classical_controller(
                 env_cfg, threshold_m=float(feasibility_threshold_m),
@@ -322,6 +355,11 @@ class LineDistribution:
                 "amp": self.amp_pool[start:end].clone(),
                 "wavelen": self.wavelen_pool[start:end].clone(),
             }
+            if self.tab_pts is not None:
+                chunk_specs["path_pts"] = self.tab_pts[start:end].to(self.device)
+                chunk_specs["path_tan"] = self.tab_tan[start:end].to(self.device)
+                chunk_specs["path_nrm"] = self.tab_nrm[start:end].to(self.device)
+                chunk_specs["p0"] = chunk_specs["path_pts"][:, 0].clone()
             # Build a temp env with chunk_n envs, scripted to these chunk specs.
             # The classical law emits basis-box actions, so the temp env is
             # always built with the basis-box interface whatever the training

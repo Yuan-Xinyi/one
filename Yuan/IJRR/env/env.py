@@ -38,7 +38,10 @@ from Yuan.IJRR.kinematics.batched_chain_kin import BatchedChainKinematics
 from Yuan.IJRR.kinematics.chain_sphere_collision import ChainSphereCollision
 
 from Yuan.IJRR.env.line_distribution import LineDistribution
-from Yuan.IJRR.env.path_geometry import path_frame, serpentine_curvature
+from Yuan.IJRR.env.path_geometry import (path_frame, serpentine_curvature,
+                                         arc_point, serpentine_point)
+from Yuan.IJRR.env.path_table import (M as TAB_M, PREVIEW_DS, table_at,
+                                      preview_features)
 
 
 OBS_DIM = 31
@@ -72,6 +75,10 @@ class EnvConfig:
     # General tool point (x, y, z) in the flange frame for the chain arms
     # (xArm7 / Cobotta); empty keeps the on-axis pen at tcp_offset.
     tool_xyz: tuple = ()
+    # Bent tool: tool axis tilted from the flange z by tool_tilt_deg at
+    # azimuth tool_azimuth_deg; 0 keeps the on-axis tool.
+    tool_tilt_deg: float = 0.0
+    tool_azimuth_deg: float = 0.0
     # Reset-time randomization of the wrist-roll joint (last joint). The TCP
     # position and tool axis are exactly invariant to it (rotation about the
     # tool axis), so this is a free symmetry augmentation that exposes the
@@ -220,6 +227,17 @@ class EnvConfig:
     # part of the task specification c, and a policy/critic that sees it can
     # serve every tolerance it was trained on instead of one per checkpoint.
     observe_cone: bool = False
+    # Table paths: generic curves sampled every 1 cm (path_table.py), read
+    # by the commanded arc length as in the one-stroke figures. A task spec
+    # may carry path_pts / path_tan / path_nrm ((n, M, 3)); table_paths
+    # allocates the per-env buffers. Tasks without a table keep the analytic
+    # ray / arc / serpentine / rotating-axis geometry.
+    table_paths: bool = False
+    # Preview of the path ahead: for every offset in PREVIEW_DS the future
+    # point and cone axis in the path frame (tangent, in-surface normal,
+    # cone axis) at the current arc, 6 channels per offset. The straight ray
+    # gives constants, so the straight-trained behaviour is a member.
+    observe_preview: bool = False
     # Implicit-force constraint. A constant contact force force_set is
     # encoded, without any force sensing, as a virtual displacement of the
     # commanded tip below the surface, d(q) = force_set / k_n(q), where
@@ -452,15 +470,19 @@ class NSRLBatchedEnv:
         self.cos_cone = math.cos(cfg.cone_deg * math.pi / 180.0)
         robot = getattr(cfg, 'robot', 'fr3')
         if robot == 'fr3':
-            self.kin = BatchedFR3Kinematics(device=self.device,
-                                            tcp_offset=cfg.tcp_offset)
+            self.kin = BatchedFR3Kinematics(
+                device=self.device, tcp_offset=cfg.tcp_offset,
+                tool_tilt_deg=float(getattr(cfg, 'tool_tilt_deg', 0.0) or 0.0),
+                tool_azimuth_deg=float(getattr(cfg, 'tool_azimuth_deg', 0.0) or 0.0))
             self.collision = FR3SphereCollision(device=self.device)
             self.n_joints = 7
         else:
             self.kin = BatchedChainKinematics(
                 robot, device=self.device, tcp_offset=cfg.tcp_offset,
                 tool_xyz=(tuple(cfg.tool_xyz) if getattr(cfg, 'tool_xyz', ())
-                          else None))
+                          else None),
+                tool_tilt_deg=float(getattr(cfg, 'tool_tilt_deg', 0.0) or 0.0),
+                tool_azimuth_deg=float(getattr(cfg, 'tool_azimuth_deg', 0.0) or 0.0))
             self.collision = ChainSphereCollision(
                 robot, self.kin.n_joints + 1, device=self.device)
             self.n_joints = self.kin.n_joints
@@ -499,6 +521,8 @@ class NSRLBatchedEnv:
                         + (2 if getattr(cfg, 'observe_force', False) else 0)
                         + (1 if getattr(cfg, 'observe_curvature', False) else 0)
                         + (1 if getattr(cfg, 'observe_cone', False) else 0)
+                        + (6 * len(PREVIEW_DS)
+                           if getattr(cfg, 'observe_preview', False) else 0)
                         + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
                         + (2 ** self.act_dim
                            if getattr(cfg, 'observe_prior_logits', False)
@@ -545,6 +569,14 @@ class NSRLBatchedEnv:
         self.n0_target = torch.zeros((B, 3), device=self.device, dtype=d)
         self.n_rot_axis = torch.zeros((B, 3), device=self.device, dtype=d)
         self.n_rot_rate = torch.zeros((B,), device=self.device, dtype=d)
+        # Table paths (optional): per-env sample tables and a flag.
+        self.path_is_tab = torch.zeros((B,), device=self.device, dtype=torch.bool)
+        if getattr(cfg, 'table_paths', False):
+            self.tab_pts = torch.zeros((B, TAB_M, 3), device=self.device, dtype=d)
+            self.tab_tan = torch.zeros((B, TAB_M, 3), device=self.device, dtype=d)
+            self.tab_nrm = torch.zeros((B, TAB_M, 3), device=self.device, dtype=d)
+        else:
+            self.tab_pts = self.tab_tan = self.tab_nrm = None
         # Per-env cone: cfg.cone_deg unless the task spec overrides it.
         self.cone_deg_b = torch.full((B,), float(cfg.cone_deg),
                                      device=self.device, dtype=d)
@@ -686,6 +718,8 @@ class NSRLBatchedEnv:
             obs_parts.append(kap.unsqueeze(-1) * CURV_SCALE)   # 1
         if getattr(self.cfg, 'observe_cone', False):
             obs_parts.append((self.cone_deg_b / 30.0).unsqueeze(-1))  # 1
+        if getattr(self.cfg, 'observe_preview', False):
+            obs_parts.append(self._preview())              # 6 * len(PREVIEW_DS)
         if getattr(self.cfg, 'observe_prior_logits', False):
             obs_parts.append(self._prior_scores(q))
         if self.cfg.observe_ray_error:
@@ -739,11 +773,48 @@ class NSRLBatchedEnv:
         sigma = torch.einsum('bij,bi->bj', B_basis, g_phi)
         return sigma @ self._prior_verts.T
 
+    def _path_point(self, s: torch.Tensor):
+        """Point on the path and cone axis at arc length s (B,), for the
+        analytic families and for table paths."""
+        n0 = self.n0_target
+        is_wave = self.path_amp.abs() > 1e-6
+        P_line_arc = arc_point(self.p_start, self.path_d0, n0, self.path_kappa, s)
+        P_wave = serpentine_point(self.p_start, self.path_d0, n0, self.path_amp,
+                                  self.path_wavelen, s)
+        P = torch.where(is_wave.unsqueeze(-1), P_wave, P_line_arc)
+        rot = self.n_rot_rate != 0
+        if bool(rot.any()):
+            th = (self.n_rot_rate * s).unsqueeze(-1)
+            k = self.n_rot_axis
+            c, sn = torch.cos(th), torch.sin(th)
+            n = (n0 * c + torch.linalg.cross(k, n0, dim=-1) * sn
+                 + k * (k * n0).sum(-1, keepdim=True) * (1 - c))
+            n = torch.where(rot.unsqueeze(-1), n, n0)
+        else:
+            n = n0
+        if self.tab_pts is not None and bool(self.path_is_tab.any()):
+            Pt, _, nt = table_at(self.tab_pts, self.tab_tan, self.tab_nrm, s)
+            sel = self.path_is_tab.unsqueeze(-1)
+            P = torch.where(sel, Pt, P)
+            n = torch.where(sel, nt, n)
+        return P, n
+
+    def _preview(self) -> torch.Tensor:
+        s = self.arc_progress
+        P_s, n_s = self._path_point(s)
+        Pk, nk = [], []
+        for dlt in PREVIEW_DS:
+            P, n = self._path_point(s + dlt)
+            Pk.append(P); nk.append(n)
+        return preview_features(P_s, self.line_dir, n_s,
+                                torch.stack(Pk, 1), torch.stack(nk, 1))
+
     def _refresh_n_target(self) -> None:
         """n(s) at the current arc progress (Rodrigues, batched); no-op for
         rate = 0 tasks. Consumers within one control period see n at the
         period's start, a <1 deg staleness at the sampled rates."""
         if not bool((self.n_rot_rate != 0).any()):
+            self._refresh_n_table()
             return
         th = (self.n_rot_rate * self.arc_progress).unsqueeze(-1)
         k = self.n_rot_axis
@@ -754,6 +825,15 @@ class NSRLBatchedEnv:
         n = n0 * c + kxn * s + k * kdn * (1 - c)
         self.n_target = torch.where(
             (self.n_rot_rate != 0).unsqueeze(-1), n, self.n_target)
+        self._refresh_n_table()
+
+    def _refresh_n_table(self) -> None:
+        if self.tab_pts is None or not bool(self.path_is_tab.any()):
+            return
+        _, _, n = table_at(self.tab_pts, self.tab_tan, self.tab_nrm,
+                           self.arc_progress)
+        self.n_target = torch.where(self.path_is_tab.unsqueeze(-1), n,
+                                    self.n_target)
 
     @torch.no_grad()
     def _twin_side(self, q_t: torch.Tensor):
@@ -884,8 +964,22 @@ class NSRLBatchedEnv:
         lateral_vec points from p to the closest point on the path and is
         orthogonal to tangent, so feeding it back adds no along-path motion.
         """
-        return path_frame(p, self.p_start, self.path_d0, self.n_target,
-                          self.path_kappa, self.path_amp, self.path_wavelen)
+        tangent, lateral_vec, lat = path_frame(
+            p, self.p_start, self.path_d0, self.n_target,
+            self.path_kappa, self.path_amp, self.path_wavelen)
+        if self.tab_pts is not None and bool(self.path_is_tab.any()):
+            # table path: reference at the commanded arc, as in the
+            # one-stroke figures; the offset keeps the frame contract
+            # (orthogonal to the tangent)
+            P, t, _ = table_at(self.tab_pts, self.tab_tan, self.tab_nrm,
+                               self.arc_progress)
+            lv = P - p
+            lv = lv - (lv * t).sum(-1, keepdim=True) * t
+            sel = self.path_is_tab.unsqueeze(-1)
+            tangent = torch.where(sel, t, tangent)
+            lateral_vec = torch.where(sel, lv, lateral_vec)
+            lat = torch.where(self.path_is_tab, lv.norm(dim=-1), lat)
+        return tangent, lateral_vec, lat
 
     def current_obs(self) -> torch.Tensor:
         """Public: obs at the current internal state (no step taken).
@@ -952,6 +1046,13 @@ class NSRLBatchedEnv:
                 device=self.device, dtype=self.kin.dtype).reshape(n_reset)
         else:
             self.path_amp[mask] = 0.0
+        if self.tab_pts is not None and "path_pts" in spec:
+            for buf, key in ((self.tab_pts, "path_pts"), (self.tab_tan, "path_tan"),
+                             (self.tab_nrm, "path_nrm")):
+                buf[mask] = spec[key].to(device=self.device, dtype=self.kin.dtype)
+            self.path_is_tab[mask] = True
+        else:
+            self.path_is_tab[mask] = False
         self.arc_progress[mask] = 0.0
         self.t[mask] = 0
         self.a_prev[mask] = 0

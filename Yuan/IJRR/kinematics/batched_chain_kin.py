@@ -82,6 +82,20 @@ COBOTTA = dict(
 SPECS = {'xarm7': XARM7, 'cobotta': COBOTTA}
 
 
+def tool_rotmat(tilt_deg: float, azimuth_deg: float = 0.0):
+    """Rotation (numpy 3x3) taking the flange z to the tool axis
+    a0 = (sin b cos p, sin b sin p, cos b): the shortest rotation, about
+    z x a0. tilt 0 returns the exact identity."""
+    import numpy as _np
+    b = math.radians(float(tilt_deg)); p = math.radians(float(azimuth_deg))
+    if b == 0.0:
+        return _np.eye(3)
+    a0 = _np.array([math.sin(b) * math.cos(p), math.sin(b) * math.sin(p), math.cos(b)])
+    k = _np.cross([0.0, 0.0, 1.0], a0); k /= _np.linalg.norm(k)
+    K = _np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    return _np.eye(3) + math.sin(b) * K + (1.0 - math.cos(b)) * (K @ K)
+
+
 def _skew(v: torch.Tensor) -> torch.Tensor:
     K = torch.zeros((3, 3), device=v.device, dtype=v.dtype)
     K[0, 1], K[0, 2] = -v[2], v[1]
@@ -98,7 +112,8 @@ class BatchedChainKinematics:
     """
 
     def __init__(self, spec: dict | str, device=None, dtype=torch.float32,
-                 tcp_offset: float = PEN_LENGTH, tool_xyz=None):
+                 tcp_offset: float = PEN_LENGTH, tool_xyz=None,
+                 tool_tilt_deg: float = 0.0, tool_azimuth_deg: float = 0.0):
         if isinstance(spec, str):
             spec = SPECS[spec]
         self.name = spec['name']
@@ -131,16 +146,27 @@ class BatchedChainKinematics:
         # tool_xyz: general tool point in the flange frame (e.g. the XHand
         # index fingertip, which sits 2.7 cm off the flange axis); the tool
         # axis stays the flange z. None keeps the on-axis pen at tcp_offset.
+        # Tilted tool axis (a bent tool): the tool frame is the flange frame
+        # rotated by tool_rotmat, the tip sits tcp_offset along the tilted
+        # axis. tilt 0 is the exact identity, so every existing config is
+        # untouched.
+        R_tool = torch.as_tensor(tool_rotmat(tool_tilt_deg, tool_azimuth_deg),
+                                 device=self.device, dtype=dtype)
         if tool_xyz is not None:
             tool = torch.as_tensor(list(tool_xyz), device=self.device, dtype=dtype)
             tcp_offset = float(tool[2])
+        elif float(tool_tilt_deg) != 0.0:
+            tool = R_tool @ torch.as_tensor([0.0, 0.0, tcp_offset],
+                                            device=self.device, dtype=dtype)
         else:
             tool = torch.as_tensor([0.0, 0.0, tcp_offset], device=self.device,
                                    dtype=dtype)
         self.flange_p = base + tool
-        self.flange_R = torch.eye(3, device=self.device, dtype=dtype)
+        self.flange_R = R_tool
         self.tcp_offset = float(tcp_offset)
         self.tool_xyz = tuple(float(v) for v in tool)
+        self.tool_tilt_deg = float(tool_tilt_deg)
+        self.tool_azimuth_deg = float(tool_azimuth_deg)
 
     @property
     def jnt_ranges(self) -> torch.Tensor:

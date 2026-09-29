@@ -79,7 +79,8 @@ class BatchedFR3Kinematics:
     def __init__(self, device=None, dtype=torch.float32,
                  tcp_offset: float = DEFAULT_TCP_OFFSET,
                  lmt_lo=None, lmt_up=None,
-                 qdot_max=None):
+                 qdot_max=None, tool_tilt_deg: float = 0.0,
+                 tool_azimuth_deg: float = 0.0):
         self.device = torch.device('cpu' if device is None else device)
         self.dtype = dtype
         self.axis_z = _as_tensor([0.0, 0.0, 1.0], self.device, self.dtype)
@@ -95,10 +96,24 @@ class BatchedFR3Kinematics:
         if qdot_max is None:
             qdot_max = QDOT_MAX_DEFAULT
         self.qdot_max = _as_tensor(qdot_max, self.device, self.dtype)
-        self.flange_p = _as_tensor([0.0, 0.0, 0.107 + tcp_offset],
-                                   self.device, self.dtype)
-        self.flange_R = torch.eye(3, device=self.device, dtype=self.dtype)
+        # Optional bent tool: axis tilted tool_tilt_deg from the flange z
+        # (azimuth tool_azimuth_deg), tip tcp_offset along that axis past the
+        # 0.107 m flange point. tilt 0 keeps the exact historical values.
+        if float(tool_tilt_deg) != 0.0:
+            from Yuan.IJRR.kinematics.batched_chain_kin import tool_rotmat
+            R_tool = _as_tensor(tool_rotmat(tool_tilt_deg, tool_azimuth_deg),
+                                self.device, self.dtype)
+            self.flange_p = (_as_tensor([0.0, 0.0, 0.107], self.device, self.dtype)
+                             + R_tool @ _as_tensor([0.0, 0.0, tcp_offset],
+                                                   self.device, self.dtype))
+            self.flange_R = R_tool
+        else:
+            self.flange_p = _as_tensor([0.0, 0.0, 0.107 + tcp_offset],
+                                       self.device, self.dtype)
+            self.flange_R = torch.eye(3, device=self.device, dtype=self.dtype)
         self.tcp_offset = float(tcp_offset)
+        self.tool_tilt_deg = float(tool_tilt_deg)
+        self.tool_azimuth_deg = float(tool_azimuth_deg)
 
     @property
     def jnt_ranges(self) -> torch.Tensor:

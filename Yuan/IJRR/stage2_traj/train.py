@@ -154,6 +154,7 @@ def main():
             min_radius_m=line_cfg.get("min_radius_m", 0.15),
             cone_range=line_cfg.get("cone_range"),
             cone_log=bool(line_cfg.get("cone_log", False)),
+            curve_cfg=line_cfg.get("curves"),
         )
         if getattr(train_env, "_force_on", False):
             _apply_stiffness_filter(train_env.line_dist, train_env, "train")
@@ -186,6 +187,7 @@ def main():
             min_radius_m=line_cfg.get("min_radius_m", 0.15),
             cone_range=line_cfg.get("cone_range"),
             cone_log=bool(line_cfg.get("cone_log", False)),
+            curve_cfg=line_cfg.get("curves"),
         )
         if getattr(eval_env, "_force_on", False):
             _apply_stiffness_filter(eval_env.line_dist, eval_env, "holdout")

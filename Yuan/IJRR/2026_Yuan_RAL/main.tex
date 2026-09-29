@@ -791,56 +791,58 @@ Type
 \label{tab:horizon}
 \begin{threeparttable}
 \footnotesize
-\setlength{\tabcolsep}{4.5pt}
-\begin{tabular}{lllcccccc}
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{lllcccccccccc}
 \toprule
-& & & \multicolumn{2}{c}{Franka Research 3}
-& \multicolumn{2}{c}{xArm7}
-& \multicolumn{2}{c}{Cobotta} \\
-\cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+& & & \multicolumn{3}{c}{Franka Research 3}
+& \multicolumn{3}{c}{xArm7}
+& \multicolumn{3}{c}{Cobotta} \\
+\cmidrule(lr){4-6} \cmidrule(lr){7-9} \cmidrule(lr){10-12}
 Family
 & Method
 & $H$
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
+& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
-\multirow{7}{*}{Straight} & \multirow{3}{*}{MPC} & 10 & 0.507 & 80.7 / 41.8 & 0.446 & 80.8 / 44.3 & 0.227 & 77.8 / 33.5 \\
-  &   & 20 & 0.573 & 87.8 / 58.5 & 0.503 & 87.6 / 59.0 & 0.247 & 84.4 / 50.1 \\
-  &   & 30 & 0.603 & 90.7 / 67.4 & 0.526 & 90.1 / 64.9 & 0.256 & 86.9 / 59.8 \\
-\cmidrule(lr){2-9}
-  & \multirow{3}{*}{MPPI} & 16 & 0.621 & 92.1 / 73.1 & 0.533 & 90.7 / 67.4 & 0.249 & 84.9 / 55.2 \\
-  &   & 32 & 0.621 & 92.2 / 73.0 & 0.532 & 90.7 / 67.2 & 0.258 & 87.1 / 64.3 \\
-  &   & 64 & 0.621 & 92.2 / 72.5 & 0.532 & 90.7 / 66.9 & 0.263 & 88.4 / 69.4 \\
-\cmidrule(lr){2-9}
- & \textbf{Ours} & -- & \textbf{0.628} & \textbf{93.3 / 77.3} & \textbf{0.540} & \textbf{91.9 / 68.8} & \textbf{0.271} & \textbf{90.5 / 75.8} \\
+\multirow{7}{*}{Straight} & \multirow{3}{*}{MPC} & 10 & 4181 & 0.507 & 80.7 / 41.8 & 4485 & 0.446 & 80.8 / 44.3 & 4513 & 0.227 & 77.8 / 33.5 \\
+  &   & 20 & 8065 & 0.573 & 87.8 / 58.5 & 8893 & 0.503 & 87.6 / 59.0 & 8189 & 0.247 & 84.4 / 50.1 \\
+  &   & 30 & 11228 & 0.603 & 90.7 / 67.4 & 12879 & 0.526 & 90.1 / 64.9 & 12203 & 0.256 & 86.9 / 59.8 \\
+\cmidrule(lr){2-12}
+  & \multirow{3}{*}{MPPI} & 16 & 207 & 0.621 & 92.1 / 73.1 & 223 & 0.533 & 90.7 / 67.4 & 198 & 0.249 & 84.9 / 55.2 \\
+  &   & 32 & 421 & 0.621 & 92.2 / 73.0 & 424 & 0.532 & 90.7 / 67.2 & 412 & 0.258 & 87.1 / 64.3 \\
+  &   & 64 & 728 & 0.621 & 92.2 / 72.5 & 1017 & 0.532 & 90.7 / 66.9 & 777 & 0.263 & 88.4 / 69.4 \\
+\cmidrule(lr){2-12}
+ & \textbf{Ours} & -- & \textbf{0.15} & \textbf{0.628} & \textbf{93.3 / 77.3} & \textbf{0.19} & \textbf{0.540} & \textbf{91.9 / 68.8} & \textbf{0.17} & \textbf{0.271} & \textbf{90.5 / 75.8} \\
 \midrule
-\multirow{7}{*}{Serpentine} & \multirow{3}{*}{MPC} & 10 & 0.553 & 83.6 / 45.3 & 0.478 & 83.0 / 46.7 & 0.223 & 74.9 / 33.9 \\
-  &   & 20 & 0.601 & 88.4 / 64.4 & 0.519 & 87.4 / 60.7 & 0.242 & 81.0 / 48.6 \\
-  &   & 30 & 0.615 & 89.7 / 68.5 & 0.529 & 88.4 / 63.4 & 0.250 & 83.3 / 56.4 \\
-\cmidrule(lr){2-9}
-  & \multirow{3}{*}{MPPI} & 16 & 0.628 & 90.6 / 72.1 & 0.534 & 88.7 / 64.8 & 0.246 & 81.7 / 55.0 \\
-  &   & 32 & 0.632 & 91.1 / 73.9 & 0.535 & 88.8 / 64.5 & 0.253 & 83.8 / 62.7 \\
-  &   & 64 & 0.634 & 91.2 / 74.3 & 0.537 & 89.2 / 65.1 & 0.257 & 84.8 / 65.1 \\
-\cmidrule(lr){2-9}
- & \textbf{Ours} & -- & \textbf{0.636} & \textbf{91.6 / 76.3} & \textbf{0.543} & \textbf{89.9 / 67.1} & \textbf{0.264} & \textbf{86.8 / 70.2} \\
+\multirow{7}{*}{Serpentine} & \multirow{3}{*}{MPC} & 10 & 4181 & 0.553 & 83.6 / 45.3 & 4485 & 0.478 & 83.0 / 46.7 & 4513 & 0.223 & 74.9 / 33.9 \\
+  &   & 20 & 8065 & 0.601 & 88.4 / 64.4 & 8893 & 0.519 & 87.4 / 60.7 & 8189 & 0.242 & 81.0 / 48.6 \\
+  &   & 30 & 11228 & 0.615 & 89.7 / 68.5 & 12879 & 0.529 & 88.4 / 63.4 & 12203 & 0.250 & 83.3 / 56.4 \\
+\cmidrule(lr){2-12}
+  & \multirow{3}{*}{MPPI} & 16 & 207 & 0.628 & 90.6 / 72.1 & 223 & 0.534 & 88.7 / 64.8 & 198 & 0.246 & 81.7 / 55.0 \\
+  &   & 32 & 421 & 0.632 & 91.1 / 73.9 & 424 & 0.535 & 88.8 / 64.5 & 412 & 0.253 & 83.8 / 62.7 \\
+  &   & 64 & 728 & 0.634 & 91.2 / 74.3 & 1017 & 0.537 & 89.2 / 65.1 & 777 & 0.257 & 84.8 / 65.1 \\
+\cmidrule(lr){2-12}
+ & \textbf{Ours} & -- & \textbf{0.15} & \textbf{0.636} & \textbf{91.6 / 76.3} & \textbf{0.19} & \textbf{0.543} & \textbf{89.9 / 67.1} & \textbf{0.17} & \textbf{0.264} & \textbf{86.8 / 70.2} \\
 \midrule
-\multirow{7}{*}{Rot.-Axis} & \multirow{3}{*}{MPC} & 10 & 0.546 & 84.6 / 45.4 & 0.486 & 85.6 / 53.1 & 0.225 & 76.8 / 35.8 \\
-  &   & 20 & 0.590 & 89.0 / 62.3 & 0.523 & 89.7 / 64.0 & 0.247 & 83.7 / 51.4 \\
-  &   & 30 & 0.609 & 90.9 / 69.5 & 0.531 & 90.7 / 67.1 & 0.255 & 86.1 / 62.7 \\
-\cmidrule(lr){2-9}
-  & \multirow{3}{*}{MPPI} & 16 & 0.615 & 91.2 / 70.0 & 0.534 & 91.0 / 67.2 & 0.250 & 84.1 / 58.3 \\
-  &   & 32 & 0.620 & 91.7 / 71.2 & 0.536 & 91.2 / 67.3 & 0.258 & 86.4 / 68.9 \\
-  &   & 64 & 0.621 & 91.9 / 71.0 & 0.536 & 91.2 / 67.1 & 0.262 & 87.6 / 72.6 \\
-\cmidrule(lr){2-9}
- & \textbf{Ours} & -- & \textbf{0.625} & \textbf{92.4 / 72.8} & \textbf{0.541} & \textbf{91.9 / 68.5} & \textbf{0.271} & \textbf{89.9 / 76.9} \\
+\multirow{7}{*}{Rot.-Axis} & \multirow{3}{*}{MPC} & 10 & 4181 & 0.546 & 84.6 / 45.4 & 4485 & 0.486 & 85.6 / 53.1 & 4513 & 0.225 & 76.8 / 35.8 \\
+  &   & 20 & 8065 & 0.590 & 89.0 / 62.3 & 8893 & 0.523 & 89.7 / 64.0 & 8189 & 0.247 & 83.7 / 51.4 \\
+  &   & 30 & 11228 & 0.609 & 90.9 / 69.5 & 12879 & 0.531 & 90.7 / 67.1 & 12203 & 0.255 & 86.1 / 62.7 \\
+\cmidrule(lr){2-12}
+  & \multirow{3}{*}{MPPI} & 16 & 207 & 0.615 & 91.2 / 70.0 & 223 & 0.534 & 91.0 / 67.2 & 198 & 0.250 & 84.1 / 58.3 \\
+  &   & 32 & 421 & 0.620 & 91.7 / 71.2 & 424 & 0.536 & 91.2 / 67.3 & 412 & 0.258 & 86.4 / 68.9 \\
+  &   & 64 & 728 & 0.621 & 91.9 / 71.0 & 1017 & 0.536 & 91.2 / 67.1 & 777 & 0.262 & 87.6 / 72.6 \\
+\cmidrule(lr){2-12}
+ & \textbf{Ours} & -- & \textbf{0.15} & \textbf{0.625} & \textbf{92.4 / 72.8} & \textbf{0.19} & \textbf{0.541} & \textbf{91.9 / 68.5} & \textbf{0.17} & \textbf{0.271} & \textbf{89.9 / 76.9} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] All methods share the same per-task initial configuration.
     Ratio is the per-task ratio of the executed stroke to the task's
     pointwise-reachable length $\ell^{\mathrm{pw}}$, reported in percent
-    as mean / p10.
+    as mean / p10. Time is the single-task decision time per $50$\,ms
+    control period (action selection only, median over $20$ periods on
+    one RTX 4090; see Table~\ref{tab:latency}).
     \item[Note 2] $H$ denotes the prediction horizon in control steps;
     the proposed reactive controller has no horizon (--).
     \item[Note 3] Cobotta is evaluated at the commanded speed
@@ -849,6 +851,7 @@ Family
 \end{tablenotes}
 \end{threeparttable}
 \end{table*}
+
 
 \begin{table*}[!htbp]
 \centering

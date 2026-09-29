@@ -31,19 +31,19 @@ TEMPLATE = r"""\begin{table*}[!htbp]
 \label{tab:horizon}
 \begin{threeparttable}
 \footnotesize
-\setlength{\tabcolsep}{4.5pt}
-\begin{tabular}{lllcccccc}
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{lllcccccccccc}
 \toprule
-& & & \multicolumn{2}{c}{Franka Research 3}
-& \multicolumn{2}{c}{xArm7}
-& \multicolumn{2}{c}{Cobotta} \\
-\cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+& & & \multicolumn{3}{c}{Franka Research 3}
+& \multicolumn{3}{c}{xArm7}
+& \multicolumn{3}{c}{Cobotta} \\
+\cmidrule(lr){4-6} \cmidrule(lr){7-9} \cmidrule(lr){10-12}
 Family
 & Method
 & $H$
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
+& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
 %%ROWS%%
 \end{tabular}
@@ -51,7 +51,9 @@ Family
     \item[Note 1] All methods share the same per-task initial configuration.
     Ratio is the per-task ratio of the executed stroke to the task's
     pointwise-reachable length $\ell^{\mathrm{pw}}$, reported in percent
-    as mean / p10.
+    as mean / p10. Time is the single-task decision time per $50$\,ms
+    control period (action selection only, median over $20$ periods on
+    one RTX 4090; see Table~\ref{tab:latency}).
     \item[Note 2] $H$ denotes the prediction horizon in control steps;
     the proposed reactive controller has no horizon (--).
     \item[Note 3] Cobotta is evaluated at the commanded speed
@@ -73,6 +75,21 @@ def ours(robot, fam):
         return None
     r = json.load(open(f))
     return r['stroke'], r['ratio_mean'], r['ratio_p10']
+
+
+def lat_ms(robot, key):
+    f = OUT / f'latency_{robot}.json'
+    if not f.exists():
+        return None
+    d = json.load(open(f))
+    return d[key]['batch1_ms'] if key in d else None
+
+
+def fmt_t(x, bold=False):
+    if x is None:
+        return '[XX]'
+    s = f'{x:.2f}' if x < 10 else (f'{x:.1f}' if x < 100 else f'{x:.0f}')
+    return f'\\textbf{{{s}}}' if bold else s
 
 
 def cell(robot, fam, method, H):
@@ -102,10 +119,12 @@ def rows():
                 lead = (f'\\multirow{{7}}{{*}}{{{fname}}}' if first else ' ')
                 first = False
                 meth = f'\\multirow{{3}}{{*}}{{{mname}}}' if hi == 0 else ' '
-                cells = ' & '.join(fmt(cell(r, fam, m, H)) for r in ROBOTS)
+                cells = ' & '.join(fmt_t(lat_ms(r, f'{m}{H}')) + ' & '
+                                   + fmt(cell(r, fam, m, H)) for r in ROBOTS)
                 lines.append(f'{lead} & {meth} & {H} & {cells} \\\\')
-            lines.append('\\cmidrule(lr){2-9}')
-        cells = ' & '.join(fmt(ours(r, fam), bold=True) for r in ROBOTS)
+            lines.append('\\cmidrule(lr){2-12}')
+        cells = ' & '.join(fmt_t(lat_ms(r, 'ours'), bold=True) + ' & '
+                           + fmt(ours(r, fam), bold=True) for r in ROBOTS)
         lines.append(f' & \\textbf{{Ours}} & -- & {cells} \\\\')
         lines.append('\\bottomrule' if fi == len(FAMS) - 1 else '\\midrule')
     return '\n'.join(lines)

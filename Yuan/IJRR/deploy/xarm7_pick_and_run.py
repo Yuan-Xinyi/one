@@ -88,9 +88,12 @@ def server_main(conn, args):
                       args.k_lateral, 'cpu')
     try:
         if args.sim:
-            tz = np.load(ASSETS / 'tasks_pool_xarm7.npz')
-            arm = SimArm(tz['q0_seed'][args.sim_task].astype(np.float64),
-                         lag=args.sim_lag)
+            if args.sim_q_deg is not None:
+                q0 = np.radians(args.sim_q_deg)
+            else:
+                tz = np.load(ASSETS / 'tasks_pool_xarm7.npz')
+                q0 = tz['q0_seed'][args.sim_task].astype(np.float64)
+            arm = SimArm(q0, lag=args.sim_lag)
         else:
             arm = XArm(args.ip)
     except Exception as e:                  # noqa: BLE001
@@ -504,6 +507,8 @@ def main():
     ap.add_argument('--ip', default=None, help='default: $ONE_ARM_IP or 192.168.1.205')
     ap.add_argument('--sim', action='store_true')
     ap.add_argument('--sim-task', type=int, default=0)
+    ap.add_argument('--sim-q-deg', type=float, nargs=7, default=None,
+                    help='--sim: start from these joint angles [deg] instead of a pool task')
     ap.add_argument('--sim-lag', type=float, default=0.03)
     ap.add_argument('--normal', type=float, nargs=3, default=None,
                     help='cone axis / plane normal (default: current tool axis)')

@@ -3,7 +3,8 @@
 The policy is a state-feedback law q_dot = pi(q): every cycle the measured
 joint angles are written into a one-env copy of the training environment,
 the policy is queried, and the joint velocity the environment would have
-integrated is sent to the arm in joint-velocity mode (xArm mode 4).  The
+integrated is streamed to the arm as 100 Hz servo set-points through the
+one control interface (one.control.manipulators.xarm7.XArm7X, xArm mode 1).  The
 environment's own step() computes the command, so projection, amplitude
 bound, lateral feedback and the predictive termination test are exactly the
 paper's; nothing is re-implemented here.  The policy tolerates any decision
@@ -97,60 +98,66 @@ def unit(v):
 
 # ------------------------------------------------------------------ arms
 class XArm:
-    """Thin wrapper over the xArm Python SDK (radians everywhere)."""
+    """Hardware through the one control interface (one.control.manipulators
+    .xarm7.XArm7X): joints via get_jnt_values, point-to-point via move_j,
+    and the closed loop as servo streaming (xArm mode 1): each control cycle
+    the commanded joint velocity is integrated into set-points streamed at
+    100 Hz with servo_j, starting from the last commanded set-point so the
+    stream stays continuous.  The wrapper blocks for the cycle (streams=True)."""
+    streams = True
+    STREAM_HZ = 100.0
+    TRACK_TOL = 0.08          # rad: commanded set-point vs measured joints
 
     def __init__(self, ip: str):
-        from xarm.wrapper import XArmAPI
-        self.arm = XArmAPI(ip, is_radian=True)
-        self.arm.clean_error()
-        self.arm.clean_warn()
-        self.arm.motion_enable(True)
-        self.arm.set_mode(0)
-        self.arm.set_state(0)
-        time.sleep(0.5)
+        from one.control.manipulators.xarm7.xarm7 import XArm7X
+        self.x = XArm7X(ip=ip)
+        self._q_cmd = None
 
     def q(self) -> np.ndarray:
-        code, ang = self.arm.get_servo_angle(is_radian=True)
-        if code != 0:
-            raise RuntimeError(f'get_servo_angle failed, code {code}')
-        q = np.asarray(ang[:N_J], np.float64)
+        q = np.asarray(self.x.get_jnt_values(), np.float64)[:N_J]
         if np.abs(q).max() > 2.0 * math.pi + 0.1:
             raise RuntimeError(f'joint readout looks like degrees, not radians: {q}')
         return q
 
     def velocity_mode(self):
-        self.arm.set_mode(4)
-        self.arm.set_state(0)
-        time.sleep(0.5)
+        self._q_cmd = self.q()
+        self.x.enter_servo_mode()
 
     def send_qdot(self, qdot: np.ndarray, timeout: float):
-        # duration: the arm decelerates to zero if no new command arrives
-        # within this time (firmware >= 1.8.0); the loop refreshes it every
-        # cycle, so a dead loop stops the arm within three cycles.
-        code = self.arm.vc_set_joint_velocity(
-            [float(x) for x in qdot], is_radian=True, is_sync=True,
-            duration=float(timeout))
-        if code != 0:
-            raise RuntimeError(f'vc_set_joint_velocity failed, code {code}')
+        """Stream set-points for one cycle (= timeout / 3) at STREAM_HZ."""
+        period = float(timeout) / 3.0
+        q_meas = self.q()
+        if self._q_cmd is None:
+            self._q_cmd = q_meas
+        if np.abs(self._q_cmd - q_meas).max() > self.TRACK_TOL:
+            raise RuntimeError('servo tracking error above tolerance: commanded '
+                               f'{self._q_cmd.round(3)} measured {q_meas.round(3)}')
+        n = max(1, int(round(period * self.STREAM_HZ)))
+        dt = period / n
+        next_t = time.perf_counter()
+        for _ in range(n):
+            self._q_cmd = self._q_cmd + np.asarray(qdot, np.float64) * dt
+            code = self.x.servo_j(self._q_cmd)
+            if code != 0:
+                raise RuntimeError(f'servo_j failed, code {code}')
+            next_t += dt
+            s = next_t - time.perf_counter()
+            if s > 0:
+                time.sleep(s)
 
     def stop(self):
-        try:
-            self.arm.vc_set_joint_velocity([0.0] * N_J, is_radian=True)
-        finally:
-            time.sleep(0.2)
-            self.arm.set_mode(0)
-            self.arm.set_state(0)
+        # leaving servo mode holds the last set-point; position mode = idle
+        self.x.enter_position_mode()
+        self._q_cmd = None
 
     def move_to(self, q: np.ndarray, speed: float = 0.3):
-        self.arm.set_mode(0)
-        self.arm.set_state(0)
-        code = self.arm.set_servo_angle(angle=[float(x) for x in q],
-                                        speed=speed, is_radian=True, wait=True)
-        if code != 0:
-            raise RuntimeError(f'set_servo_angle failed, code {code}')
+        self.x.move_j(np.asarray(q, np.float64), speed=speed, wait=True)
 
     def close(self):
-        self.arm.disconnect()
+        try:
+            self.x.enter_position_mode()
+        except Exception:               # noqa: BLE001
+            pass
 
 
 class SimArm:
@@ -408,10 +415,15 @@ def run_loop(arm, ctrl: Controller, d, n, stroke, time_scale, qd_cap,
                       f'{st["tilt_deg"]:4.1f} deg  |qdot| {peak:.2f} rad/s',
                       flush=True)
             next_t += wall_period
-            dt_sleep = next_t - time.perf_counter()
+            if getattr(arm, 'streams', False):
+                # the wrapper streamed set-points for the whole cycle itself
+                next_t = time.perf_counter()
+                dt_sleep = 0.0
+            else:
+                dt_sleep = next_t - time.perf_counter()
             if dt_sleep > 0:
                 time.sleep(dt_sleep)
-            else:
+            elif dt_sleep < 0:
                 n_over += 1
                 if n_over == 1:
                     print(f'[rt] WARNING: cycle overran the {wall_period * 1000:.0f} ms '

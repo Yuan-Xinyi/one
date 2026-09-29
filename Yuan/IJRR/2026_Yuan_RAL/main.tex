@@ -1150,6 +1150,132 @@ transfers with the task geometry rather than memorizing the training
 family.
 
 
+\subsubsection{Extension to Constant-Force Contact}
+\label{sec:force}
+
+Writing, polishing, and similar path-following tasks additionally require
+a prescribed contact force along the whole path. The framework absorbs
+this requirement as one more constraint on the same two decisions,
+without force sensing or force control. Under joint-impedance control
+with joint stiffness $\mathbf{K}_{q}$, a commanded tool position a depth
+$d$ below the surface produces the normal force
+$f=k_{\mathrm{eff}}(\mathbf{q})\,d$, where
+\begin{equation}
+\label{eq:keff}
+k_{\mathrm{eff}}(\mathbf{q})
+=
+\frac{1}{\mathbf{n}^{\top}\mathbf{C}\mathbf{n}
++\mu\,\mathbf{n}^{\top}\mathbf{C}\mathbf{d}},
+\qquad
+\mathbf{C}=\mathbf{J}\mathbf{K}_{q}^{-1}\mathbf{J}^{\top},
+\end{equation}
+is the effective end-effector stiffness along the tool axis, and the
+second term accounts for Coulomb friction $\mu$ acting along the path
+direction through the normal--tangential cross-compliance. A prescribed
+force $f^{\ast}$ is therefore encoded as the commanded depth
+$d(\mathbf{q})=f^{\ast}/k_{\mathrm{eff}}(\mathbf{q})$, which the
+task-space controller tracks like any other position target; execution
+terminates when the realized force leaves the tolerance band
+$|k_{\mathrm{eff}}(\mathbf{q})\,d-f^{\ast}|\leq\epsilon_{f}$. Because the
+force is realized through position, the force tolerance divided by the
+executable position precision $\epsilon_{\min}$ bounds the admissible
+stiffness,
+\begin{equation}
+\label{eq:kcap}
+k_{\mathrm{eff}}(\mathbf{q})\leq k_{\max}=\epsilon_{f}/\epsilon_{\min},
+\end{equation}
+which turns constant-force contact into a compliance constraint on the
+configuration: stiff postures, in which a millimeter of position error
+becomes several newtons, are inadmissible. On the FR3 the stiffness along
+the tool axis spans an order of magnitude over the candidate pool
+($867$--$8{,}864$\,N/m between the 5th and 95th percentiles), and varies by
+a factor of $7$--$15$ along a single executed stroke, so the constraint
+is decided by redundancy resolution and by the initial configuration,
+exactly the two decisions the framework already makes.
+
+The experiment uses the FR3 joint-impedance defaults
+$\mathbf{K}_{q}=\operatorname{diag}(600,600,600,600,250,150,50)$\,N\,m/rad,
+$f^{\ast}=5$\,N, $\epsilon_{f}=2$\,N, $\epsilon_{\min}=1$\,mm, hence
+$k_{\max}=2{,}000$\,N/m, and $\theta_{\max}=30^{\circ}$, for a frictionless
+surface and for $\mu=0.3$. The proposed controller is retrained with the
+recipe of Section~\ref{sec:setup}, with two additional observation
+channels (the stiffness margin $\ln(k_{\max}/k_{\mathrm{eff}})$ and the
+force error) and the training start pool screened by
+Eq.~(\ref{eq:kcap}); the candidate pool and the critic ranking of
+Section~\ref{sec:select} are used unchanged. The reference
+$\ell^{\mathrm{pw}}$ is computed as in Section~\ref{sec:setup} with the
+stiffness window added to the admissibility test, a gradient descent on
+$k_{\mathrm{eff}}$ within the null space at each sample, and the
+executed rollouts of every evaluated controller injected as witnesses;
+more than $92\%$ of tasks lie within one march step of the search
+estimate and the largest binding adjustment is $5$\,mm. Table~\ref{tab:force} reports the
+results on the $10{,}000$ straight tasks that admit at least one
+compliant initial configuration ($88\%$ without friction, $86\%$ with
+$\mu=0.3$).
+
+The constraint changes the problem substantially: the controller trained
+on the position-only task, which never observes stiffness, completes
+$53\%$ of the reference without friction and its 10th percentile
+collapses to $2\%$, because it walks into stiff postures. The
+force-aware controller recovers $89.3\%$ of the reference from
+critic-selected starts, with the critic favoring more compliant initial
+configurations (median $1{,}327$ against $1{,}614$\,N/m for the first
+admissible candidate). The residual failures are stiffness violations
+rather than force-tolerance violations: the realized force leaves the
+$\pm2$\,N band on $0.3\%$ of the tasks, and its median maximum error
+along a stroke is $0.7$\,N. Friction enters through the
+cross-compliance term of Eq.~(\ref{eq:keff}), which along executed
+strokes has a median magnitude of $0.59$ relative to the normal
+compliance and is negative on $79\%$ of the samples, so a sliding contact
+is effectively stiffer than a static one; a controller that has seen
+friction in training absorbs it and reaches $89.9\%$ of the
+friction-aware reference, the same level as in the frictionless case,
+and one hour of fine-tuning ($80$M steps) already recovers $87.9\%$.
+A sampling-based planner given the identical constraint set, the whole
+candidate pool as start states, an informed sampler along the path, and
+$300$\,s per query reaches $83.1\%$ against $90.0\%$ for the reactive
+controller on a $10$-task spot check, exhausting its budget on every
+task, consistent with the receding-horizon comparison of
+Section~\ref{sec:horizon}.
+
+\begin{table*}[!htbp]
+\centering
+\caption{Constant-Force Contact on FR3 Straight Tasks
+($f^{\ast}=5$\,N, $\epsilon_{f}=2$\,N, $k_{\max}=2{,}000$\,N/m)}
+\label{tab:force}
+\begin{threeparttable}
+\footnotesize
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{llcc}
+\toprule
+Friction & Method & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
+\midrule
+\multirow{4}{*}{\shortstack[l]{$\mu=0$\\($8{,}810$ tasks)}}
+ & Classical Gradient & 0.246 & 46.1 / 7.5 \\
+ & DirFrac, position-only training & 0.311 & 53.1 / 1.9 \\
+ & DirFrac, force-aware, first candidate & 0.514 & 82.7 / 36.1 \\
+ & \textbf{DirFrac, force-aware, critic-selected} & \limebox{\textbf{0.561}} & \limebox{\textbf{89.3 / 69.1}} \\
+\midrule
+\multirow{4}{*}{\shortstack[l]{$\mu=0.3$\\($8{,}634$ tasks)}}
+ & Classical Gradient & 0.243 & 43.9 / 8.6 \\
+ & DirFrac, position-only training & 0.251 & 42.5 / 1.8 \\
+ & DirFrac, force-aware ($\mu=0$ training), critic-selected & 0.524 & 83.2 / 40.9 \\
+ & \textbf{DirFrac, friction-aware training, critic-selected} & \limebox{\textbf{0.571}} & \limebox{\textbf{89.9 / 68.8}} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item[Note] Ratio is the per-task ratio of the executed stroke to the
+    reference $\ell^{\mathrm{pw}}$ computed with the stiffness window of
+    Eq.~(\ref{eq:kcap}) and, for $\mu=0.3$, the friction-corrected
+    stiffness of Eq.~(\ref{eq:keff}). Initial configurations are screened
+    by the same window; critic-selected rows rank the screened candidates
+    with the critic of the respective training run, and all other rows
+    start from the first admissible candidate.
+\end{tablenotes}
+\end{threeparttable}
+\end{table*}
+
+
 \subsubsection{Implication for Manipulator Base Placement}
 \label{sec:place}
 

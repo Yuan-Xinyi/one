@@ -408,8 +408,10 @@ def build_app(args):
             if self.running or not self.cands:
                 return
             c = self.cands[self.sel]
-            log = (None if args.log_dir is None else
-                   str(Path(args.log_dir) / f'run_{time.strftime("%Y%m%d_%H%M%S")}.npz'))
+            log = None
+            if args.log_dir is not None:
+                Path(args.log_dir).mkdir(parents=True, exist_ok=True)
+                log = str(Path(args.log_dir) / f'run_{time.strftime("%Y%m%d_%H%M%S")}.npz')
             if self.meas_ink is not None:
                 self.meas_ink.detach_from(self.scene); self.meas_ink = None
             self.meas_tips = []

@@ -164,18 +164,19 @@ if '3' in PARTS:
     print('=== part 3: start selection (first / random / critic / oracle) ===', flush=True)
     cands = torch.load(MAIN / 'runs/selector_ood/v2_k32/cands.pt', weights_only=False)
     tb = np.load(MAIN / 'runs/eval_10k_systematic/eval_set_10k.npz')
-    K = 32
+    K = int(os.environ.get('SEL_K', 32))          # smoke: fewer candidates
+    SEL_N = int(os.environ.get('SEL_N', 0))        # smoke: subset of every set
     res['p3'] = {}
     env, fn, ag = build(CFG_C, CKPT_C, k_lateral=5.0)
     for fam, key in (('straight', 'benchmark'), ('serpentine', 'test_serpentine'), ('rot', 'test_nonplanar')):
         nf = cands[key]['n_found'].numpy(); C = cands[key]['cands'].numpy()
         if key == 'benchmark':
-            rows_sel = np.sort(np.random.default_rng(3).choice(C.shape[0], 2000, replace=False))
+            rows_sel = np.sort(np.random.default_rng(3).choice(C.shape[0], SEL_N or 2000, replace=False))
             spec_np = {'line_dir': tb['cs_line_dir'][rows_sel].astype(np.float32), 'n_target': tb['cs_n_target'][rows_sel].astype(np.float32)}
             b = np.load(MAIN / 'runs/paper_fill/bound_10000_final.npz'); w = np.load(MAIN / 'runs/paper_fill/witness_10k_v4.npz')
             saved = np.load(FU / 'fr3e8k_sel_straight.npz')
         else:
-            rows_sel = np.arange(C.shape[0])
+            rows_sel = np.arange(C.shape[0]) if not SEL_N else np.arange(SEL_N)
             sp = tasks[key]
             spec_np = {'p0': sp['p0'].numpy(), 'line_dir': sp['line_dir'].numpy(), 'n_target': sp['n_target'].numpy()}
             for kk in ('kappa', 'amp', 'wavelen', 'n_rot_axis', 'n_rot_rate'):
@@ -183,8 +184,8 @@ if '3' in PARTS:
                     spec_np[kk] = sp[kk].numpy()
             fam2 = key.replace('test_', '')
             b = np.load(A / f'bound_sel_{fam2}.npz'); w = np.load(A / f'witness_sel_{fam2}.npz')
-            saved = np.load(FU / f'fr3e8k_sel_{fam2}.npz')
-        C, nf = C[rows_sel], nf[rows_sel]
+            saved = np.load(FU / f'fr3e8k_sel_{fam}.npz')     # saved as 'rot', bounds as 'nonplanar'
+        C, nf = C[rows_sel, :K], np.minimum(nf[rows_sel], K)
         N = C.shape[0]
         ref = np.maximum(b['L_hi'], w['prog'])[rows_sel]
         for kk in spec_np:
@@ -214,7 +215,7 @@ if '3' in PARTS:
                             round(float(np.percentile(rt[ok], 10) * 100), 1), round(float((v >= orc - 0.01)[ok].mean() * 100), 1)]
             return out
         r_new = rows(L, V)
-        r_old = rows(saved['L'][rows_sel], saved['V'][rows_sel])
+        r_old = rows(saved['L'][rows_sel][:, :K], saved['V'][rows_sel][:, :K])
         res['p3'][fam] = {'flagship': r_old, TAG: r_new}
         for nme in ('first', 'random', 'critic', 'oracle'):
             print(f'  {fam:10s} {nme:7s} flagship {r_old[nme]}   {TAG} {r_new[nme]}   [stroke, ratio, p10, near-oracle%]', flush=True)

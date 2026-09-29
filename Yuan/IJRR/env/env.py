@@ -42,6 +42,7 @@ from Yuan.IJRR.env.path_geometry import (path_frame, serpentine_curvature,
                                          arc_point, serpentine_point)
 from Yuan.IJRR.env.path_table import (M as TAB_M, PREVIEW_DS, table_at,
                                       preview_features)
+import contextlib
 
 
 OBS_DIM = 31
@@ -79,6 +80,15 @@ class EnvConfig:
     # azimuth tool_azimuth_deg; 0 keeps the on-axis tool.
     tool_tilt_deg: float = 0.0
     tool_azimuth_deg: float = 0.0
+    # Per-task tools: the task spec may carry tool_p (n,3) [tool point in
+    # the flange frame incl. the fixed flange offset], tool_R (n,3,3) [tool
+    # rotation], tool_lever (n,3) [tip minus flange plate, flange frame] and
+    # tool_a0 (n,3) [tool axis in the flange frame]; tool_random allocates
+    # the per-env buffers and aliases them into the kinematics.
+    tool_random: bool = False
+    # Append the tool geometry: the lever (flange plate -> tip) in the path
+    # frame (3, scaled by 0.3 m) and the tool axis in the flange frame (3).
+    observe_tool: bool = False
     # Reset-time randomization of the wrist-roll joint (last joint). The TCP
     # position and tool axis are exactly invariant to it (rotation about the
     # tool axis), so this is a free symmetry augmentation that exposes the
@@ -523,6 +533,7 @@ class NSRLBatchedEnv:
                         + (1 if getattr(cfg, 'observe_cone', False) else 0)
                         + (6 * len(PREVIEW_DS)
                            if getattr(cfg, 'observe_preview', False) else 0)
+                        + (6 if getattr(cfg, 'observe_tool', False) else 0)
                         + (RAY_ERROR_DIM if cfg.observe_ray_error else 0)
                         + (2 ** self.act_dim
                            if getattr(cfg, 'observe_prior_logits', False)
@@ -569,6 +580,25 @@ class NSRLBatchedEnv:
         self.n0_target = torch.zeros((B, 3), device=self.device, dtype=d)
         self.n_rot_axis = torch.zeros((B, 3), device=self.device, dtype=d)
         self.n_rot_rate = torch.zeros((B,), device=self.device, dtype=d)
+        # Per-env tools (optional): buffers aliased into the kinematics so
+        # every full-batch FK call sees each env's own tool; masked calls in
+        # the reset go through _tool_ctx.
+        self._tool_per_env = bool(getattr(cfg, 'tool_random', False))
+        if self._tool_per_env or getattr(cfg, 'observe_tool', False):
+            self.tool_p = self.kin.flange_p.reshape(1, 3).expand(B, 3).clone()
+            self.tool_R = self.kin.flange_R.reshape(1, 3, 3).expand(B, 3, 3).clone()
+            _fixed = self.kin.flange_p - (self.kin.flange_R @ torch.as_tensor(
+                [0.0, 0.0, self.kin.tcp_offset], device=self.device, dtype=d))
+            self._tool_fixed_p = _fixed                                  # flange plate
+            self.tool_lever = (self.tool_p - _fixed).clone()
+            self.tool_a0 = self.tool_R[:, :, 2].clone()
+        if self._tool_per_env:
+            # keep the stock tool for callers that run other batch sizes
+            # through the same kinematics (pool construction)
+            self.kin._stock_flange_p = self.kin.flange_p.clone()
+            self.kin._stock_flange_R = self.kin.flange_R.clone()
+            self.kin.flange_p = self.tool_p
+            self.kin.flange_R = self.tool_R
         # Table paths (optional): per-env sample tables and a flag.
         self.path_is_tab = torch.zeros((B,), device=self.device, dtype=torch.bool)
         if getattr(cfg, 'table_paths', False):
@@ -720,6 +750,14 @@ class NSRLBatchedEnv:
             obs_parts.append((self.cone_deg_b / 30.0).unsqueeze(-1))  # 1
         if getattr(self.cfg, 'observe_preview', False):
             obs_parts.append(self._preview())              # 6 * len(PREVIEW_DS)
+        if getattr(self.cfg, 'observe_tool', False):
+            # R_last = R_tcp R_tool^T; lever in the world, then path frame
+            R_last = R_tcp @ self.tool_R.transpose(-1, -2)
+            lever = (R_last @ self.tool_lever.unsqueeze(-1)).squeeze(-1)
+            e2 = torch.linalg.cross(self.n_target, self.line_dir, dim=-1)
+            lv = torch.stack([(lever * self.line_dir).sum(-1), (lever * e2).sum(-1),
+                              (lever * self.n_target).sum(-1)], -1) / 0.3
+            obs_parts.append(torch.cat([lv, self.tool_a0], -1))   # 6
         if getattr(self.cfg, 'observe_prior_logits', False):
             obs_parts.append(self._prior_scores(q))
         if self.cfg.observe_ray_error:
@@ -772,6 +810,19 @@ class NSRLBatchedEnv:
             raw_scale=self.cfg.basis_raw_scale)
         sigma = torch.einsum('bij,bi->bj', B_basis, g_phi)
         return sigma @ self._prior_verts.T
+
+    @contextlib.contextmanager
+    def _tool_ctx(self, mask):
+        """Kinematics restricted to the masked rows' tools (masked FK)."""
+        if not self._tool_per_env:
+            yield
+            return
+        p, R = self.kin.flange_p, self.kin.flange_R
+        self.kin.flange_p, self.kin.flange_R = self.tool_p[mask], self.tool_R[mask]
+        try:
+            yield
+        finally:
+            self.kin.flange_p, self.kin.flange_R = p, R
 
     def _path_point(self, s: torch.Tensor):
         """Point on the path and cone axis at arc length s (B,), for the
@@ -1002,6 +1053,16 @@ class NSRLBatchedEnv:
         if n_reset == 0:
             return
         spec = self.line_dist.sample(n_reset)
+        if self._tool_per_env and "tool_p" in spec:
+            _dt = dict(device=self.device, dtype=self.kin.dtype)
+            self.tool_p[mask] = spec["tool_p"].to(**_dt)
+            self.tool_R[mask] = spec["tool_R"].to(**_dt)
+            self.tool_lever[mask] = spec["tool_lever"].to(**_dt)
+            self.tool_a0[mask] = spec["tool_a0"].to(**_dt)
+        with self._tool_ctx(mask):
+            self._reset_envs_tail(mask, n_reset, spec)
+
+    def _reset_envs_tail(self, mask, n_reset, spec) -> None:
         self.q[mask] = spec["q0"]
         if self.cfg.q7_reset_uniform > 0.0:
             lo, up = self.kin.lmt_lo[-1], self.kin.lmt_up[-1]

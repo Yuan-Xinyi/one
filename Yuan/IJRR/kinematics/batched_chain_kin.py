@@ -96,6 +96,25 @@ def tool_rotmat(tilt_deg: float, azimuth_deg: float = 0.0):
     return _np.eye(3) + math.sin(b) * K + (1.0 - math.cos(b)) * (K @ K)
 
 
+def tool_rotmats(tilt: torch.Tensor, azimuth: torch.Tensor) -> torch.Tensor:
+    """Batched tool_rotmat: (B,) tilt / azimuth [rad] -> (B,3,3), exact
+    identity where tilt == 0."""
+    B = tilt.shape[0]
+    a0 = torch.stack([torch.sin(tilt) * torch.cos(azimuth),
+                      torch.sin(tilt) * torch.sin(azimuth), torch.cos(tilt)], -1)
+    z = torch.zeros_like(a0); z[:, 2] = 1.0
+    k = torch.linalg.cross(z, a0, dim=-1)
+    k = k / k.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+    K = torch.zeros(B, 3, 3, device=tilt.device, dtype=tilt.dtype)
+    K[:, 0, 1], K[:, 0, 2] = -k[:, 2], k[:, 1]
+    K[:, 1, 0], K[:, 1, 2] = k[:, 2], -k[:, 0]
+    K[:, 2, 0], K[:, 2, 1] = -k[:, 1], k[:, 0]
+    s, c = torch.sin(tilt).view(B, 1, 1), torch.cos(tilt).view(B, 1, 1)
+    R = torch.eye(3, device=tilt.device, dtype=tilt.dtype).expand(B, 3, 3) + s * K + (1 - c) * (K @ K)
+    return torch.where((tilt.abs() > 1e-12).view(B, 1, 1), R,
+                       torch.eye(3, device=tilt.device, dtype=tilt.dtype).expand(B, 3, 3))
+
+
 def _skew(v: torch.Tensor) -> torch.Tensor:
     K = torch.zeros((3, 3), device=v.device, dtype=v.dtype)
     K[0, 1], K[0, 2] = -v[2], v[1]
@@ -214,7 +233,8 @@ class BatchedChainKinematics:
         if local_point is None:
             local_point = self.flange_p
         local_point = local_point.to(device=self.device, dtype=self.dtype)
-        p_tcp = (T_last[:, :3, :3] @ local_point.view(1, 3, 1)).squeeze(-1)
+        # local_point may be one point (3,) or one per batch row (B, 3)
+        p_tcp = (T_last[:, :3, :3] @ local_point.reshape(-1, 3, 1)).squeeze(-1)
         p_tcp = p_tcp + T_last[:, :3, 3]
 
         J = torch.zeros((b, 6, self.n_joints), device=self.device,

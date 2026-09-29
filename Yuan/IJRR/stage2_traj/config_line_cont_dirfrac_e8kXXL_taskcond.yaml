@@ -1,0 +1,99 @@
+# Task-conditioned model (run D): the flagship recipe trained at once over
+#   * the orientation-cone half-angle, theta_max ~ log-U[5, 30] deg, observed
+#     (observe_cone);
+#   * the tool, a bent pen of length 0.05-0.40 m tilted up to 45 deg from the
+#     flange z at any azimuth, drawn per task and observed (observe_tool:
+#     lever in the path frame + tool axis in the flange frame); the pool's
+#     n_target is drawn around the actual tool axis; and
+#   * the path, the generic-curve distribution of env/path_table.py with the
+#     path ahead observed (observe_preview).
+# Everything the paper's tables vary is then part of the task specification
+# c of V(q, c); one checkpoint per manipulator serves every tolerance, tool
+# and figure in these ranges.
+env:
+  dir_frac_action: 2
+  a_prev_executed: true
+  observe_margins: true
+  true_reset_obs: true
+  rho_from_norm: true
+  observe_proj_scales: true
+  observe_cone: true
+  tool_random: true
+  observe_tool: true
+  table_paths: true
+  observe_preview: true
+  k_lateral: 5.0
+  qd_limit:
+  - 2.175
+  - 2.175
+  - 2.175
+  - 2.175
+  - 2.61
+  - 2.61
+  - 2.61
+  n_envs: 8192
+  dt: 0.05
+  v: 0.2
+  a_max: 0.5
+  lambda_0: 0.05
+  sigma_thr: 0.05
+  cone_deg: 30.0
+  max_steps: 500
+  tcp_offset: 0.2034
+  r_collision: 0.0
+  r_cone: 0.0
+  r_jl: 0.0
+  w_progress: 1.0
+  manip_damping: 0.001
+  observe_curvature: false
+ppo:
+  total_timesteps: 240000000
+  learning_rate: 0.0006
+  n_steps: 4
+  anneal_lr: true
+  gamma: 0.99
+  gae_lambda: 0.95
+  n_minibatches: 32
+  update_epochs: 15
+  norm_adv: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.02
+  hidden_dim: 2048
+  init_log_std: -0.5
+  normalize_returns: true
+  squashed_entropy: true
+agent:
+  kind: gaussian
+line_distribution:
+  n_pool: 100000
+  n_target_noise_deg: 5.0
+  train_seed: 0
+  feasibility_filter: true
+  feasibility_threshold_m: 0.1
+  cone_range: [5.0, 30.0]
+  cone_log: true
+  tools:
+    len_range: [0.05, 0.40]
+    tilt_max_deg: 45.0
+  curves:
+    p_straight: 0.3
+    seg_len: [0.15, 0.8]
+    p_kg: 0.6
+    kg_max: 6.0
+    p_kn: 0.2
+    kn_max: 2.0
+    p_tau: 0.2
+    tau_max: 1.5
+    p_corner: 0.3
+    corner_deg: [30.0, 150.0]
+    n_seg_max: 6
+eval:
+  n_holdout: 200
+  holdout_seed: 42
+train:
+  eval_every: 250000
+  ckpt_every_n_updates: 10

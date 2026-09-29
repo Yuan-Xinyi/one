@@ -16,6 +16,7 @@ training scripts auto-cache under `runs/_pool_cache/`.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import math
 from pathlib import Path
@@ -24,6 +25,22 @@ import torch
 
 from one.robots.manipulators.franka.fr3_pen.batched_fr3_kin import BatchedFR3Kinematics
 from one.robots.manipulators.franka.fr3.sphere_collision import FR3SphereCollision
+
+
+@contextlib.contextmanager
+def _stock_tool(kin):
+    """Run kinematics with the stock (single) tool even when an env has
+    aliased per-env tool buffers into it."""
+    sp = getattr(kin, '_stock_flange_p', None)
+    if sp is None:
+        yield
+        return
+    p, R = kin.flange_p, kin.flange_R
+    kin.flange_p, kin.flange_R = sp, kin._stock_flange_R
+    try:
+        yield
+    finally:
+        kin.flange_p, kin.flange_R = p, R
 
 
 class LineDistribution:
@@ -39,7 +56,8 @@ class LineDistribution:
                  min_radius_m: float = 0.15,
                  cone_range: tuple[float, float] | None = None,
                  cone_log: bool = False,
-                 curve_cfg: dict | None = None):
+                 curve_cfg: dict | None = None,
+                 tool_cfg: dict | None = None):
         # Require explicit seed: cache_key() hashes the seed value, so a None
         # seed yields a fixed cache_path but a non-deterministic pool — the
         # first build wins and later "different" calls silently get the cached
@@ -68,7 +86,8 @@ class LineDistribution:
         while n_remaining > 0:
             b = min(batch_size, n_remaining)
             q = kin.rand_conf_batch(b, generator=gen)
-            _, R, _, _ = kin.tcp_fk_jac(q)
+            with _stock_tool(kin):
+                _, R, _, _ = kin.tcp_fk_jac(q)
             z = R[:, :, 2]
             link_tfs = kin.link_transforms(q)
             ok = ~collision.is_collided(link_tfs)
@@ -98,6 +117,40 @@ class LineDistribution:
         else:
             self.cone_pool = None
             _noise_amp = self.n_target_noise
+
+        # Per-task random tools: length L along an axis tilted by beta at
+        # azimuth phi from the flange z. The tool axis at q0 replaces the
+        # stock z_pool, so n_target is drawn around the actual tool axis.
+        self.tool_cfg = dict(tool_cfg) if tool_cfg is not None else None
+        if self.tool_cfg is not None:
+            from Yuan.IJRR.kinematics.batched_chain_kin import tool_rotmats
+            tc = dict(len_range=(0.05, 0.40), tilt_max_deg=45.0)
+            tc.update(self.tool_cfg)
+            u = lambda: torch.rand((n_pool,), device=self.device, dtype=self.dtype, generator=gen)
+            L = tc['len_range'][0] + u() * (tc['len_range'][1] - tc['len_range'][0])
+            beta = u() * math.radians(tc['tilt_max_deg'])
+            phi = u() * 2.0 * math.pi
+            R = tool_rotmats(beta, phi)
+            lever = (R @ torch.tensor([0.0, 0.0, 1.0], device=self.device, dtype=self.dtype)
+                     .view(1, 3, 1)).squeeze(-1) * L.unsqueeze(-1)
+            with _stock_tool(kin):
+                fixed = kin.flange_p.reshape(-1, 3)[0] - (kin.flange_R.reshape(-1, 3, 3)[0]
+                                                          @ torch.tensor([0.0, 0.0, kin.tcp_offset],
+                                                                         device=self.device, dtype=self.dtype))
+            self.tool_p_pool = fixed.unsqueeze(0) + lever
+            self.tool_R_pool = R
+            self.tool_lever_pool = lever
+            self.tool_a0_pool = R[:, :, 2].clone()
+            self.tool_len_pool, self.tool_tilt_pool = L, beta
+            # tool axis at q0: R_last(q0) a0 (R_last = flange rotation)
+            z_new = torch.empty_like(self.z_pool)
+            with _stock_tool(kin):
+                for lo in range(0, n_pool, 16384):
+                    _, R_last, _, _ = kin.fk_jac(self.q_pool[lo:lo + 16384])
+                    z_new[lo:lo + 16384] = (R_last @ self.tool_a0_pool[lo:lo + 16384].unsqueeze(-1)).squeeze(-1)
+            self.z_pool = z_new
+        else:
+            self.tool_p_pool = None
 
         # Pre-generate full line spec for every pool entry (deterministic per index).
         # n_target = z_tool + small angular noise about a random axis ⊥ z.
@@ -162,7 +215,12 @@ class LineDistribution:
             from Yuan.IJRR.env.path_table import build_tables
             p0 = torch.empty((n_pool, 3), device=self.device, dtype=self.dtype)
             for lo in range(0, n_pool, 16384):
-                p0[lo:lo + 16384] = kin.tcp_fk_jac(self.q_pool[lo:lo + 16384])[0]
+                if self.tool_p_pool is not None:
+                    p0[lo:lo + 16384] = kin.fk_jac(self.q_pool[lo:lo + 16384],
+                                                   self.tool_p_pool[lo:lo + 16384])[0]
+                else:
+                    with _stock_tool(kin):
+                        p0[lo:lo + 16384] = kin.tcp_fk_jac(self.q_pool[lo:lo + 16384])[0]
             pts, tan, nrm = build_tables(p0, self.line_dir_pool, self.n_target_pool,
                                          gen, self.curve_cfg)
             self.tab_pts = pts.cpu(); self.tab_tan = tan.cpu(); self.tab_nrm = nrm.cpu()
@@ -195,6 +253,11 @@ class LineDistribution:
         }
         if self.cone_pool is not None:
             out["cone_deg"] = self.cone_pool[idx]
+        if self.tool_p_pool is not None:
+            out["tool_p"] = self.tool_p_pool[idx]
+            out["tool_R"] = self.tool_R_pool[idx]
+            out["tool_lever"] = self.tool_lever_pool[idx]
+            out["tool_a0"] = self.tool_a0_pool[idx]
         if self.tab_pts is not None:
             ic = idx.cpu()
             out["path_pts"] = self.tab_pts[ic].to(self.device)
@@ -221,6 +284,13 @@ class LineDistribution:
                           else self.cone_pool.cpu()),
             "curve_cfg": self.curve_cfg,
             "tab_pts": self.tab_pts, "tab_tan": self.tab_tan, "tab_nrm": self.tab_nrm,
+            "tool_cfg": self.tool_cfg,
+            "tool_p_pool": (None if self.tool_p_pool is None else self.tool_p_pool.cpu()),
+            "tool_R_pool": (None if self.tool_p_pool is None else self.tool_R_pool.cpu()),
+            "tool_lever_pool": (None if self.tool_p_pool is None else self.tool_lever_pool.cpu()),
+            "tool_a0_pool": (None if self.tool_p_pool is None else self.tool_a0_pool.cpu()),
+            "tool_len_pool": (None if self.tool_p_pool is None else self.tool_len_pool.cpu()),
+            "tool_tilt_pool": (None if self.tool_p_pool is None else self.tool_tilt_pool.cpu()),
         }, path)
 
     @classmethod
@@ -252,13 +322,22 @@ class LineDistribution:
         obj.tab_pts = data.get("tab_pts", None)
         obj.tab_tan = data.get("tab_tan", None)
         obj.tab_nrm = data.get("tab_nrm", None)
+        obj.tool_cfg = data.get("tool_cfg", None)
+        _tp = data.get("tool_p_pool", None)
+        if _tp is None:
+            obj.tool_p_pool = None
+        else:
+            _m = lambda k: data[k].to(kin.device, dtype=kin.dtype)
+            obj.tool_p_pool = _m("tool_p_pool"); obj.tool_R_pool = _m("tool_R_pool")
+            obj.tool_lever_pool = _m("tool_lever_pool"); obj.tool_a0_pool = _m("tool_a0_pool")
+            obj.tool_len_pool = _m("tool_len_pool"); obj.tool_tilt_pool = _m("tool_tilt_pool")
         obj._gen = torch.Generator(device=kin.device)
         return obj
 
     @staticmethod
     def cache_key(seed, n_pool, n_target_noise_deg, env_cfg,
                   feasibility_threshold_m=None, cone_range=None,
-                  cone_log=False, curve_cfg=None) -> str:
+                  cone_log=False, curve_cfg=None, tool_cfg=None) -> str:
         """Deterministic short key for cache filename. Include a_max since
         the feasibility filter's classical controller is clamped by it."""
         sig = (f"robot={getattr(env_cfg, 'robot', 'fr3')}|"
@@ -274,6 +353,8 @@ class LineDistribution:
                     f"|clog={bool(cone_log)}")
         if curve_cfg is not None:
             sig += "|curves=" + repr(sorted((str(k), v) for k, v in dict(curve_cfg).items()))
+        if tool_cfg is not None:
+            sig += "|tools=" + repr(sorted((str(k), v) for k, v in dict(tool_cfg).items()))
         return hashlib.md5(sig.encode()).hexdigest()[:10]
 
     @classmethod
@@ -283,7 +364,7 @@ class LineDistribution:
                       cache_dir="Yuan/IJRR/runs/_pool_cache",
                       swing_max_deg=0.0, wavelen_range=(0.4, 1.2),
                       min_radius_m=0.15, cone_range=None, cone_log=False,
-                      curve_cfg=None, verbose=True) -> "LineDistribution":
+                      curve_cfg=None, tool_cfg=None, verbose=True) -> "LineDistribution":
         """Try to load pool from cache; otherwise build (+ filter) and save.
 
         `feasibility_threshold_m=None` skips the filter (raw pool).
@@ -294,7 +375,7 @@ class LineDistribution:
         key = cls.cache_key(seed, n_pool, n_target_noise_deg,
                             env_cfg, feasibility_threshold_m,
                             cone_range=cone_range, cone_log=cone_log,
-                            curve_cfg=curve_cfg)
+                            curve_cfg=curve_cfg, tool_cfg=tool_cfg)
         cache_path = cache_dir / f"pool_{key}.pt"
         if cache_path.exists():
             if verbose:
@@ -311,7 +392,7 @@ class LineDistribution:
                   wavelen_range=wavelen_range,
                   min_radius_m=min_radius_m,
                   cone_range=cone_range, cone_log=cone_log,
-                  curve_cfg=curve_cfg)
+                  curve_cfg=curve_cfg, tool_cfg=tool_cfg)
         if feasibility_threshold_m is not None:
             obj.filter_by_classical_controller(
                 env_cfg, threshold_m=float(feasibility_threshold_m),
@@ -355,6 +436,11 @@ class LineDistribution:
                 "amp": self.amp_pool[start:end].clone(),
                 "wavelen": self.wavelen_pool[start:end].clone(),
             }
+            if self.tool_p_pool is not None:
+                chunk_specs["tool_p"] = self.tool_p_pool[start:end].clone()
+                chunk_specs["tool_R"] = self.tool_R_pool[start:end].clone()
+                chunk_specs["tool_lever"] = self.tool_lever_pool[start:end].clone()
+                chunk_specs["tool_a0"] = self.tool_a0_pool[start:end].clone()
             if self.tab_pts is not None:
                 chunk_specs["path_pts"] = self.tab_pts[start:end].to(self.device)
                 chunk_specs["path_tan"] = self.tab_tan[start:end].to(self.device)

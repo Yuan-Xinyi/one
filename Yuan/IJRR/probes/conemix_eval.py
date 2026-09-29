@@ -8,9 +8,9 @@ theta_max / 30 in the observation) against the per-tolerance checkpoints.
   part 3  15 deg (no dedicated model): 2000 tasks, mixed model vs 30-deg
           flagship zero-shot vs classical
 
-argv: [ckpt] (default runs/rl_dirfrac_e8kXXL_conemix/agent.pt)
+argv: [ckpt] [config yaml] [tag]  (default: the conemix run)
 """
-import sys, dataclasses, time
+import sys, dataclasses, time, json
 from pathlib import Path
 REPO = Path('/home/lqin/one/Yuan/IJRR/.claude/worktrees/vigilant-hertz-799b05')
 MAIN = Path('/home/lqin/one/Yuan/IJRR')
@@ -25,7 +25,8 @@ from Yuan.IJRR.stage2_traj.ppo import Agent
 dev = torch.device('cuda')
 FU = MAIN / 'runs/paper_fill/fam_unify'; A = MAIN / 'runs/paper_fill/ratio_assets'
 CKPT = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / 'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_conemix/agent.pt'
-CFG_MIX = 'config_line_cont_dirfrac_e8kXXL_conemix.yaml'
+CFG_MIX = sys.argv[2] if len(sys.argv) > 2 else 'config_line_cont_dirfrac_e8kXXL_conemix.yaml'
+TAG = sys.argv[3] if len(sys.argv) > 3 else 'conemix'
 CFG_RM = 'config_line_cont_dirfrac_e8kXXL_rm.yaml'
 CKPT_RM = REPO / 'Yuan/IJRR/runs/rl_dirfrac_e8kXXL_rm/agent.pt'
 B = 2500
@@ -150,6 +151,7 @@ res['p5_mix_sel'] = stat(p5_mix_sel, ref5, 'mixed-cone @its own critic', has)
 print(f'  [{time.time()-t0:.0f}s]', flush=True)
 
 # ---------------------------------------------------------------- part 3
+json.dump(res, open(FU / f'{TAG}_cone_rows.json', 'w'), indent=1)
 print('=== part 3: 15 deg, 2000 tasks (no dedicated model) ===', flush=True)
 rng = np.random.default_rng(3); s15 = np.sort(rng.choice(len(Q), 2000, replace=False))
 out15 = {}
@@ -164,7 +166,7 @@ for tag, v in out15.items():
           f'p10 {np.percentile(v, 10):.3f}', flush=True)
 dm = out15['mixed-cone'] - out15['flagship30 zero-shot']
 print(f'  mixed vs flagship: better {(dm > 0.02).mean()*100:.1f}%  worse {(dm < -0.02).mean()*100:.1f}%', flush=True)
-np.savez(FU / 'conemix_eval.npz', p30_rm=p30_rm, p30_mix=p30_mix, ref30=ref, sub5=sub, has=has, ref5=ref5,
+np.savez(FU / f'{TAG}_cone_eval.npz', p30_rm=p30_rm, p30_mix=p30_mix, ref30=ref, sub5=sub, has=has, ref5=ref5,
          p5_mix_shared=p5_mix_shared, p5_mix_sel=p5_mix_sel, p5_mix_at_c5pick=p5_mix_at_c5pick, pick_mix=pick_mix,
          s15=s15, **{f'p15_{k.replace(" ", "_")}': v for k, v in out15.items()})
-print('saved', FU / 'conemix_eval.npz', f'[{time.time()-t0:.0f}s]', flush=True)
+print('saved', FU / f'{TAG}_cone_eval.npz', f'[{time.time()-t0:.0f}s]', flush=True)

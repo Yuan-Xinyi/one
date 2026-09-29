@@ -163,7 +163,8 @@ class BatchedFR3Kinematics:
         if local_point is None:
             local_point = self.flange_p
         local_point = local_point.to(device=self.device, dtype=self.dtype)
-        p_tcp = (T_last[:, :3, :3] @ local_point.view(1, 3, 1)).squeeze(-1)
+        # local_point may be one point (3,) or one per batch row (B, 3)
+        p_tcp = (T_last[:, :3, :3] @ local_point.reshape(-1, 3, 1)).squeeze(-1)
         p_tcp = p_tcp + T_last[:, :3, 3]
 
         J = torch.zeros((b, 6, 7), device=self.device, dtype=self.dtype)
@@ -194,7 +195,7 @@ class BatchedFR3Kinematics:
             T_j = T @ self.zero_tfs[i].expand(b, 4, 4)
             T = T_j @ _motion_z_batch(q[:, i])
         local_point = self.flange_p
-        p_tcp = (T[:, :3, :3] @ local_point.view(1, 3, 1)).squeeze(-1)
+        p_tcp = (T[:, :3, :3] @ local_point.reshape(-1, 3, 1)).squeeze(-1)
         p_tcp = p_tcp + T[:, :3, 3]
         R_tcp = T[:, :3, :3] @ self.flange_R
         return p_tcp, R_tcp

@@ -734,46 +734,48 @@ interface is physically grounded.
 \label{tab:mainresult}
 \begin{threeparttable}
 \footnotesize
-\setlength{\tabcolsep}{4.5pt}
-\begin{tabular}{lllcccccc}
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{lllcccccccccc}
 \toprule
-& & & \multicolumn{2}{c}{Franka Research 3}
-& \multicolumn{2}{c}{xArm7}
-& \multicolumn{2}{c}{Cobotta} \\
-\cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+& & & \multicolumn{3}{c}{Franka Research 3}
+& \multicolumn{3}{c}{xArm7}
+& \multicolumn{3}{c}{Cobotta} \\
+\cmidrule(lr){4-6} \cmidrule(lr){7-9} \cmidrule(lr){10-12}
 Type
 & Method
 & Family
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
+& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
-\multirow{6}{*}{Classical} & \multirow{3}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \pinkbox{0.157} & \pinkbox{59.3 / 25.2} \\
- &  & Serpentine & \pinkbox{0.303} & \pinkbox{54.0 / 14.9} & \pinkbox{0.258} & \pinkbox{53.1 / 14.5} & \pinkbox{0.149} & \pinkbox{55.3 / 23.2} \\
- &  & Rot.-Axis & \pinkbox{0.315} & \pinkbox{56.3 / 16.7} & \pinkbox{0.261} & \pinkbox{54.9 / 15.5} & \pinkbox{0.156} & \pinkbox{58.3 / 25.6} \\
-\cmidrule(lr){2-9}
- & \multirow{3}{*}{\shortstack[l]{Classical Gradient}} & Straight & 0.332 & 60.4 / 17.9 & 0.269 & 56.4 / 17.8 & 0.158 & 58.4 / 26.8 \\
- &  & Serpentine & 0.326 & 57.4 / 16.4 & 0.268 & 54.6 / 16.3 & 0.152 & 54.9 / 24.6 \\
- &  & Rot.-Axis & 0.339 & 59.9 / 18.4 & 0.273 & 56.7 / 17.9 & 0.158 & 57.8 / 27.3 \\
+\multirow{6}{*}{Classical} & \multirow{3}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \multirow{3}{*}{0.03} & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \multirow{3}{*}{0.03} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \multirow{3}{*}{0.03} & \pinkbox{0.157} & \pinkbox{59.3 / 25.2} \\
+ &  & Serpentine &  & \pinkbox{0.303} & \pinkbox{54.0 / 14.9} &  & \pinkbox{0.258} & \pinkbox{53.1 / 14.5} &  & \pinkbox{0.149} & \pinkbox{55.3 / 23.2} \\
+ &  & Rot.-Axis &  & \pinkbox{0.315} & \pinkbox{56.3 / 16.7} &  & \pinkbox{0.261} & \pinkbox{54.9 / 15.5} &  & \pinkbox{0.156} & \pinkbox{58.3 / 25.6} \\
+\cmidrule(lr){2-12}
+ & \multirow{3}{*}{\shortstack[l]{Classical Gradient}} & Straight & \multirow{3}{*}{21.7} & 0.332 & 60.4 / 17.9 & \multirow{3}{*}{16.2} & 0.269 & 56.4 / 17.8 & \multirow{3}{*}{12.3} & 0.158 & 58.4 / 26.8 \\
+ &  & Serpentine &  & 0.326 & 57.4 / 16.4 &  & 0.268 & 54.6 / 16.3 &  & 0.152 & 54.9 / 24.6 \\
+ &  & Rot.-Axis &  & 0.339 & 59.9 / 18.4 &  & 0.273 & 56.7 / 17.9 &  & 0.158 & 57.8 / 27.3 \\
 \midrule
-\multirow{9}{*}{Learned} & \multirow{3}{*}{\shortstack[l]{Continuous PPO}} & Straight & 0.408 & 69.4 / 17.4 & 0.340 & 66.7 / 16.8 & 0.200 & 69.9 / 22.5 \\
- &  & Serpentine & 0.407 & 67.0 / 16.0 & 0.337 & 64.5 / 16.1 & 0.196 & 67.3 / 20.7 \\
- &  & Rot.-Axis & 0.411 & 68.4 / 17.4 & 0.344 & 66.9 / 17.2 & 0.202 & 69.9 / 24.6 \\
-\cmidrule(lr){2-9}
- & \multirow{3}{*}{\shortstack[l]{PPO + Classical}} & Straight & 0.458 & 75.7 / 23.6 & 0.374 & 71.5 / 20.9 & 0.222 & 76.8 / 33.5 \\
- &  & Serpentine & 0.457 & 73.0 / 21.4 & 0.370 & 69.2 / 19.6 & 0.215 & 73.2 / 31.9 \\
- &  & Rot.-Axis & 0.458 & 74.4 / 23.3 & 0.374 & 71.3 / 20.5 & 0.220 & 75.8 / 33.3 \\
-\cmidrule(lr){2-9}
- & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.9 / 68.8}} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
- &  & \textbf{Serpentine} & \limebox{\textbf{0.636}} & \limebox{\textbf{91.6 / 76.3}} & \limebox{\textbf{0.543}} & \limebox{\textbf{89.9 / 67.1}} & \limebox{\textbf{0.264}} & \limebox{\textbf{86.8 / 70.2}} \\
- &  & \textbf{Rot.-Axis} & \limebox{\textbf{0.625}} & \limebox{\textbf{92.4 / 72.8}} & \limebox{\textbf{0.541}} & \limebox{\textbf{91.9 / 68.5}} & \limebox{\textbf{0.271}} & \limebox{\textbf{89.9 / 76.9}} \\
+\multirow{9}{*}{Learned} & \multirow{3}{*}{\shortstack[l]{Continuous PPO}} & Straight & \multirow{3}{*}{0.17} & 0.408 & 69.4 / 17.4 & \multirow{3}{*}{0.16} & 0.340 & 66.7 / 16.8 & \multirow{3}{*}{0.16} & 0.200 & 69.9 / 22.5 \\
+ &  & Serpentine &  & 0.407 & 67.0 / 16.0 &  & 0.337 & 64.5 / 16.1 &  & 0.196 & 67.3 / 20.7 \\
+ &  & Rot.-Axis &  & 0.411 & 68.4 / 17.4 &  & 0.344 & 66.9 / 17.2 &  & 0.202 & 69.9 / 24.6 \\
+\cmidrule(lr){2-12}
+ & \multirow{3}{*}{\shortstack[l]{PPO + Classical}} & Straight & \multirow{3}{*}{22.6} & 0.458 & 75.7 / 23.6 & \multirow{3}{*}{16.6} & 0.374 & 71.5 / 20.9 & \multirow{3}{*}{16.2} & 0.222 & 76.8 / 33.5 \\
+ &  & Serpentine &  & 0.457 & 73.0 / 21.4 &  & 0.370 & 69.2 / 19.6 &  & 0.215 & 73.2 / 31.9 \\
+ &  & Rot.-Axis &  & 0.458 & 74.4 / 23.3 &  & 0.374 & 71.3 / 20.5 &  & 0.220 & 75.8 / 33.3 \\
+\cmidrule(lr){2-12}
+ & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \multirow{3}{*}{\textbf{0.15}} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \multirow{3}{*}{\textbf{0.19}} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.9 / 68.8}} & \multirow{3}{*}{\textbf{0.17}} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
+ &  & \textbf{Serpentine} &  & \limebox{\textbf{0.636}} & \limebox{\textbf{91.6 / 76.3}} &  & \limebox{\textbf{0.543}} & \limebox{\textbf{89.9 / 67.1}} &  & \limebox{\textbf{0.264}} & \limebox{\textbf{86.8 / 70.2}} \\
+ &  & \textbf{Rot.-Axis} &  & \limebox{\textbf{0.625}} & \limebox{\textbf{92.4 / 72.8}} &  & \limebox{\textbf{0.541}} & \limebox{\textbf{91.9 / 68.5}} &  & \limebox{\textbf{0.271}} & \limebox{\textbf{89.9 / 76.9}} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
     \item[Note 1] All methods share the same per-task initial configuration.
     Ratio is the per-task ratio of the executed stroke to the task's
     pointwise-reachable length $\ell^{\mathrm{pw}}$, reported in percent
-    as mean / p10.
+    as mean / p10. Time is the single-task decision time per
+    $50$\,ms control period (action selection only, median over $20$
+    periods on one RTX 4090; see Table~\ref{tab:latency}).
     \item[Note 2] The proposed controller is trained per manipulator on
     straight tasks. Cobotta is evaluated at the commanded speed
     $v=0.05$\,m/s for all methods, matched to its joint-velocity limits

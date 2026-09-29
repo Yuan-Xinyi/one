@@ -703,7 +703,7 @@ attributable to the redundancy-resolution law.
     normalized joint-limit distance, with hysteresis thresholds
     $0.98/0.94$.
 
-    \item \uline{Physically Normalized Reactive Policy (DirFrac, Ours):}
+    \item \uline{Physically Normalized Reactive Policy (Ours):}
     The controller of Section~\ref{sec:traj}, deployed as its bare
     policy: one forward pass, one null-space projection, and the
     closed-form amplitude bound per control period. No model rollout,
@@ -725,7 +725,7 @@ speed, the margin is the widest of the three manipulators: $90.5\%$
 mean Ratio against $76.8\%$ for the hybrid, and a 10th percentile of
 $75.8\%$ against $33.5\%$.
 
-The Continuous PPO and DirFrac rows share the same learning algorithm,
+The Continuous PPO row and Ours share the same learning algorithm,
 reward, and training distribution; they differ only in the action and
 observation coordinates, and the gap is $69.4$ versus $93.3$ in mean
 Ratio. Scale is not the explanation: at the baselines' own budget and
@@ -770,7 +770,7 @@ Type
  &  & Serpentine &  & 0.457 & 73.0 / 21.4 &  & 0.370 & 69.2 / 19.6 &  & 0.215 & 73.2 / 31.9 \\
  &  & Rot.-Axis &  & 0.458 & 74.5 / 23.3 &  & 0.374 & 71.3 / 20.5 &  & 0.220 & 75.8 / 33.3 \\
 \cmidrule(lr){2-12}
- & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \multirow{3}{*}{\textbf{$1.5\times10^{-4}$}} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \multirow{3}{*}{\textbf{$1.9\times10^{-4}$}} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.7 / 68.4}} & \multirow{3}{*}{\textbf{$1.7\times10^{-4}$}} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
+ & \multirow{3}{*}{\shortstack[l]{\textbf{Ours}}} & \textbf{Straight} & \multirow{3}{*}{\textbf{$1.5\times10^{-4}$}} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \multirow{3}{*}{\textbf{$1.9\times10^{-4}$}} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.7 / 68.4}} & \multirow{3}{*}{\textbf{$1.7\times10^{-4}$}} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
  &  & \textbf{Serpentine} &  & \limebox{\textbf{0.636}} & \limebox{\textbf{91.6 / 76.3}} &  & \limebox{\textbf{0.543}} & \limebox{\textbf{89.9 / 67.1}} &  & \limebox{\textbf{0.264}} & \limebox{\textbf{86.8 / 70.2}} \\
  &  & \textbf{Rot.-Axis} &  & \limebox{\textbf{0.625}} & \limebox{\textbf{92.4 / 72.8}} &  & \limebox{\textbf{0.541}} & \limebox{\textbf{91.9 / 68.5}} &  & \limebox{\textbf{0.271}} & \limebox{\textbf{89.9 / 76.9}} \\
 \bottomrule
@@ -1221,7 +1221,7 @@ and Trajectory Quality ($7$ Figures, $2$\,cm Size Ladder)}
 \toprule
 & & \multicolumn{3}{c}{Classical Gradient}
 & \multicolumn{4}{c}{OMPL}
-& \multicolumn{4}{c}{\textbf{DirFrac Reactive (Ours)}} \\
+& \multicolumn{4}{c}{\textbf{Ours}} \\
 \cmidrule(lr){3-5} \cmidrule(lr){6-9} \cmidrule(lr){10-13}
 Figure
 & \shortstack{Pointwise\\Bound\\(cm)}
@@ -1295,7 +1295,7 @@ and Trajectory Quality}
 \toprule
 & & \multicolumn{3}{c}{Classical Gradient}
 & \multicolumn{4}{c}{OMPL with Informed Sampler\tnote{c}}
-& \multicolumn{4}{c}{\textbf{DirFrac Reactive (Ours)}} \\
+& \multicolumn{4}{c}{\textbf{Ours}} \\
 \cmidrule(lr){3-5} \cmidrule(lr){6-9} \cmidrule(lr){10-13}
 Figure
 & \shortstack{Pointwise\\Bound\\(cm)}
@@ -1454,15 +1454,15 @@ Friction & Method & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p1
 \midrule
 \multirow{4}{*}{\shortstack[l]{$\mu=0$\\($8{,}810$ tasks)}}
  & Classical Gradient & 0.246 & 46.1 / 7.5 \\
- & DirFrac, position-only training & 0.311 & 53.1 / 1.9 \\
- & DirFrac, force-aware, first candidate & 0.514 & 82.7 / 36.1 \\
- & \textbf{DirFrac, force-aware, critic-selected} & \limebox{\textbf{0.561}} & \limebox{\textbf{89.3 / 69.1}} \\
+ & Ours, position-only training & 0.311 & 53.1 / 1.9 \\
+ & Ours, force-aware, first candidate & 0.514 & 82.7 / 36.1 \\
+ & \textbf{Ours, force-aware, critic-selected} & \limebox{\textbf{0.561}} & \limebox{\textbf{89.3 / 69.1}} \\
 \midrule
 \multirow{4}{*}{\shortstack[l]{$\mu=0.3$\\($8{,}634$ tasks)}}
  & Classical Gradient & 0.243 & 43.9 / 8.6 \\
- & DirFrac, position-only training & 0.251 & 42.5 / 1.8 \\
- & DirFrac, force-aware ($\mu=0$ training), critic-selected & 0.524 & 83.2 / 40.9 \\
- & \textbf{DirFrac, friction-aware training, critic-selected} & \limebox{\textbf{0.571}} & \limebox{\textbf{89.9 / 68.8}} \\
+ & Ours, position-only training & 0.251 & 42.5 / 1.8 \\
+ & Ours, force-aware ($\mu=0$ training), critic-selected & 0.524 & 83.2 / 40.9 \\
+ & \textbf{Ours, friction-aware training, critic-selected} & \limebox{\textbf{0.571}} & \limebox{\textbf{89.9 / 68.8}} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}

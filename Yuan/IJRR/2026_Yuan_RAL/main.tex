@@ -1201,14 +1201,24 @@ surface and for $\mu=0.3$. The proposed controller is retrained with the
 recipe of Section~\ref{sec:setup}, with two additional observation
 channels (the stiffness margin $\ln(k_{\max}/k_{\mathrm{eff}})$ and the
 force error) and the training start pool screened by
-Eq.~(\ref{eq:kcap}); the candidate pool and the critic ranking of
-Section~\ref{sec:select} are used unchanged. The reference
-$\ell^{\mathrm{pw}}$ is computed as in Section~\ref{sec:setup} with the
-stiffness window added to the admissibility test, a gradient descent on
-$k_{\mathrm{eff}}$ within the null space at each sample, and the
-executed rollouts of every evaluated controller injected as witnesses;
-more than $92\%$ of tasks lie within one march step of the search
-estimate and the largest binding adjustment is $5$\,mm. Table~\ref{tab:force} reports the
+Eq.~(\ref{eq:kcap}). Because the window removes most of a task's
+candidates, the initial-configuration pool is not thinned to $K=32$ here:
+every configuration obtained by cone-constrained IK from four
+cone-sampled tool directions and the $96$ nearest table entries of each
+is kept if it satisfies the constraint set and Eq.~(\ref{eq:kcap}),
+which leaves a median of $101$ admissible candidates per task, and the
+critic of Section~\ref{sec:select} ranks this whole screened pool. The
+reference $\ell^{\mathrm{pw}}$ follows the procedure of
+Section~\ref{sec:setup} with the stiffness window added to the
+admissibility test: the path is sampled every $2$\,cm; each sample is
+searched over $8$ cone-sampled tool directions with $12$ table warm
+starts and the previous sample's solution, then, before it is declared
+infeasible, over $24$ directions with $24$ warm starts; a configuration
+that fails only the stiffness window is pushed down the gradient of
+$k_{\mathrm{eff}}$ and re-projected onto the path; and the executed
+rollouts of every evaluated controller are injected as witnesses. More
+than $92\%$ of tasks lie within one march step of the search estimate
+and the largest binding adjustment is $5$\,mm. Table~\ref{tab:force} reports the
 results on the $10{,}000$ straight tasks that admit at least one
 compliant initial configuration ($88\%$ without friction, $86\%$ with
 $\mu=0.3$).

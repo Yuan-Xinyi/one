@@ -744,27 +744,27 @@ interface is physically grounded.
 Type
 & Method
 & Family
-& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
-\multirow{6}{*}{Classical} & \multirow{3}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \multirow{3}{*}{0.03} & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \multirow{3}{*}{0.03} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \multirow{3}{*}{0.03} & \pinkbox{0.157} & \pinkbox{59.3 / 25.2} \\
+\multirow{6}{*}{Classical} & \multirow{3}{*}{\shortstack[l]{Zero Null-Space}} & Straight & \multirow{3}{*}{$2.7\times10^{-5}$} & \pinkbox{0.308} & \pinkbox{56.8 / 16.5} & \multirow{3}{*}{$2.7\times10^{-5}$} & \pinkbox{0.259} & \pinkbox{55.0 / 15.7} & \multirow{3}{*}{$2.5\times10^{-5}$} & \pinkbox{0.157} & \pinkbox{59.3 / 25.2} \\
  &  & Serpentine &  & \pinkbox{0.303} & \pinkbox{54.0 / 14.9} &  & \pinkbox{0.258} & \pinkbox{53.1 / 14.5} &  & \pinkbox{0.149} & \pinkbox{55.3 / 23.2} \\
  &  & Rot.-Axis &  & \pinkbox{0.315} & \pinkbox{56.3 / 16.7} &  & \pinkbox{0.261} & \pinkbox{54.9 / 15.5} &  & \pinkbox{0.156} & \pinkbox{58.3 / 25.6} \\
 \cmidrule(lr){2-12}
- & \multirow{3}{*}{\shortstack[l]{Classical Gradient}} & Straight & \multirow{3}{*}{21.7} & 0.332 & 60.4 / 17.9 & \multirow{3}{*}{16.2} & 0.269 & 56.4 / 17.8 & \multirow{3}{*}{12.3} & 0.158 & 58.4 / 26.8 \\
+ & \multirow{3}{*}{\shortstack[l]{Classical Gradient}} & Straight & \multirow{3}{*}{0.02} & 0.332 & 60.4 / 17.9 & \multirow{3}{*}{0.02} & 0.269 & 56.4 / 17.8 & \multirow{3}{*}{0.01} & 0.158 & 58.4 / 26.8 \\
  &  & Serpentine &  & 0.326 & 57.4 / 16.4 &  & 0.268 & 54.6 / 16.3 &  & 0.152 & 54.9 / 24.6 \\
  &  & Rot.-Axis &  & 0.339 & 59.9 / 18.4 &  & 0.273 & 56.7 / 17.9 &  & 0.158 & 57.8 / 27.3 \\
 \midrule
-\multirow{9}{*}{Learned} & \multirow{3}{*}{\shortstack[l]{Continuous PPO}} & Straight & \multirow{3}{*}{0.17} & 0.408 & 69.4 / 17.4 & \multirow{3}{*}{0.16} & 0.340 & 66.7 / 16.8 & \multirow{3}{*}{0.16} & 0.200 & 69.9 / 22.5 \\
+\multirow{9}{*}{Learned} & \multirow{3}{*}{\shortstack[l]{Continuous PPO}} & Straight & \multirow{3}{*}{$1.7\times10^{-4}$} & 0.408 & 69.4 / 17.4 & \multirow{3}{*}{$1.6\times10^{-4}$} & 0.340 & 66.7 / 16.8 & \multirow{3}{*}{$1.6\times10^{-4}$} & 0.200 & 69.9 / 22.5 \\
  &  & Serpentine &  & 0.407 & 67.0 / 16.0 &  & 0.337 & 64.5 / 16.1 &  & 0.196 & 67.3 / 20.7 \\
  &  & Rot.-Axis &  & 0.411 & 68.4 / 17.4 &  & 0.344 & 66.9 / 17.2 &  & 0.202 & 69.9 / 24.6 \\
 \cmidrule(lr){2-12}
- & \multirow{3}{*}{\shortstack[l]{PPO + Classical}} & Straight & \multirow{3}{*}{22.6} & 0.458 & 75.7 / 23.6 & \multirow{3}{*}{16.6} & 0.374 & 71.5 / 20.9 & \multirow{3}{*}{16.2} & 0.222 & 76.8 / 33.5 \\
+ & \multirow{3}{*}{\shortstack[l]{PPO + Classical}} & Straight & \multirow{3}{*}{0.02} & 0.458 & 75.7 / 23.6 & \multirow{3}{*}{0.02} & 0.374 & 71.5 / 20.9 & \multirow{3}{*}{0.02} & 0.222 & 76.8 / 33.5 \\
  &  & Serpentine &  & 0.457 & 73.0 / 21.4 &  & 0.370 & 69.2 / 19.6 &  & 0.215 & 73.2 / 31.9 \\
  &  & Rot.-Axis &  & 0.458 & 74.4 / 23.3 &  & 0.374 & 71.3 / 20.5 &  & 0.220 & 75.8 / 33.3 \\
 \cmidrule(lr){2-12}
- & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \multirow{3}{*}{\textbf{0.15}} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \multirow{3}{*}{\textbf{0.19}} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.9 / 68.8}} & \multirow{3}{*}{\textbf{0.17}} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
+ & \multirow{3}{*}{\shortstack[l]{\textbf{DirFrac Reactive (Ours)}}} & \textbf{Straight} & \multirow{3}{*}{\textbf{$1.5\times10^{-4}$}} & \limebox{\textbf{0.628}} & \limebox{\textbf{93.3 / 77.3}} & \multirow{3}{*}{\textbf{$1.9\times10^{-4}$}} & \limebox{\textbf{0.540}} & \limebox{\textbf{91.9 / 68.8}} & \multirow{3}{*}{\textbf{$1.7\times10^{-4}$}} & \limebox{\textbf{0.271}} & \limebox{\textbf{90.5 / 75.8}} \\
  &  & \textbf{Serpentine} &  & \limebox{\textbf{0.636}} & \limebox{\textbf{91.6 / 76.3}} &  & \limebox{\textbf{0.543}} & \limebox{\textbf{89.9 / 67.1}} &  & \limebox{\textbf{0.264}} & \limebox{\textbf{86.8 / 70.2}} \\
  &  & \textbf{Rot.-Axis} &  & \limebox{\textbf{0.625}} & \limebox{\textbf{92.4 / 72.8}} &  & \limebox{\textbf{0.541}} & \limebox{\textbf{91.9 / 68.5}} &  & \limebox{\textbf{0.271}} & \limebox{\textbf{89.9 / 76.9}} \\
 \bottomrule
@@ -801,39 +801,39 @@ Type
 Family
 & Method
 & $H$
-& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
-\multirow{7}{*}{Straight} & \multirow{3}{*}{MPC} & 10 & 4181 & 0.507 & 80.7 / 41.8 & 4485 & 0.446 & 80.8 / 44.3 & 4513 & 0.227 & 77.8 / 33.5 \\
-  &   & 20 & 8065 & 0.573 & 87.8 / 58.5 & 8893 & 0.503 & 87.6 / 59.0 & 8189 & 0.247 & 84.4 / 50.1 \\
-  &   & 30 & 11228 & 0.603 & 90.7 / 67.4 & 12879 & 0.526 & 90.1 / 64.9 & 12203 & 0.256 & 86.9 / 59.8 \\
+\multirow{7}{*}{Straight} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.507 & 80.7 / 41.8 & 4.5 & 0.446 & 80.8 / 44.3 & 4.5 & 0.227 & 77.8 / 33.5 \\
+  &   & 20 & 8.1 & 0.573 & 87.8 / 58.5 & 8.9 & 0.503 & 87.6 / 59.0 & 8.2 & 0.247 & 84.4 / 50.1 \\
+  &   & 30 & 11.2 & 0.603 & 90.7 / 67.4 & 12.9 & 0.526 & 90.1 / 64.9 & 12.2 & 0.256 & 86.9 / 59.8 \\
 \cmidrule(lr){2-12}
-  & \multirow{3}{*}{MPPI} & 16 & 207 & 0.621 & 92.1 / 73.1 & 223 & 0.533 & 90.7 / 67.4 & 198 & 0.249 & 84.9 / 55.2 \\
-  &   & 32 & 421 & 0.621 & 92.2 / 73.0 & 424 & 0.532 & 90.7 / 67.2 & 412 & 0.258 & 87.1 / 64.3 \\
-  &   & 64 & 728 & 0.621 & 92.2 / 72.5 & 1017 & 0.532 & 90.7 / 66.9 & 777 & 0.263 & 88.4 / 69.4 \\
+  & \multirow{3}{*}{MPPI} & 16 & 0.21 & 0.621 & 92.1 / 73.1 & 0.22 & 0.533 & 90.7 / 67.4 & 0.20 & 0.249 & 84.9 / 55.2 \\
+  &   & 32 & 0.42 & 0.621 & 92.2 / 73.0 & 0.42 & 0.532 & 90.7 / 67.2 & 0.41 & 0.258 & 87.1 / 64.3 \\
+  &   & 64 & 0.73 & 0.621 & 92.2 / 72.5 & 1.0 & 0.532 & 90.7 / 66.9 & 0.78 & 0.263 & 88.4 / 69.4 \\
 \cmidrule(lr){2-12}
- & \textbf{Ours} & -- & \textbf{0.15} & \textbf{0.628} & \textbf{93.3 / 77.3} & \textbf{0.19} & \textbf{0.540} & \textbf{91.9 / 68.8} & \textbf{0.17} & \textbf{0.271} & \textbf{90.5 / 75.8} \\
+ & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.628} & \textbf{93.3 / 77.3} & \textbf{$1.9\times10^{-4}$} & \textbf{0.540} & \textbf{91.9 / 68.8} & \textbf{$1.7\times10^{-4}$} & \textbf{0.271} & \textbf{90.5 / 75.8} \\
 \midrule
-\multirow{7}{*}{Serpentine} & \multirow{3}{*}{MPC} & 10 & 4181 & 0.553 & 83.6 / 45.3 & 4485 & 0.478 & 83.0 / 46.7 & 4513 & 0.223 & 74.9 / 33.9 \\
-  &   & 20 & 8065 & 0.601 & 88.4 / 64.4 & 8893 & 0.519 & 87.4 / 60.7 & 8189 & 0.242 & 81.0 / 48.6 \\
-  &   & 30 & 11228 & 0.615 & 89.7 / 68.5 & 12879 & 0.529 & 88.4 / 63.4 & 12203 & 0.250 & 83.3 / 56.4 \\
+\multirow{7}{*}{Serpentine} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.553 & 83.6 / 45.3 & 4.5 & 0.478 & 83.0 / 46.7 & 4.5 & 0.223 & 74.9 / 33.9 \\
+  &   & 20 & 8.1 & 0.601 & 88.4 / 64.4 & 8.9 & 0.519 & 87.4 / 60.7 & 8.2 & 0.242 & 81.0 / 48.6 \\
+  &   & 30 & 11.2 & 0.615 & 89.7 / 68.5 & 12.9 & 0.529 & 88.4 / 63.4 & 12.2 & 0.250 & 83.3 / 56.4 \\
 \cmidrule(lr){2-12}
-  & \multirow{3}{*}{MPPI} & 16 & 207 & 0.628 & 90.6 / 72.1 & 223 & 0.534 & 88.7 / 64.8 & 198 & 0.246 & 81.7 / 55.0 \\
-  &   & 32 & 421 & 0.632 & 91.1 / 73.9 & 424 & 0.535 & 88.8 / 64.5 & 412 & 0.253 & 83.8 / 62.7 \\
-  &   & 64 & 728 & 0.634 & 91.2 / 74.3 & 1017 & 0.537 & 89.2 / 65.1 & 777 & 0.257 & 84.8 / 65.1 \\
+  & \multirow{3}{*}{MPPI} & 16 & 0.21 & 0.628 & 90.6 / 72.1 & 0.22 & 0.534 & 88.7 / 64.8 & 0.20 & 0.246 & 81.7 / 55.0 \\
+  &   & 32 & 0.42 & 0.632 & 91.1 / 73.9 & 0.42 & 0.535 & 88.8 / 64.5 & 0.41 & 0.253 & 83.8 / 62.7 \\
+  &   & 64 & 0.73 & 0.634 & 91.2 / 74.3 & 1.0 & 0.537 & 89.2 / 65.1 & 0.78 & 0.257 & 84.8 / 65.1 \\
 \cmidrule(lr){2-12}
- & \textbf{Ours} & -- & \textbf{0.15} & \textbf{0.636} & \textbf{91.6 / 76.3} & \textbf{0.19} & \textbf{0.543} & \textbf{89.9 / 67.1} & \textbf{0.17} & \textbf{0.264} & \textbf{86.8 / 70.2} \\
+ & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.636} & \textbf{91.6 / 76.3} & \textbf{$1.9\times10^{-4}$} & \textbf{0.543} & \textbf{89.9 / 67.1} & \textbf{$1.7\times10^{-4}$} & \textbf{0.264} & \textbf{86.8 / 70.2} \\
 \midrule
-\multirow{7}{*}{Rot.-Axis} & \multirow{3}{*}{MPC} & 10 & 4181 & 0.546 & 84.6 / 45.4 & 4485 & 0.486 & 85.6 / 53.1 & 4513 & 0.225 & 76.8 / 35.8 \\
-  &   & 20 & 8065 & 0.590 & 89.0 / 62.3 & 8893 & 0.523 & 89.7 / 64.0 & 8189 & 0.247 & 83.7 / 51.4 \\
-  &   & 30 & 11228 & 0.609 & 90.9 / 69.5 & 12879 & 0.531 & 90.7 / 67.1 & 12203 & 0.255 & 86.1 / 62.7 \\
+\multirow{7}{*}{Rot.-Axis} & \multirow{3}{*}{MPC} & 10 & 4.2 & 0.546 & 84.6 / 45.4 & 4.5 & 0.486 & 85.6 / 53.1 & 4.5 & 0.225 & 76.8 / 35.8 \\
+  &   & 20 & 8.1 & 0.590 & 89.0 / 62.3 & 8.9 & 0.523 & 89.7 / 64.0 & 8.2 & 0.247 & 83.7 / 51.4 \\
+  &   & 30 & 11.2 & 0.609 & 90.9 / 69.5 & 12.9 & 0.531 & 90.7 / 67.1 & 12.2 & 0.255 & 86.1 / 62.7 \\
 \cmidrule(lr){2-12}
-  & \multirow{3}{*}{MPPI} & 16 & 207 & 0.615 & 91.2 / 70.0 & 223 & 0.534 & 91.0 / 67.2 & 198 & 0.250 & 84.1 / 58.3 \\
-  &   & 32 & 421 & 0.620 & 91.7 / 71.2 & 424 & 0.536 & 91.2 / 67.3 & 412 & 0.258 & 86.4 / 68.9 \\
-  &   & 64 & 728 & 0.621 & 91.9 / 71.0 & 1017 & 0.536 & 91.2 / 67.1 & 777 & 0.262 & 87.6 / 72.6 \\
+  & \multirow{3}{*}{MPPI} & 16 & 0.21 & 0.615 & 91.2 / 70.0 & 0.22 & 0.534 & 91.0 / 67.2 & 0.20 & 0.250 & 84.1 / 58.3 \\
+  &   & 32 & 0.42 & 0.620 & 91.7 / 71.2 & 0.42 & 0.536 & 91.2 / 67.3 & 0.41 & 0.258 & 86.4 / 68.9 \\
+  &   & 64 & 0.73 & 0.621 & 91.9 / 71.0 & 1.0 & 0.536 & 91.2 / 67.1 & 0.78 & 0.262 & 87.6 / 72.6 \\
 \cmidrule(lr){2-12}
- & \textbf{Ours} & -- & \textbf{0.15} & \textbf{0.625} & \textbf{92.4 / 72.8} & \textbf{0.19} & \textbf{0.541} & \textbf{91.9 / 68.5} & \textbf{0.17} & \textbf{0.271} & \textbf{89.9 / 76.9} \\
+ & \textbf{Ours} & -- & \textbf{$1.5\times10^{-4}$} & \textbf{0.625} & \textbf{92.4 / 72.8} & \textbf{$1.9\times10^{-4}$} & \textbf{0.541} & \textbf{91.9 / 68.5} & \textbf{$1.7\times10^{-4}$} & \textbf{0.271} & \textbf{89.9 / 76.9} \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}

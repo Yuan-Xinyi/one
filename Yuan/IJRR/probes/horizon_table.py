@@ -41,9 +41,9 @@ TEMPLATE = r"""\begin{table*}[!htbp]
 Family
 & Method
 & $H$
-& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
-& \shortstack{Time\\(ms)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10}
+& \shortstack{Time\\(s)} & \shortstack{Stroke\\(m)} & \shortstack{Ratio (\%)\\mean / p10} \\
 \midrule
 %%ROWS%%
 \end{tabular}
@@ -86,9 +86,21 @@ def lat_ms(robot, key):
 
 
 def fmt_t(x, bold=False):
+    """Single-task decision time in seconds (input in ms)."""
     if x is None:
         return '[XX]'
-    s = f'{x:.2f}' if x < 10 else (f'{x:.1f}' if x < 100 else f'{x:.0f}')
+    v = x / 1000
+    if v >= 1:
+        s = f'{v:.1f}'
+    elif v >= 0.01:
+        s = f'{v:.2f}'
+    else:
+        e = 0
+        while v < 1:
+            v *= 10
+            e += 1
+        s = (f'${v:.1f}\\times10^{{-{e}}}$' if abs(v - round(v)) > 0.05
+             else f'${v:.0f}\\times10^{{-{e}}}$')
     return f'\\textbf{{{s}}}' if bold else s
 
 

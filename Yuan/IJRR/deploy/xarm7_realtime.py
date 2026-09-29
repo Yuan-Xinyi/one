@@ -321,7 +321,9 @@ def cone_ik_candidates(ctrl: Controller, p0, d, n, cone_deg, n_dirs=8,
 
 # --------------------------------------------------------------- the loop
 def run_loop(arm, ctrl: Controller, d, n, stroke, time_scale, qd_cap,
-             log_path, p0=None, max_wall=120.0):
+             log_path, p0=None, max_wall=120.0, on_cycle=None):
+    """Closed loop until the stroke target, a violation, Ctrl-C or max_wall.
+    on_cycle(q, state, cmd) is called once per cycle (e.g. for a live view)."""
     q = arm.q()
     ctrl.reset(q, d, n, p0)
     st = ctrl.measured_state(q)
@@ -360,6 +362,8 @@ def run_loop(arm, ctrl: Controller, d, n, stroke, time_scale, qd_cap,
             if peak > qd_cap:
                 cmd = cmd * (qd_cap / peak)
             arm.send_qdot(cmd, timeout=3.0 * wall_period)
+            if on_cycle is not None:
+                on_cycle(q, st, cmd)
             now = time.perf_counter()
             for k, v in (('t', now - t0), ('q', q), ('qdot_cmd', cmd),
                          ('p', st['p']), ('progress', st['progress']),

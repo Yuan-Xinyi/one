@@ -429,12 +429,17 @@ TERM_NAMES = {
 }
 
 
+# Custom arms (morphology-general training): robot name -> factory(device)
+# returning (kin, collision); filled by Yuan.IJRR.morph.chain_specs.
+CUSTOM_ARMS: dict = {}
+
+
 class NSRLBatchedEnv:
     obs_dim = OBS_DIM
     act_dim = ACT_DIM
 
     def __init__(self, cfg: EnvConfig, line_dist: LineDistribution | None,
-                 device: torch.device | str = "cuda"):
+                 device: torch.device | str = "cuda", kin=None, collision=None):
         self.cfg = cfg
         self.device = torch.device(device)
         self.n_envs = cfg.n_envs
@@ -444,7 +449,12 @@ class NSRLBatchedEnv:
         self.max_steps = cfg.max_steps
         self.cos_cone = math.cos(cfg.cone_deg * math.pi / 180.0)
         robot = getattr(cfg, 'robot', 'fr3')
-        if robot == 'fr3':
+        if kin is not None or robot in CUSTOM_ARMS:
+            if kin is None:
+                kin, collision = CUSTOM_ARMS[robot](self.device)
+            self.kin, self.collision = kin, collision
+            self.n_joints = int(getattr(kin, 'n_joints', 7))
+        elif robot == 'fr3':
             self.kin = BatchedFR3Kinematics(device=self.device,
                                             tcp_offset=cfg.tcp_offset)
             self.collision = FR3SphereCollision(device=self.device)

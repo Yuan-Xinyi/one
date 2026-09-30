@@ -281,8 +281,12 @@ class LineDistribution:
                 "amp": self.amp_pool[start:end].clone(),
                 "wavelen": self.wavelen_pool[start:end].clone(),
             }
-            # Build a temp env with chunk_n envs, scripted to these chunk specs
-            chunk_cfg = replace(env_cfg, n_envs=chunk_n)
+            # Build a temp env with chunk_n envs, scripted to these chunk specs.
+            # The classical law emits basis-box actions, so the temp env uses
+            # the basis-box interface whatever the training config uses.
+            chunk_cfg = replace(env_cfg, n_envs=chunk_n, dir_frac_action=0,
+                                rho_from_norm=False, a_prev_executed=False,
+                                task_gate=False, speed_levels=())
             env = NSRLBatchedEnv(chunk_cfg, line_dist=None, device=self.device)
             env.line_dist = ScriptedLineDistribution(chunk_specs)
             ctrl = ClassicalNullspaceController(env.kin)

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os, sys
 _conda_lib = os.path.join(sys.prefix, "lib")
-if _conda_lib not in os.environ.get("LD_LIBRARY_PATH", ""):
+if __name__ == "__main__" and _conda_lib not in os.environ.get("LD_LIBRARY_PATH", ""):
     new_env = dict(os.environ)
     new_env["LD_LIBRARY_PATH"] = _conda_lib + ":" + new_env.get("LD_LIBRARY_PATH", "")
     if __spec__ is not None and __spec__.name != "__main__":

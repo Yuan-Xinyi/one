@@ -1,4 +1,4 @@
-# Leave-one-arm-out: the same recipe trained on the xArm7 and 12 random
+# Leave-one-arm-out: the same recipe trained on the xArm7 and 6 random
 # variants of it only (never an FR3-shaped chain); the FR3 is then a
 # held-out morphology at test time.
 arms:

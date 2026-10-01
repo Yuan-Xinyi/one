@@ -7,12 +7,14 @@ integrated is streamed to the arm as 100 Hz servo set-points through the
 one control interface (one.control.manipulators.xarm7.XArm7X, xArm mode 1).  The
 environment's own step() computes the command, so projection, amplitude
 bound, lateral feedback and the predictive termination test are exactly the
-paper's; nothing is re-implemented here.  The policy tolerates any decision
-period (5 to 50 ms give the same stroke in simulation), but one env.step on
-a single configuration costs ~17 ms on the CPU (the task-aligned basis and
-its autograd gradients dominate), so the default keeps the training period
-of 50 ms task time; a uniform time scale then slows the whole motion without
-changing the joint path (0.5 -> 100 ms wall per cycle).
+paper's.  For latency the per-cycle computation runs through
+deploy/fast_cycle.py (same quantities in NumPy with closed-form gradients,
+verified against the environment by probes/fast_cycle_verify.py): 2.4 ms per
+cycle on one CPU thread, 1.2 ms with the policy on the GPU, against ~12 ms
+for env.step on one configuration.  The policy tolerates any decision period
+(5 to 50 ms give the same stroke in simulation); the default keeps the
+training period of 50 ms task time, --period 0.01 is available.  A uniform
+time scale slows the whole motion without changing the joint path.
 
     # closed loop from the current configuration, path direction +y, cone
     # centred on the current tool axis, stop after 0.6 m or at a violation
@@ -59,6 +61,7 @@ from Yuan.IJRR.env.env import (NSRLBatchedEnv, EnvConfig, TERM_NAMES,  # noqa: E
                                LATERAL_SAFETY_NET)
 from Yuan.IJRR.env.line_distribution import ScriptedLineDistribution  # noqa: E402
 from Yuan.IJRR.stage2_traj.ppo import Agent  # noqa: E402
+from Yuan.IJRR.deploy.fast_cycle import FastCycle  # noqa: E402
 
 ASSETS = Path(os.environ.get('IJRR_ASSETS',
                              '/home/lqin/one/Yuan/IJRR/runs/paper_fill/ratio_assets'))
@@ -212,9 +215,13 @@ class Controller:
     """One-env copy of the training environment driven by measured joints."""
 
     def __init__(self, period: float, tcp, cone_deg: float,
-                 k_lateral: float, device: str = 'cuda', n_envs: int = 1):
+                 k_lateral: float, device: str = 'cuda', n_envs: int = 1,
+                 fast: bool = True, policy_device: str | None = None):
         """tcp: on-axis tool length, or an (x, y, z) tool point in the
-        flange frame."""
+        flange frame.  fast: run the per-cycle computation through
+        FastCycle (NumPy, closed-form gradients, ~1-2.5 ms) instead of the
+        batched environment (~12 ms for one configuration); the environment
+        is still built for the batched critic ranking."""
         y = yaml.safe_load(open(CFG))
         keys = {f.name for f in dataclasses.fields(EnvConfig)}
         kw = {k: v for k, v in y['env'].items() if k in keys}
@@ -233,6 +240,10 @@ class Controller:
         self.agent.eval()
         self.cos_cone = math.cos(math.radians(cone_deg))
         self.qd_limit = np.asarray(y['env']['qd_limit'], np.float64)
+        self.fast = None
+        if fast:
+            pdev = policy_device or ('cuda' if torch.cuda.is_available() else 'cpu')
+            self.fast = FastCycle(self.env, self.agent, policy_device=pdev)
 
     def _t(self, x):
         return torch.as_tensor(np.asarray(x, np.float64), dtype=self.rdt,
@@ -252,11 +263,16 @@ class Controller:
         self.env.reset()
         self.d, self.n = unit(d), unit(n)
         self.p_start = self.env.p_start[0].cpu().numpy()
+        if self.fast is not None:
+            self.fast.reset(np.asarray(q_meas, np.float64), self.d, self.n, self.p_start)
 
     @torch.no_grad()
     def command(self, q_meas: np.ndarray):
         """Joint velocity the environment would integrate from q_meas, plus
         the environment's own (predictive) termination verdict."""
+        if self.fast is not None:
+            out = self.fast.step(np.asarray(q_meas, np.float64))
+            return out['qdot'], out['done'], out['reason']
         self.env.q[0] = self._t(q_meas)
         obs = self.env.current_obs()
         a = self.agent.actor_mean(obs)
@@ -270,6 +286,11 @@ class Controller:
     def measured_state(self, q_meas: np.ndarray):
         """Progress, lateral error, cone angle and the measured-state
         violations (the same constraint set, evaluated on the real state)."""
+        if self.fast is not None:
+            st = self.fast.state(np.asarray(q_meas, np.float64))
+            names = dict(collision='collision', jl='joint limit', cone='cone', lateral='lateral')
+            return dict(p=st['p'], progress=st['progress'], lateral=st['lateral'],
+                        tilt_deg=st['tilt_deg'], violations=[names[k] for k in st['violations']])
         qt = self._t(q_meas)[None]
         p, R, _, _ = self.env.kin.tcp_fk_jac(qt)
         p, z = p[0].cpu().numpy(), R[0, :, 2].cpu().numpy()
@@ -369,6 +390,11 @@ def run_loop(arm, ctrl: Controller, d, n, stroke, time_scale, qd_cap,
     st = ctrl.measured_state(q)
     if st['violations']:
         raise RuntimeError(f'start state violates: {st["violations"]}')
+    # warm-up (CUDA context, kernels, numpy first calls) so the first real
+    # cycle does not overrun; the second reset restores the t=0 history
+    for _ in range(3):
+        ctrl.command(q)
+    ctrl.reset(q, d, n, p0)
     wall_period = ctrl.env.dt / time_scale
     print(f'[rt] start tip {st["p"].round(3)}, tilt {st["tilt_deg"]:.1f} deg, '
           f'cycle {ctrl.env.dt * 1000:.0f} ms task time = '
@@ -487,13 +513,18 @@ def main():
                     help='select: joint speed of the point-to-point move [rad/s]')
     ap.add_argument('--log', default=None)
     ap.add_argument('--device', default='cpu',
-                    help='cpu is faster than cuda for one configuration')
+                    help='device of the batched environment (critic ranking)')
+    ap.add_argument('--no-fast', action='store_true',
+                    help='run the cycle through env.step instead of FastCycle')
+    ap.add_argument('--policy-device', default=None,
+                    help='FastCycle policy device (default: cuda if available)')
     args = ap.parse_args()
 
     if args.device == 'cpu':
         torch.set_num_threads(1)     # 7x7 problems: threading only adds overhead
     ctrl = Controller(args.period, tool_xyz_from_args(args), args.cone,
-                      args.k_lateral, args.device)
+                      args.k_lateral, args.device, fast=not args.no_fast,
+                      policy_device=args.policy_device)
 
     if args.sim:
         tz = np.load(ASSETS / 'tasks_pool_xarm7.npz')

@@ -85,7 +85,8 @@ def server_main(conn, args):
                                                  ASSETS, run_loop,
                                                  tool_xyz_from_args)
     ctrl = Controller(args.period, tool_xyz_from_args(args), args.cone,
-                      args.k_lateral, 'cpu')
+                      args.k_lateral, 'cpu', fast=not args.no_fast,
+                      policy_device=args.policy_device)
     try:
         if args.sim:
             if args.sim_q_deg is not None:
@@ -527,6 +528,10 @@ def main():
     ap.add_argument('--log-dir', default=None)
     ap.add_argument('--sim-device', default=None,
                     help='device for the candidate rollouts (default: cuda if available)')
+    ap.add_argument('--no-fast', action='store_true',
+                    help='control loop through env.step instead of FastCycle')
+    ap.add_argument('--policy-device', default=None,
+                    help='FastCycle policy device in the robot process (default: cuda if available)')
     ap.add_argument('--screenshot', default=None, help='debug: save a frame and quit')
     ap.add_argument('--auto-test', action='store_true',
                     help='debug: with --screenshot, also execute the best target')

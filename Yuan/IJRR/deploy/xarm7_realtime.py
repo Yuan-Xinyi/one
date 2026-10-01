@@ -103,16 +103,27 @@ def unit(v):
 class XArm:
     """Hardware through the one control interface (one.control.manipulators
     .xarm7.XArm7X): joints via get_jnt_values, point-to-point via move_j,
-    and the closed loop as servo streaming (xArm mode 1): each control cycle
-    the commanded joint velocity is integrated into set-points streamed at
-    100 Hz with servo_j, starting from the last commanded set-point so the
-    stream stays continuous.  The wrapper blocks for the cycle (streams=True)."""
-    streams = True
+    and the closed loop in one of two execution modes:
+
+    servo    (default) xArm mode 1: each control cycle the commanded joint
+             velocity is integrated into set-points streamed at 100 Hz with
+             servo_j, starting from the last commanded set-point so the
+             stream stays continuous; the executed path is the integrated
+             path.  The wrapper blocks for the cycle (streams=True).
+    velocity xArm mode 4: the commanded joint velocity is handed to the
+             controller as is (vc_set_joint_velocity, timeout three cycles);
+             the controller ramps to it under its own joint-acceleration
+             limit, so the executed motion lags the command (see
+             probes/exec_model_probe.py).  Non-blocking; run_loop paces.
+    """
     STREAM_HZ = 100.0
     TRACK_TOL = 0.08          # rad: commanded set-point vs measured joints
 
-    def __init__(self, ip: str):
+    def __init__(self, ip: str, exec_mode: str = 'servo'):
         from one.control.manipulators.xarm7.xarm7 import XArm7X
+        assert exec_mode in ('servo', 'velocity'), exec_mode
+        self.exec_mode = exec_mode
+        self.streams = exec_mode == 'servo'
         self.x = XArm7X(ip=ip)
         self._q_cmd = None
 
@@ -124,10 +135,23 @@ class XArm:
 
     def velocity_mode(self):
         self._q_cmd = self.q()
-        self.x.enter_servo_mode()
+        if self.exec_mode == 'velocity':
+            self.x._set_mode(4)            # joint velocity control
+        else:
+            self.x.enter_servo_mode()
 
     def send_qdot(self, qdot: np.ndarray, timeout: float):
-        """Stream set-points for one cycle (= timeout / 3) at STREAM_HZ."""
+        """servo: stream set-points for one cycle (= timeout / 3) at STREAM_HZ;
+        velocity: hand the velocity to the controller with a timeout."""
+        if self.exec_mode == 'velocity':
+            # duration > 0: the controller zeroes the speed if no new command
+            # arrives within this time (firmware >= 1.8.0)
+            code = self.x._arm_x.vc_set_joint_velocity(
+                [float(v) for v in qdot], is_radian=True, is_sync=True,
+                duration=float(timeout))
+            if code != 0:
+                raise RuntimeError(f'vc_set_joint_velocity failed, code {code}')
+            return
         period = float(timeout) / 3.0
         q_meas = self.q()
         if self._q_cmd is None:
@@ -149,7 +173,13 @@ class XArm:
                 time.sleep(s)
 
     def stop(self):
-        # leaving servo mode holds the last set-point; position mode = idle
+        if self.exec_mode == 'velocity':
+            try:
+                self.x._arm_x.vc_set_joint_velocity([0.0] * N_J, is_radian=True)
+            except Exception:           # noqa: BLE001
+                pass
+            time.sleep(0.2)
+        # leaving servo / velocity mode: position mode = idle, holds position
         self.x.enter_position_mode()
         self._q_cmd = None
 
@@ -481,6 +511,9 @@ def main():
     ap.add_argument('mode', choices=['run', 'select'])
     ap.add_argument('--ip', default=DEFAULT_IP)
     ap.add_argument('--sim', action='store_true', help='simulated arm, no hardware')
+    ap.add_argument('--exec', choices=['servo', 'velocity'], default='servo',
+                    help='hardware execution: servo set-point streaming (mode 1) or '
+                         'joint-velocity control (mode 4)')
     ap.add_argument('--sim-task', type=int, default=0,
                     help='--sim: start from this task of the 10k xArm7 pool')
     ap.add_argument('--sim-lag', type=float, default=0.03,
@@ -532,7 +565,7 @@ def main():
         arm = SimArm(q_init, lag=args.sim_lag)
         print(f'[rt] simulated arm from pool task {args.sim_task}', flush=True)
     else:
-        arm = XArm(args.ip)
+        arm = XArm(args.ip, exec_mode=args.exec)
 
     try:
         q = arm.q()

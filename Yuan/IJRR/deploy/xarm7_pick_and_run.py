@@ -96,7 +96,7 @@ def server_main(conn, args):
                 q0 = tz['q0_seed'][args.sim_task].astype(np.float64)
             arm = SimArm(q0, lag=args.sim_lag)
         else:
-            arm = XArm(args.ip)
+            arm = XArm(args.ip, exec_mode=args.exec)
     except Exception as e:                  # noqa: BLE001
         conn.send(('error', f'cannot connect to the arm at {args.ip}: {e}'))
         return
@@ -507,6 +507,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--ip', default=None, help='default: $ONE_ARM_IP or 192.168.1.205')
     ap.add_argument('--sim', action='store_true')
+    ap.add_argument('--exec', choices=['servo', 'velocity'], default='servo',
+                    help='hardware execution: servo streaming (mode 1) or joint-velocity (mode 4)')
     ap.add_argument('--sim-task', type=int, default=0)
     ap.add_argument('--sim-q-deg', type=float, nargs=7, default=None,
                     help='--sim: start from these joint angles [deg] instead of a pool task')

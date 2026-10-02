@@ -1,0 +1,84 @@
+# Mixed-tolerance recipe at 480M with the two structural changes aimed at the
+# residual to the per-tolerance checkpoints (480M mixed: 30 deg 92.9/75.9, 5 deg
+# critic 92.2/79.2; dedicated: 93.1/77.1, 93.0/81.0): returns normalised per
+# tolerance group (4 log-spaced bins over 5-30 deg) and the policy's log_std
+# affine in the tolerance channel. Everything else as conemix480.
+# Flagship recipe (config_line_cont_dirfrac_e8kXXL_rm.yaml) with the
+# orientation-cone half-angle drawn per task, log-uniform in [5, 30] deg, and
+# exposed to the policy/critic as one observation channel (theta_max / 30).
+# One checkpoint per manipulator is then meant to serve every tolerance in
+# that range instead of one checkpoint per tolerance (rm = 30 deg, cone5 = 5).
+# The start pool is screened by the classical law at the relaxed 30 deg cone,
+# so the 30-deg tasks are distributed exactly like the flagship's pool and the
+# tighter tasks are the same geometric tasks under a tighter cone; the
+# n_target noise is capped at half the task's own cone so every start is
+# admissible under its own tolerance.
+env:
+  dir_frac_action: 2
+  a_prev_executed: true
+  observe_margins: true
+  true_reset_obs: true
+  rho_from_norm: true
+  observe_proj_scales: true
+  observe_cone: true
+  qd_limit:
+  - 2.175
+  - 2.175
+  - 2.175
+  - 2.175
+  - 2.61
+  - 2.61
+  - 2.61
+  n_envs: 8192
+  dt: 0.05
+  v: 0.2
+  a_max: 0.5
+  lambda_0: 0.05
+  sigma_thr: 0.05
+  cone_deg: 30.0
+  max_steps: 500
+  tcp_offset: 0.2034
+  r_collision: 0.0
+  r_cone: 0.0
+  r_jl: 0.0
+  w_progress: 1.0
+  manip_damping: 0.001
+  observe_curvature: false
+ppo:
+  total_timesteps: 480000000
+  learning_rate: 0.0006
+  n_steps: 4
+  anneal_lr: true
+  gamma: 0.99
+  gae_lambda: 0.95
+  n_minibatches: 32
+  update_epochs: 15
+  norm_adv: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.02
+  hidden_dim: 2048
+  init_log_std: -0.5
+  normalize_returns: true
+  reward_norm_groups: 4
+  cone_cond_log_std: true
+  squashed_entropy: true
+agent:
+  kind: gaussian
+line_distribution:
+  n_pool: 100000
+  n_target_noise_deg: 5.0
+  train_seed: 0
+  feasibility_filter: true
+  feasibility_threshold_m: 0.1
+  cone_range: [5.0, 30.0]
+  cone_log: true
+eval:
+  n_holdout: 200
+  holdout_seed: 42
+train:
+  eval_every: 250000
+  ckpt_every_n_updates: 10

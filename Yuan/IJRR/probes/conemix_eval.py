@@ -44,7 +44,8 @@ def build(cfgfile, ckpt, cone, classical=False):
     env = NSRLBatchedEnv(EnvConfig(**{**kw, 'n_envs': B}), None, dev)
     if classical:
         return env, cn_action_fn(ClassicalNullspaceController(env.kin)), None
-    ag = Agent(env.obs_dim, env.act_dim_policy, hidden_dim=y['ppo']['hidden_dim']).to(dev)
+    ag = Agent(env.obs_dim, env.act_dim_policy, hidden_dim=y['ppo']['hidden_dim'],
+               cond_log_std_index=(env.obs_dim - 1 if y['ppo'].get('cone_cond_log_std') else None)).to(dev)
     ag.load_state_dict(torch.load(ckpt, map_location=dev))
     ag.eval()
     return env, (lambda e: ag.actor_mean(e.current_obs())), ag

@@ -31,7 +31,7 @@ import yaml
 
 from Yuan.IJRR.env.env import NSRLBatchedEnv, EnvConfig, TERM_NAMES
 from Yuan.IJRR.env.line_distribution import LineDistribution
-from Yuan.IJRR.stage2_traj.ppo import PPOConfig, train as ppo_train, Agent
+from Yuan.IJRR.stage2_traj.ppo import PPOConfig, train as ppo_train, Agent, GroupedRewardScaler
 from Yuan.IJRR.stage2_traj.vertex_agent import (VertexAgent, PriorVertexAgent, LSTMVertexAgent, TransformerVertexAgent)
 from Yuan.IJRR.stage2_traj.history_env import HistoryStackEnv
 from Yuan.IJRR.stage2_traj.ppo import TransformerContAgent
@@ -296,7 +296,26 @@ def main():
               f"{agent_obj.n_actions} actions, alpha init "
               f"{float(agent_obj.alpha):.1f}")
 
+    # Mixed-tolerance options: per-tolerance-group return normalisation
+    # (log-spaced bins over the pool's cone range) and the tolerance channel
+    # the conditional log_std reads (it must be the last observation channel).
+    reward_scaler = None; reward_group_fn = None
+    if int(getattr(ppo_cfg, 'reward_norm_groups', 0)) > 0:
+        import math as _math
+        _cr = line_cfg.get("cone_range")
+        assert _cr, "reward_norm_groups needs a mixed-cone pool (line_distribution.cone_range)"
+        _lo, _hi, _K = _math.log(float(_cr[0])), _math.log(float(_cr[1])), int(ppo_cfg.reward_norm_groups)
+        def reward_group_fn(e, _lo=_lo, _hi=_hi, _K=_K):
+            u = (torch.log(e.cone_deg_b.float().clamp(min=1e-3)) - _lo) / (_hi - _lo)
+            return (u * _K).long().clamp(0, _K - 1)
+        reward_scaler = GroupedRewardScaler(env_cfg.n_envs, ppo_cfg.gamma, device, _K)
+        print(f"[train] grouped return normalisation: {_K} tolerance bins over {_cr}")
+    if getattr(ppo_cfg, 'cone_cond_log_std', False):
+        assert getattr(env_cfg, 'observe_cone', False) and not getattr(env_cfg, 'observe_preview', False) \
+            and not getattr(env_cfg, 'observe_tool', False), 'cone_cond_log_std needs the cone as the last observation channel'
+        print("[train] log_std conditioned on the tolerance channel")
     agent = ppo_train(ppo_cfg, train_env, device=device, agent=agent_obj,
+                      reward_scaler=reward_scaler, reward_group_fn=reward_group_fn,
                       eval_fn=eval_fn,
                       eval_every=train_cfg["eval_every"],
                       log_fn=log_fn,

@@ -45,6 +45,14 @@ class PPOConfig:
     hidden_dim: int = 256
     init_log_std: float = -0.5
     normalize_returns: bool = True
+    # Mixed-tolerance options (both default off: the historical path is
+    # untouched). reward_norm_groups > 0 keeps one running return std per
+    # tolerance group (log-spaced bins over the pool's cone range, see
+    # train.py) so the short, low-return tight-cone episodes are not scaled
+    # by the loose-cone std; cone_cond_log_std makes the policy's log_std
+    # affine in the tolerance observation (last channel, theta_max / 30).
+    reward_norm_groups: int = 0
+    cone_cond_log_std: bool = False
     # Freeze the actor for the first N updates (critic + reward-scaler warmup).
     # Essential when resuming from a distilled ckpt whose critic is random —
     # garbage advantages would erode the distilled actor before the critic
@@ -199,6 +207,54 @@ def _layer_init(layer: nn.Linear, std: float = np.sqrt(2.0), bias_const: float =
     return layer
 
 
+class GroupedRewardScaler:
+    """RewardScaler with one running std of discounted returns per group
+    (a tolerance bin): `step(rewards, dones, group_ids)` with group_ids
+    (n_envs,) long for the episode each reward belongs to. With one group
+    it is the RewardScaler (same Welford update, population variance)."""
+    def __init__(self, n_envs: int, gamma: float, device, n_groups: int,
+                 epsilon: float = 1e-4):
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.n_groups = int(n_groups)
+        self.return_acc = torch.zeros(n_envs, device=device)
+        self.mean = torch.zeros(self.n_groups, device=device)
+        self.var = torch.ones(self.n_groups, device=device)
+        self.count = torch.full((self.n_groups,), float(epsilon), device=device)
+
+    @torch.no_grad()
+    def step(self, rewards: torch.Tensor, dones: torch.Tensor,
+             group_ids: torch.Tensor) -> torch.Tensor:
+        self.return_acc = self.return_acc * self.gamma + rewards
+        g = group_ids.to(self.return_acc.device).long()
+        x = self.return_acc
+        cnt = torch.bincount(g, minlength=self.n_groups).to(x.dtype)
+        s1 = torch.bincount(g, weights=x, minlength=self.n_groups)
+        s2 = torch.bincount(g, weights=x * x, minlength=self.n_groups)
+        has = cnt > 0
+        c1 = cnt.clamp(min=1.0)
+        bm = torch.where(has, s1 / c1, torch.zeros_like(s1))
+        bv = torch.where(has, (s2 / c1 - bm * bm).clamp(min=0.0), torch.zeros_like(s1))
+        delta = bm - self.mean
+        tot = self.count + cnt
+        M2 = self.var * self.count + bv * cnt + delta * delta * self.count * cnt / tot
+        self.mean = torch.where(has, self.mean + delta * cnt / tot, self.mean)
+        self.var = torch.where(has, M2 / tot, self.var)
+        self.count = torch.where(has, tot, self.count)
+        self.return_acc = self.return_acc * (1.0 - dones.to(self.return_acc.dtype))
+        return rewards / torch.sqrt(self.var[g] + self.epsilon)
+
+    @property
+    def scale(self) -> float:
+        return float(torch.sqrt(self.var + self.epsilon).mean().item())
+
+    def state_dict(self) -> dict:
+        return {'mean': self.mean.detach().clone(), 'var': self.var.detach().clone(),
+                'count': self.count.detach().clone(),
+                'return_acc': self.return_acc.detach().clone(),
+                'gamma': self.gamma, 'epsilon': self.epsilon}
+
+
 class Agent(nn.Module):
     """Actor-critic with tanh-squashed Gaussian policy.
 
@@ -220,9 +276,16 @@ class Agent(nn.Module):
     LOG_STD_MAX =  0.5  # σ ≤ exp(0.5) ≈ 1.65 (safety cap; nn.Parameter rarely saturates)
 
     def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 512,
-                 init_log_std: float = -0.5, squashed_entropy: bool = False):
+                 init_log_std: float = -0.5, squashed_entropy: bool = False,
+                 cond_log_std_index: int | None = None):
         super().__init__()
         self.squashed_entropy = squashed_entropy
+        # cond_log_std_index: log_std = log_std + slope * (x[idx] - 0.5),
+        # the tolerance observation theta_max / 30; slope starts at zero so
+        # the policy is the unconditioned one until it learns otherwise.
+        self.cond_log_std_index = cond_log_std_index
+        if cond_log_std_index is not None:
+            self.log_std_slope = nn.Parameter(torch.zeros(act_dim))
         self.critic = nn.Sequential(
             _layer_init(nn.Linear(obs_dim, hidden_dim)), nn.ReLU(),
             _layer_init(nn.Linear(hidden_dim, hidden_dim)), nn.ReLU(),
@@ -247,7 +310,11 @@ class Agent(nn.Module):
     def _actor_dist(self, x: torch.Tensor) -> Normal:
         h = self._actor_trunk(x)
         mean = self._mean_head(h)
-        log_std = self.log_std.clamp(self.LOG_STD_MIN, self.LOG_STD_MAX).expand_as(mean)
+        log_std = self.log_std
+        if self.cond_log_std_index is not None:
+            i = self.cond_log_std_index
+            log_std = log_std.unsqueeze(0) + self.log_std_slope.unsqueeze(0) * (x[:, i:i + 1] - 0.5)
+        log_std = log_std.clamp(self.LOG_STD_MIN, self.LOG_STD_MAX).expand_as(mean)
         return Normal(mean, log_std.exp())
 
     def get_action_and_value(self, x: torch.Tensor,
@@ -343,7 +410,8 @@ def train(cfg: PPOConfig, env, device: torch.device,
           reward_scaler: RewardScaler | None = None,
           anchor: dict | None = None,
           opt_value=None,
-          mask_fn=None):
+          mask_fn=None,
+          reward_group_fn=None):
     """Train PPO on `env`.
 
     `env` must expose: `n_envs`, `obs_dim`, `act_dim`, `device`, `reset()`,
@@ -365,7 +433,9 @@ def train(cfg: PPOConfig, env, device: torch.device,
     if agent is None:
         agent = Agent(obs_dim, act_dim, hidden_dim=cfg.hidden_dim,
                       init_log_std=cfg.init_log_std,
-                      squashed_entropy=cfg.squashed_entropy).to(device)
+                      squashed_entropy=cfg.squashed_entropy,
+                      cond_log_std_index=(obs_dim - 1 if cfg.cone_cond_log_std
+                                          else None)).to(device)
     else:
         agent = agent.to(device)
     if resume_from_ckpt is not None:
@@ -500,11 +570,15 @@ def train(cfg: PPOConfig, env, device: torch.device,
             # `to_env` overrides the default.
             squashed_action = (agent.to_env(action)
                                if hasattr(agent, 'to_env') else torch.tanh(action))
+            # group ids are read before the step: an env that finishes is
+            # auto-reset to a new task, and this reward belongs to the old one
+            gid = reward_group_fn(env) if reward_group_fn is not None else None
             next_obs, reward, term, trunc, info = env.step(squashed_action)
             done_now = (term | trunc).to(device)
             r_dev = reward.to(device)
             if reward_scaler is not None:
-                r_dev = reward_scaler.step(r_dev, done_now)
+                r_dev = (reward_scaler.step(r_dev, done_now) if gid is None
+                         else reward_scaler.step(r_dev, done_now, gid))
             rewards_buf[step] = r_dev
             terminated_buf[step] = term.float()
             truncated_buf[step] = trunc.float()
